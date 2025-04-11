@@ -7,24 +7,22 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link href="https://fonts.googleapis.com/css2?family=Battambang&display=swap" rel="stylesheet">
     <style>
-        /* Global styling */
         body {
             margin: 0;
             padding: 0;
             background-color: #1a1a1a;
-            font-family: Arial, sans-serif;
             color: #f0f0f0;
-        }
-
-        /* Container splits the screen into 2 columns */
-        .container {
+            font-family: Arial, sans-serif;
             display: flex;
-            flex-direction: row;
             height: 100vh;
             width: 100vw;
         }
 
-        /* Left column: Big current queue and station display */
+        .container {
+            display: flex;
+            width: 100%;
+        }
+
         .current-queue-station {
             flex: 0 0 40%;
             display: flex;
@@ -59,12 +57,10 @@
             animation: numberChange 0.8s ease-in-out;
         }
 
-        /* Right column: History table */
         .history-section {
             flex: 1;
             display: flex;
             flex-direction: column;
-            justify-content: flex-start;
             overflow: hidden;
         }
 
@@ -101,7 +97,6 @@
             animation: rowFadeIn 0.5s ease-in-out;
         }
 
-        /* Responsive adjustments for smaller screens */
         @media only screen and (max-width: 800px) {
             .container {
                 flex-direction: column;
@@ -125,7 +120,6 @@
             }
         }
 
-        /* Animations */
         @keyframes numberChange {
             from {
                 opacity: 0.5;
@@ -178,14 +172,8 @@
             <table class="history-table">
                 <thead>
                     <tr>
-                        <th>
-                            คิว/Queue<br>
-                            <span class="subtitle">(လိုင်း/Số thứ tự/បន្ទាត់/排队)</span>
-                        </th>
-                        <th>
-                            ช่อง/Station<br>
-                            <span class="subtitle">(ကောင်တာ/Quầy/ស្ថានីយ៍/窗口)</span>
-                        </th>
+                        <th>คิว/Queue<br><span class="subtitle">(လိုင်း/Số thứ tự/បន្ទាត់/排队)</span></th>
+                        <th>ช่อง/Station<br><span class="subtitle">(ကောင်တာ/Quầy/ស្ថានីយ៍/窗口)</span></th>
                     </tr>
                 </thead>
                 <tbody id="historyTable"></tbody>
@@ -202,33 +190,33 @@
         const historyTableBody = document.getElementById("historyTable");
         const chimeAudio = document.getElementById("chimeAudio");
 
-        function calculateMaxHistory() {
-            const firstRow = historyTableBody.querySelector('tr');
-            if (!firstRow) return 10; // Default if no rows yet
-            const rowHeight = firstRow.offsetHeight;
-            const availableHeight = historyTableBody.parentElement.offsetHeight;
-            return Math.floor(availableHeight / rowHeight);
+        let MAX_HISTORY = 10; // Default value
+
+        function updateMaxHistory() {
+            if (historyTableBody.children.length > 0) {
+                const firstRow = historyTableBody.children[0];
+                const rowHeight = firstRow.offsetHeight;
+                if (rowHeight > 0) {
+                    MAX_HISTORY = Math.floor(historyTableBody.parentElement.offsetHeight / rowHeight);
+                }
+            } else {
+                // If no rows, try to estimate based on font size.
+                MAX_HISTORY = Math.floor(historyTableBody.parentElement.offsetHeight / 40);
+            }
         }
 
-        let MAX_HISTORY = calculateMaxHistory();
-
-        window.addEventListener('resize', () => {
-            MAX_HISTORY = calculateMaxHistory();
-        });
+        window.addEventListener('resize', updateMaxHistory);
 
         socket.onmessage = function (event) {
             const { queue, station } = JSON.parse(event.data);
 
-            // Remove any existing history entry with the same queue number
             const rows = historyTableBody.getElementsByTagName("tr");
             for (let i = rows.length - 1; i >= 0; i--) {
-                const cellValue = rows[i].getElementsByTagName("td")[0].textContent;
-                if (cellValue === String(queue)) {
+                if (rows[i].getElementsByTagName("td")[0].textContent === String(queue)) {
                     historyTableBody.removeChild(rows[i]);
                 }
             }
 
-            // Update current display with animation
             currentQueueEl.textContent = queue;
             currentStationEl.textContent = station;
             currentQueueEl.style.animation = 'none';
@@ -238,22 +226,22 @@
             currentStationEl.offsetHeight;
             currentStationEl.style.animation = null;
 
-            // Insert new entry at the top of history with animation
             const row = document.createElement("tr");
             row.innerHTML = `<td>${queue}</td><td>${station}</td>`;
             historyTableBody.insertBefore(row, historyTableBody.firstChild);
 
-            // Maintain maximum history entries
+            updateMaxHistory(); // Update after adding a row
+
             while (historyTableBody.children.length > MAX_HISTORY) {
                 historyTableBody.removeChild(historyTableBody.lastChild);
             }
 
-            // Play the chime sound from the file
             chimeAudio.currentTime = 0;
-            chimeAudio.play().catch(err => {
-                console.warn("Chime playback failed:", err);
-            });
+            chimeAudio.play().catch(err => console.warn("Chime playback failed:", err));
         };
+
+        // Initial calculation
+        setTimeout(updateMaxHistory, 100);
     </script>
 </body>
 
