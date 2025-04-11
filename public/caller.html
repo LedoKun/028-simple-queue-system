@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Call Queue</title>
+</head>
+
+<body>
+    <h2>Queue Caller Interface</h2>
+    <label>Station Number: <input type="text" id="station"></label><br><br>
+    <label>Queue Number: <input type="text" id="queue"></label><br><br>
+    <button onclick="callQueue()">Call Queue</button>
+
+    <script>
+        function callQueue() {
+            const queue = document.getElementById("queue").value;
+            const station = document.getElementById("station").value;
+            if (!queue || !station) return alert("Please enter both fields.");
+
+            fetch('/call', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ queue, station })
+            });
+        }
+    </script>
+</body>
+
+</html>

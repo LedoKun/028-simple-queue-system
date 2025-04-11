@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Queue TV Display</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <style>
+        /* Global styling */
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: #4A4A4A;
+            /* Dark gray background */
+            font-family: Arial, sans-serif;
+            color: #EFEFEF;
+        }
+
+        /* Container splits the screen into 2 columns */
+        .container {
+            display: flex;
+            flex-direction: row;
+            height: 100vh;
+            width: 100vw;
+        }
+
+        /* Left column: Big current queue and station display */
+        .current-queue-station {
+            flex: 0 0 40%;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            border-right: 2px solid #8A8A8A;
+        }
+
+        .label {
+            font-size: 2.5em;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 0.1em;
+        }
+
+        .subtitle {
+            font-size: 1.5em;
+            /* Smaller font for translation */
+            font-weight: normal;
+            margin-bottom: 0.5em;
+        }
+
+        .number-large {
+            font-size: 7em;
+            font-weight: bold;
+            color: #CFC5FA;
+            margin: 0.2em 0;
+        }
+
+        /* Right column: History table */
+        .history-section {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            justify-content: flex-start;
+            overflow: hidden;
+        }
+
+        .history-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 2em;
+            text-align: center;
+        }
+
+        .history-table th,
+        .history-table td {
+            padding: 0.5em 1em;
+            border-bottom: 1px solid #8A8A8A;
+        }
+
+        .history-table th {
+            font-weight: 600;
+            text-transform: uppercase;
+            background-color: #6A6A6A;
+        }
+
+        .history-table .subtitle {
+            font-size: 0.5em;
+            font-weight: normal;
+            margin: 0;
+            display: block;
+        }
+
+        .history-table td {
+            background-color: #5A5A5A;
+        }
+
+        /* Responsive adjustments for smaller screens */
+        @media only screen and (max-width: 800px) {
+            .container {
+                flex-direction: column;
+            }
+
+            .current-queue-station,
+            .history-section {
+                flex: 1 1 auto;
+            }
+
+            .number-large {
+                font-size: 5em;
+            }
+
+            .label {
+                font-size: 2em;
+            }
+
+            .subtitle {
+                font-size: 0.7em;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <!-- Left Column: Current Queue & Station with static labels and separate subtitles -->
+        <div class="current-queue-station">
+            <div class="label">คิว/Queue</div>
+            <div class="subtitle">(လိုင်း/Số thứ tự/បន្ទាត់/排队)</div>
+            <div class="number-large" id="currentQueue">-</div>
+
+            <div class="label" style="margin-top: 0.5em;">ช่อง/Station</div>
+            <div class="subtitle">(ဌာန/Quầy/ស្ថានីយ៍/窗口)</div>
+            <div class="number-large" id="currentStation">-</div>
+        </div>
+
+        <!-- Right Column: History table with headers having separate subtitles -->
+        <div class="history-section">
+            <table class="history-table">
+                <thead>
+                    <tr>
+                        <th>
+                            คิว/Queue<br>
+                            <span class="subtitle">(လိုင်း/Số thứ tự/បន្ទាត់/排队)</span>
+                        </th>
+                        <th>
+                            ช่อง/Station<br>
+                            <span class="subtitle">(ဌာန/Quầy/ស្ថានីយ៍/窗口)</span>
+                        </th>
+                    </tr>
+                </thead>
+                <tbody id="historyTable"></tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Audio element for chime sound from public/chime.mp3 -->
+    <audio id="chimeAudio" src="chime.mp3" preload="auto"></audio>
+
+    <script>
+        const socket = new EventSource("/events");
+        const MAX_HISTORY = 10;
+        const currentQueueEl = document.getElementById("currentQueue");
+        const currentStationEl = document.getElementById("currentStation");
+        const historyTableBody = document.getElementById("historyTable");
+        const chimeAudio = document.getElementById("chimeAudio");
+
+        socket.onmessage = function (event) {
+            const { queue, station } = JSON.parse(event.data);
+
+            // Remove any existing history entry with the same queue number
+            const rows = historyTableBody.getElementsByTagName("tr");
+            for (let i = rows.length - 1; i >= 0; i--) {
+                const cellValue = rows[i].getElementsByTagName("td")[0].textContent;
+                if (cellValue === String(queue)) {
+                    historyTableBody.removeChild(rows[i]);
+                }
+            }
+
+            // Update current display
+            currentQueueEl.textContent = queue;
+            currentStationEl.textContent = station;
+
+            // Insert new entry at the top of history
+            const row = document.createElement("tr");
+            row.innerHTML = `<td>${queue}</td><td>${station}</td>`;
+            historyTableBody.insertBefore(row, historyTableBody.firstChild);
+
+            // Maintain maximum history entries
+            while (historyTableBody.children.length > MAX_HISTORY) {
+                historyTableBody.removeChild(historyTableBody.lastChild);
+            }
+
+            // Play the chime sound from the file
+            chimeAudio.currentTime = 0;
+            chimeAudio.play().catch(err => {
+                console.warn("Chime playback failed:", err);
+            });
+        };
+    </script>
+</body>
+
+</html>
