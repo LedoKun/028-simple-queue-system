@@ -74,16 +74,6 @@ The project is structured as follows:
 └── ... other files
 ```
 
-## Configuration
-
-### Port Configuration
-
-The application defaults to port `3000`. To change the port, set the `PORT` environment variable. For example:
-
-```bash
-PORT=4000 yarn start
-```
-
 ### Chime Sound
 
 Ensure that `chime.mp3` is placed in the `public/` directory.
