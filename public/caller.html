@@ -4,12 +4,86 @@
 <head>
     <meta charset="UTF-8">
     <title>Call Queue</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link href="https://fonts.googleapis.com/css2?family=Battambang&display=swap" rel="stylesheet">
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            background-color: #1a1a1a;
+            color: #f0f0f0;
+            font-family: Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+        }
+
+        h2 {
+            font-size: 2.5em;
+            margin-bottom: 20px;
+            color: #b19cd9;
+            text-align: center;
+        }
+
+        label {
+            font-size: 1.5em;
+            margin-bottom: 10px;
+            display: block;
+            width: 100%;
+            max-width: 400px;
+        }
+
+        input[type="text"] {
+            padding: 10px;
+            font-size: 1.2em;
+            background-color: #2a2a2a;
+            color: #f0f0f0;
+            border: 1px solid #333;
+            border-radius: 5px;
+            width: calc(100% - 22px);
+            margin-top: 5px;
+            box-sizing: border-box;
+        }
+
+        button {
+            padding: 15px 30px;
+            font-size: 1.2em;
+            background-color: #b19cd9;
+            color: #1a1a1a;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            margin-top: 20px;
+            transition: background-color 0.3s ease;
+        }
+
+        button:hover {
+            background-color: #9a84c2;
+        }
+
+        @media only screen and (max-width: 600px) {
+            h2 {
+                font-size: 2em;
+            }
+
+            label {
+                font-size: 1.2em;
+            }
+
+            input[type="text"],
+            button {
+                font-size: 1em;
+            }
+        }
+    </style>
 </head>
 
 <body>
     <h2>Queue Caller Interface</h2>
-    <label>Station Number: <input type="text" id="station"></label><br><br>
-    <label>Queue Number: <input type="text" id="queue"></label><br><br>
+    <label>Station Number: <input type="text" id="station"></label><br>
+    <label>Queue Number: <input type="text" id="queue"></label><br>
     <button onclick="callQueue()">Call Queue</button>
 
     <script>
