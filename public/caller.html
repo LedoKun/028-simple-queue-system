@@ -96,8 +96,6 @@
     <button id="callButton" onclick="callQueue()">Call Queue</button>
 
     <script>
-        let stationFocused = false;
-
         window.onload = function () {
             const stationInput = document.getElementById('station');
             stationInput.focus();
@@ -105,14 +103,7 @@
         };
 
         document.getElementById('station').addEventListener('focus', function () {
-            if (stationFocused && document.getElementById('queue').value !== '') {
-                const queueInput = document.getElementById('queue');
-                queueInput.focus();
-                queueInput.select();
-            } else {
-                this.select();
-            }
-            stationFocused = true;
+            this.select(); // Always select the station input on focus
         });
 
         document.getElementById('queue').addEventListener('focus', function () {
