@@ -5,15 +5,16 @@
     <meta charset="UTF-8">
     <title>Queue TV Display</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link href="https://fonts.googleapis.com/css2?family=Battambang&display=swap" rel="stylesheet">
     <style>
         /* Global styling */
         body {
             margin: 0;
             padding: 0;
-            background-color: #4A4A4A;
-            /* Dark gray background */
+            background-color: #1a1a1a;
             font-family: Arial, sans-serif;
-            color: #EFEFEF;
+            /* Default font */
+            color: #f0f0f0;
         }
 
         /* Container splits the screen into 2 columns */
@@ -31,7 +32,7 @@
             flex-direction: column;
             justify-content: center;
             align-items: center;
-            border-right: 2px solid #8A8A8A;
+            border-right: 2px solid #333;
         }
 
         .label {
@@ -39,20 +40,25 @@
             text-transform: uppercase;
             letter-spacing: 1px;
             margin-bottom: 0.1em;
+            animation: fadeIn 0.5s ease-in-out;
         }
 
         .subtitle {
             font-size: 1.5em;
-            /* Smaller font for translation */
             font-weight: normal;
             margin-bottom: 0.5em;
+            color: #bbb;
+            animation: fadeIn 0.5s ease-in-out 0.2s;
+            font-family: 'Battambang', Arial, sans-serif;
+            /* Apply Khmer font */
         }
 
         .number-large {
             font-size: 7em;
             font-weight: bold;
-            color: #CFC5FA;
+            color: #b19cd9;
             margin: 0.2em 0;
+            animation: numberChange 0.8s ease-in-out;
         }
 
         /* Right column: History table */
@@ -74,13 +80,13 @@
         .history-table th,
         .history-table td {
             padding: 0.5em 1em;
-            border-bottom: 1px solid #8A8A8A;
+            border-bottom: 1px solid #333;
         }
 
         .history-table th {
             font-weight: 600;
             text-transform: uppercase;
-            background-color: #6A6A6A;
+            background-color: #333;
         }
 
         .history-table .subtitle {
@@ -88,10 +94,14 @@
             font-weight: normal;
             margin: 0;
             display: block;
+            color: #999;
+            font-family: 'Battambang', Arial, sans-serif;
+            /* Apply Khmer font */
         }
 
         .history-table td {
-            background-color: #5A5A5A;
+            background-color: #2a2a2a;
+            animation: rowFadeIn 0.5s ease-in-out;
         }
 
         /* Responsive adjustments for smaller screens */
@@ -117,12 +127,46 @@
                 font-size: 0.7em;
             }
         }
+
+        /* Animations */
+        @keyframes numberChange {
+            from {
+                opacity: 0.5;
+                transform: scale(0.8);
+            }
+
+            to {
+                opacity: 1;
+                transform: scale(1);
+            }
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+            }
+
+            to {
+                opacity: 1;
+            }
+        }
+
+        @keyframes rowFadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(-10px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
     </style>
 </head>
 
 <body>
     <div class="container">
-        <!-- Left Column: Current Queue & Station with static labels and separate subtitles -->
         <div class="current-queue-station">
             <div class="label">คิว/Queue</div>
             <div class="subtitle">(လိုင်း/Số thứ tự/បន្ទាត់/排队)</div>
@@ -133,7 +177,6 @@
             <div class="number-large" id="currentStation">-</div>
         </div>
 
-        <!-- Right Column: History table with headers having separate subtitles -->
         <div class="history-section">
             <table class="history-table">
                 <thead>
@@ -153,7 +196,6 @@
         </div>
     </div>
 
-    <!-- Audio element for chime sound from public/chime.mp3 -->
     <audio id="chimeAudio" src="chime.mp3" preload="auto"></audio>
 
     <script>
@@ -176,11 +218,17 @@
                 }
             }
 
-            // Update current display
+            // Update current display with animation
             currentQueueEl.textContent = queue;
             currentStationEl.textContent = station;
+            currentQueueEl.style.animation = 'none';
+            currentQueueEl.offsetHeight; /* trigger reflow */
+            currentQueueEl.style.animation = null;
+            currentStationEl.style.animation = 'none';
+            currentStationEl.offsetHeight; /* trigger reflow */
+            currentStationEl.style.animation = null;
 
-            // Insert new entry at the top of history
+            // Insert new entry at the top of history with animation
             const row = document.createElement("tr");
             row.innerHTML = `<td>${queue}</td><td>${station}</td>`;
             historyTableBody.insertBefore(row, historyTableBody.firstChild);
