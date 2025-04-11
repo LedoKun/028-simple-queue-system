@@ -84,9 +84,39 @@
     <h2>Queue Caller Interface</h2>
     <label>Station Number: <input type="text" id="station"></label><br>
     <label>Queue Number: <input type="text" id="queue"></label><br>
-    <button onclick="callQueue()">Call Queue</button>
+    <button id="callButton" onclick="callQueue()">Call Queue</button>
 
     <script>
+        let stationFocused = false;
+
+        window.onload = function () {
+            const stationInput = document.getElementById('station');
+            stationInput.focus();
+            stationInput.select(); // Highlight existing content
+        };
+
+        document.getElementById('station').addEventListener('focus', function () {
+            if (stationFocused && document.getElementById('queue').value !== '') {
+                const queueInput = document.getElementById('queue');
+                queueInput.focus();
+                queueInput.select(); // Highlight existing content
+            } else {
+                this.select(); // Highlight existing content
+            }
+            stationFocused = true;
+        });
+
+        document.getElementById('queue').addEventListener('focus', function () {
+            this.select();
+        });
+
+        document.addEventListener('keydown', function (event) {
+            if (event.key === 'Enter') {
+                event.preventDefault();
+                callQueue();
+            }
+        });
+
         function callQueue() {
             const queue = document.getElementById("queue").value;
             const station = document.getElementById("station").value;
