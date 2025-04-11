@@ -13,7 +13,6 @@
             padding: 0;
             background-color: #1a1a1a;
             font-family: Arial, sans-serif;
-            /* Default font */
             color: #f0f0f0;
         }
 
@@ -50,7 +49,6 @@
             color: #bbb;
             animation: fadeIn 0.5s ease-in-out 0.2s;
             font-family: 'Battambang', Arial, sans-serif;
-            /* Apply Khmer font */
         }
 
         .number-large {
@@ -96,7 +94,6 @@
             display: block;
             color: #999;
             font-family: 'Battambang', Arial, sans-serif;
-            /* Apply Khmer font */
         }
 
         .history-table td {
@@ -200,11 +197,24 @@
 
     <script>
         const socket = new EventSource("/events");
-        const MAX_HISTORY = 10;
         const currentQueueEl = document.getElementById("currentQueue");
         const currentStationEl = document.getElementById("currentStation");
         const historyTableBody = document.getElementById("historyTable");
         const chimeAudio = document.getElementById("chimeAudio");
+
+        function calculateMaxHistory() {
+            const firstRow = historyTableBody.querySelector('tr');
+            if (!firstRow) return 10; // Default if no rows yet
+            const rowHeight = firstRow.offsetHeight;
+            const availableHeight = historyTableBody.parentElement.offsetHeight;
+            return Math.floor(availableHeight / rowHeight);
+        }
+
+        let MAX_HISTORY = calculateMaxHistory();
+
+        window.addEventListener('resize', () => {
+            MAX_HISTORY = calculateMaxHistory();
+        });
 
         socket.onmessage = function (event) {
             const { queue, station } = JSON.parse(event.data);
@@ -222,10 +232,10 @@
             currentQueueEl.textContent = queue;
             currentStationEl.textContent = station;
             currentQueueEl.style.animation = 'none';
-            currentQueueEl.offsetHeight; /* trigger reflow */
+            currentQueueEl.offsetHeight;
             currentQueueEl.style.animation = null;
             currentStationEl.style.animation = 'none';
-            currentStationEl.offsetHeight; /* trigger reflow */
+            currentStationEl.offsetHeight;
             currentStationEl.style.animation = null;
 
             // Insert new entry at the top of history with animation
