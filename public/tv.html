@@ -7,6 +7,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link href="https://fonts.googleapis.com/css2?family=Battambang&display=swap" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Thai:wght@400;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;700&display=swap" rel="stylesheet">
     <style>
         * {
             box-sizing: border-box;
@@ -21,7 +24,8 @@
             padding: 0;
             background-color: #1a1a1a;
             color: #f0f0f0;
-            font-family: 'Noto Sans Thai', 'Battambang', Arial, sans-serif;
+            /* Added more fonts to the stack */
+            font-family: 'Noto Sans Thai', 'Noto Sans SC', 'Noto Sans JP', 'Roboto', 'Battambang', Arial, sans-serif;
             display: flex;
             height: 100vh;
             width: 100vw;
@@ -60,7 +64,8 @@
             margin-bottom: 0.5em;
             color: #bbb;
             animation: fadeIn 0.5s ease-in-out 0.2s;
-            font-family: 'Battambang', Arial, sans-serif;
+            font-family: 'Roboto', 'Battambang', Arial, sans-serif;
+            /* Separate font stack for subtitles if needed */
             text-align: center;
             line-height: 1.2;
         }
@@ -75,32 +80,29 @@
             line-height: 1.1;
         }
 
-        /* --- History Section Layout (Simplified) --- */
         .history-section {
             flex: 1;
-            /* Takes remaining width */
             display: flex;
-            /* Keep as flex container for table */
             flex-direction: column;
-            /* Stack children (table) */
             overflow-y: auto;
-            /* Scroll the WHOLE section */
             min-height: 0;
-            /* Help flex sizing */
         }
 
-        /* --- Table Layout (Simplified) --- */
         .history-table {
             width: 100%;
             border-collapse: collapse;
             font-size: 2vw;
             text-align: center;
-            /* Let table size itself naturally within history-section */
         }
 
         .history-table thead {
-            /* Standard header group */
             background-color: #333;
+            position: sticky;
+            /* Make header sticky */
+            top: 0;
+            /* Stick to the top of the scrollable container */
+            z-index: 1;
+            /* Keep header above scrolling content */
         }
 
         .history-table th {
@@ -115,10 +117,8 @@
             border-bottom: 1px solid #333;
             word-break: break-all;
             animation: rowFadeIn 0.5s ease-in-out;
-            /* Standard table cell display */
         }
 
-        /* Row striping (standard table behaviour) */
         .history-table tbody tr:nth-child(even) {
             background-color: #2a2a2a;
         }
@@ -127,7 +127,6 @@
             background-color: #222;
         }
 
-        /* Media query (Simplified table layout needs less adjustment) */
         @media only screen and (max-width: 768px) {
             body {
                 height: auto;
@@ -150,6 +149,9 @@
                 flex: 1 1 auto;
                 overflow-y: auto;
                 min-height: 200px;
+                /* Adjust as needed */
+                max-height: 50vh;
+                /* Prevent history taking too much space */
             }
 
             .label {
@@ -167,6 +169,23 @@
             .history-table {
                 font-size: 4vw;
             }
+
+            .history-table thead {
+                position: static;
+                /* Disable sticky header on small screens if problematic */
+            }
+        }
+
+        @keyframes numberChange {
+            /* ... unchanged ... */
+        }
+
+        @keyframes fadeIn {
+            /* ... unchanged ... */
+        }
+
+        @keyframes rowFadeIn {
+            /* ... unchanged ... */
         }
 
         /* Keyframes (Unchanged) */
@@ -210,18 +229,18 @@
     <div class="container">
         <div class="current-queue-station">
             <div class="label">คิว/Queue</div>
-            <div class="subtitle">(လိုင်း/Số thứ tự/បន្ទាត់/排队)</div>
+            <div class="subtitle">(လိုင်း/Số/Pila/番号/排队)</div>
             <div class="number-large" id="currentQueue">-</div>
             <div class="label" style="margin-top: 0.5em;">ช่อง/Station</div>
-            <div class="subtitle">(ကောင်တာ/Quầy/ស្ថានីយ៍/窗口)</div>
+            <div class="subtitle">(ကောင်တာ/Quầy/Estasyon/窓口/窗口)</div>
             <div class="number-large" id="currentStation">-</div>
         </div>
         <div class="history-section">
             <table class="history-table">
                 <thead>
                     <tr>
-                        <th>คิว/Queue<br><span class="subtitle">(လိုင်း/Số thứ tự/បន្ទាត់/排队)</span></th>
-                        <th>ช่อง/Station<br><span class="subtitle">(ကောင်တာ/Quầy/ស្ថានីយ៍/窗口)</span></th>
+                        <th>คิว/Queue<br><span class="subtitle">(လိုင်း/Số/Pila/番号/排队)</span></th>
+                        <th>ช่อง/Station<br><span class="subtitle">(ကောင်တာ/Quầy/Estasyon/窓口/窗口)</span></th>
                     </tr>
                 </thead>
                 <tbody id="historyTable"></tbody>
@@ -233,113 +252,108 @@
     <audio id="ttsAudio" preload="none"></audio>
 
     <script>
-        // DOM Elements & State Variables (Unchanged)
+        // DOM Elements
         const currentQueueEl = document.getElementById("currentQueue");
         const currentStationEl = document.getElementById("currentStation");
         const historyTableBody = document.getElementById("historyTable");
         const chimeAudio = document.getElementById("chimeAudio");
         const ttsAudio = document.getElementById("ttsAudio");
-        let MAX_HISTORY = 10; // Default fallback
+
+        // State Variables
+        let MAX_HISTORY = 10; // Default, will be calculated
         let isPlayingTTS = false;
-        const announcementQueue = [];
-        const languagesToSpeak = ['th', 'en', 'vi', 'zh'];
+        const announcementQueue = []; // Holds objects: { type: 'queue', queue: '...', station: '...' } or { type: 'public' }
+        const languagesToSpeak = ['th', 'en', 'vi', 'zh-CN', 'ja']; // <<< UPDATED LANGUAGES ORDER
+        const publicAnnouncementLanguages = ['th', 'en', 'vi', 'zh-CN', 'ja']; // Languages for public announcements
         const RECONNECT_DELAY_MS = 5000;
-        const HISTORY_RECALC_INTERVAL_MS = 30000;
+        const HISTORY_RECALC_INTERVAL_MS = 30000; // Recalculate history size periodically
         let socket;
         let reconnectTimeoutId = null;
         let historyRecalcIntervalId = null;
 
-        // --- History Calculation (Unchanged) ---
+        // --- History Calculation (Simplified Layout Method - unchanged) ---
         function calculateMaxHistory() {
-            console.log("--- Running calculateMaxHistory (Simplified Layout Method) ---");
+            console.log("--- Running calculateMaxHistory ---");
             try {
                 const tableHeader = historyTableBody.previousElementSibling; // thead
-                const historySection = historyTableBody.closest('.history-section'); // Use closest to be sure
-                if (!historySection) {
-                    console.error("Cannot find parent .history-section!");
-                    MAX_HISTORY = 10; return; // Exit if container not found
-                }
-                const containerHeight = historySection.offsetHeight; // Height of .history-section
-                const headerHeight = tableHeader ? tableHeader.offsetHeight : 0; // Height of the thead
-                // Calculate available height *within* the history section, below the header
+                const historySection = historyTableBody.closest('.history-section');
+                if (!historySection) { console.error("Cannot find parent .history-section!"); MAX_HISTORY = 10; return; }
+
+                const containerHeight = historySection.offsetHeight;
+                const headerHeight = tableHeader ? tableHeader.offsetHeight : 0;
                 const availableHeight = containerHeight - headerHeight;
+                console.log(`[Calc] Container: ${containerHeight}, Header: ${headerHeight}, Available: ${availableHeight.toFixed(2)}`);
 
-                console.log(`[Calc] Container Height: ${containerHeight}, Header Height: ${headerHeight}, Available Height: ${availableHeight.toFixed(2)}`);
-
-                if (availableHeight > 0) {
-                    if (historyTableBody.children.length > 0) {
-                        // --- Calculate based on existing rows ---
-                        const firstRow = historyTableBody.children[0];
-                        const rowHeight = firstRow.offsetHeight;
-                        if (rowHeight > 0) {
-                            // Calculate based on space BELOW the header
-                            MAX_HISTORY = Math.max(1, Math.floor(availableHeight / rowHeight));
-                            console.log(`[Calc Real Row] Row Height: ${rowHeight.toFixed(2)}, Calculated MAX_HISTORY: ${MAX_HISTORY}`);
-                        } else {
-                            console.warn(`[Calc Real Row] Fallback Trigger: Measured rowHeight is ${rowHeight}`);
-                            MAX_HISTORY = 10;
-                            console.log(`[Calc Real Row] Fallback MAX_HISTORY set to: ${MAX_HISTORY}`);
-                        }
-                    } else {
-                        // --- Estimate based on styles if no rows exist ---
-                        let tableFontSizeVw = 2;
-                        if (window.matchMedia("only screen and (max-width: 768px)").matches) { tableFontSizeVw = 4; }
-                        const baseFontSizePx = window.innerWidth * (tableFontSizeVw / 100);
-                        const rowPaddingTopEm = 0.4; const rowPaddingBottomEm = 0.4;
-                        const approxLineHeightFactor = 1.3; const borderBottomPx = 1;
-                        const estimatedRowHeight = (rowPaddingTopEm * baseFontSizePx) + (rowPaddingBottomEm * baseFontSizePx) + (approxLineHeightFactor * baseFontSizePx) + borderBottomPx;
-                        console.log(`[Estimation] Base Font Size (px): ${baseFontSizePx.toFixed(2)}, Estimated Row Height: ${estimatedRowHeight.toFixed(2)}`);
-                        if (estimatedRowHeight > 0) {
-                            // Estimate based on space BELOW the header
-                            MAX_HISTORY = Math.max(1, Math.floor(availableHeight / estimatedRowHeight));
-                            console.log(`Estimated MAX_HISTORY (no rows): ${MAX_HISTORY}`);
-                        } else {
-                            console.warn(`[Estimation] Fallback Trigger: Estimated rowHeight is ${estimatedRowHeight.toFixed(2)}`);
-                            MAX_HISTORY = 10;
-                            console.log(`Using fallback MAX_HISTORY (estimation failed): ${MAX_HISTORY}`);
-                        }
-                    }
-                } else {
-                    // Fallback if availableHeight is zero or negative
-                    console.warn(`Fallback Trigger: availableHeight is ${availableHeight.toFixed(2)}`);
-                    MAX_HISTORY = 10;
-                    console.log(`Using fallback MAX_HISTORY (availableHeight <= 0): ${MAX_HISTORY}`);
+                if (availableHeight <= 0) {
+                    console.warn(`Fallback: availableHeight (${availableHeight.toFixed(2)}) <= 0`); MAX_HISTORY = 10; trimHistory(); return;
                 }
 
-                trimHistory();
-
-            } catch (error) {
-                console.error("Error during calculateMaxHistory:", error);
-                console.warn("Fallback Trigger: Caught error in calculation.");
-                MAX_HISTORY = 10;
-                console.log(`Using fallback MAX_HISTORY (error caught): ${MAX_HISTORY}`);
-            }
-            console.log("--- Finished calculateMaxHistory ---");
+                if (historyTableBody.children.length > 0) {
+                    const firstRow = historyTableBody.children[0];
+                    const rowHeight = firstRow.offsetHeight;
+                    if (rowHeight > 0) {
+                        MAX_HISTORY = Math.max(1, Math.floor(availableHeight / rowHeight));
+                        console.log(`[Calc Real Row] Row Height: ${rowHeight.toFixed(2)}, Calculated MAX_HISTORY: ${MAX_HISTORY}`);
+                    } else { console.warn(`Fallback: Measured rowHeight is ${rowHeight}`); MAX_HISTORY = 10; }
+                } else {
+                    // Estimate if no rows exist (less reliable)
+                    let tableFontSizeVw = 2;
+                    if (window.matchMedia("only screen and (max-width: 768px)").matches) { tableFontSizeVw = 4; }
+                    const baseFontSizePx = window.innerWidth * (tableFontSizeVw / 100);
+                    const rowPaddingTopEm = 0.4; const rowPaddingBottomEm = 0.4;
+                    const approxLineHeightFactor = 1.3; const borderBottomPx = 1;
+                    const estimatedRowHeight = (rowPaddingTopEm * baseFontSizePx) + (rowPaddingBottomEm * baseFontSizePx) + (approxLineHeightFactor * baseFontSizePx) + borderBottomPx;
+                    console.log(`[Estimation] Base Font(px): ${baseFontSizePx.toFixed(2)}, Estimated Row Height: ${estimatedRowHeight.toFixed(2)}`);
+                    if (estimatedRowHeight > 0) { MAX_HISTORY = Math.max(1, Math.floor(availableHeight / estimatedRowHeight)); console.log(`Estimated MAX_HISTORY (no rows): ${MAX_HISTORY}`); }
+                    else { console.warn(`Fallback: Estimated rowHeight is ${estimatedRowHeight.toFixed(2)}`); MAX_HISTORY = 10; }
+                }
+                trimHistory(); // Apply the calculated limit
+            } catch (error) { console.error("Error during calculateMaxHistory:", error); MAX_HISTORY = 10; }
+            console.log(`--- Current MAX_HISTORY = ${MAX_HISTORY} ---`);
         }
 
-        // --- Other Functions (trimHistory, connectEventSource, updateDisplay, TTS, Initialization) ---
-
+        // --- Trim History ---
         function trimHistory() {
             while (historyTableBody.children.length > MAX_HISTORY) {
                 historyTableBody.removeChild(historyTableBody.lastChild);
             }
         }
 
+        // --- Connect to SSE ---
         function connectEventSource() {
             if (reconnectTimeoutId) { clearTimeout(reconnectTimeoutId); reconnectTimeoutId = null; }
             if (socket) { socket.close(); }
             console.log("Attempting to connect to SSE endpoint...");
-            socket = new EventSource("/events");
+            socket = new EventSource("/events"); // Assuming server serves from root
+
             socket.onopen = function () { console.log("SSE connection established."); };
+
             socket.onmessage = function (event) {
                 try {
-                    if (event.data.startsWith(': heartbeat')) { return; }
-                    const { queue, station } = JSON.parse(event.data);
-                    updateDisplay(queue, station);
-                    announcementQueue.push({ queue, station });
-                    playNextAnnouncement();
-                } catch (error) { console.error("Error processing SSE message:", error, "Data:", event.data); }
+                    if (event.data.startsWith(': heartbeat')) { return; } // Ignore heartbeats
+
+                    console.log("SSE message received:", event.data);
+                    const data = JSON.parse(event.data);
+
+                    // Check if it's a public announcement trigger or a queue call
+                    if (data.type === 'public_announcement') {
+                        console.log("Public announcement trigger received.");
+                        announcementQueue.push({ type: 'public' });
+                        playNextAnnouncement(); // Attempt to play if not already playing
+                    } else if (data.queue && data.station) {
+                        // Assume it's a queue call if it has queue and station
+                        console.log(`Queue call received: ${data.queue} / ${data.station}`);
+                        updateDisplay(data.queue, data.station);
+                        announcementQueue.push({ type: 'queue', queue: data.queue, station: data.station });
+                        playNextAnnouncement(); // Attempt to play if not already playing
+                    } else {
+                        console.warn("Received unknown SSE message format:", data);
+                    }
+                } catch (error) {
+                    console.error("Error processing SSE message:", error, "Data:", event.data);
+                }
             };
+
             socket.onerror = function (error) {
                 console.error("SSE connection error:", error);
                 socket.close();
@@ -350,147 +364,230 @@
             };
         }
 
-        // --- MODIFIED updateDisplay Function ---
+        // --- Update Display --- (Modified to handle potential duplicates better)
         function updateDisplay(queue, station) {
-            const rows = historyTableBody.getElementsByTagName("tr");
-            // Convert queue and station to strings for reliable comparison
             const queueStr = String(queue);
             const stationStr = String(station);
 
-            // Loop through existing history rows to find an exact match
-            for (let i = rows.length - 1; i >= 0; i--) {
-                const cells = rows[i].getElementsByTagName("td");
-                // Ensure we have at least two cells (queue and station) before checking
-                if (cells.length > 1 && cells[0].textContent === queueStr && cells[1].textContent === stationStr) {
-                    console.log(`Found exact match in history for ${queueStr}:${stationStr}. Removing row.`);
-                    historyTableBody.removeChild(rows[i]);
-                    break; // Exit loop once the match is found and removed
-                }
-            }
-
-            // Update the main display elements
+            // Update main display
             currentQueueEl.textContent = queueStr;
             currentStationEl.textContent = stationStr;
 
-            // Trigger animation restart for the updated numbers
-            currentQueueEl.style.animation = 'none';
-            currentQueueEl.offsetHeight; /* trigger reflow */
-            currentQueueEl.style.animation = null;
-            currentStationEl.style.animation = 'none';
-            currentStationEl.offsetHeight; /* trigger reflow */
-            currentStationEl.style.animation = null;
+            // Trigger animations
+            currentQueueEl.style.animation = 'none'; currentQueueEl.offsetHeight; currentQueueEl.style.animation = null;
+            currentStationEl.style.animation = 'none'; currentStationEl.offsetHeight; currentStationEl.style.animation = null;
 
-            // Create a new row for the history table
+            // Check if exact same call is already *the first* item in history
+            const firstRow = historyTableBody.firstChild;
+            if (firstRow) {
+                const cells = firstRow.getElementsByTagName("td");
+                if (cells.length > 1 && cells[0].textContent === queueStr && cells[1].textContent === stationStr) {
+                    console.log(`Call ${queueStr}:${stationStr} is already the latest in history. Skipping add.`);
+                    return; // Don't add if it's already the most recent
+                }
+            }
+
+            // Create and add new history row
             const row = document.createElement("tr");
             row.innerHTML = `<td>${queueStr}</td><td>${stationStr}</td>`;
-
-            // Add the new row to the top of the history
             historyTableBody.insertBefore(row, historyTableBody.firstChild);
 
-            // Trim history if it exceeds the maximum allowed rows
+            // Trim history based on calculated MAX_HISTORY
             trimHistory();
         }
-        // --- End of MODIFIED updateDisplay Function ---
 
+
+        // --- Announcement Playback Logic ---
 
         function playNextAnnouncement() {
-            if (isPlayingTTS || announcementQueue.length === 0) { return; }
-            isPlayingTTS = true;
-            const { queue, station } = announcementQueue.shift();
+            if (isPlayingTTS || announcementQueue.length === 0) {
+                return; // Don't play if already playing or queue is empty
+            }
+
+            const announcement = announcementQueue[0]; // Peek at the next item
+
+            isPlayingTTS = true; // Set flag *before* starting async operations
+
+            // Play chime first (optional, based on your preference)
             chimeAudio.currentTime = 0;
-            chimeAudio.play()
-                .then(() => {
-                    chimeAudio.onended = () => {
-                        playLanguagesSequentially(queue, station, 0);
-                        chimeAudio.onended = null;
-                    };
-                })
-                .catch(err => {
-                    // Log warning but continue, maybe user interaction needed first time
-                    console.warn("Chime playback failed (perhaps needs user interaction first?):", err, "- proceeding with TTS.");
-                    // Add a small delay before TTS if chime fails immediately
-                    setTimeout(() => playLanguagesSequentially(queue, station, 0), 200);
-                });
+            const chimePromise = chimeAudio.play().catch(err => {
+                console.warn("Chime playback failed (user interaction needed?):", err);
+                // Don't stop the process if chime fails, just continue after a short delay
+                return new Promise(resolve => setTimeout(resolve, 100));
+            });
+
+
+            chimePromise.then(() => {
+                // Use onended for chime to ensure it finishes before TTS starts
+                chimeAudio.onended = () => {
+                    chimeAudio.onended = null; // Clear listener
+                    // Remove the announcement from the queue *now* that we are processing it
+                    announcementQueue.shift();
+                    // Delegate based on type
+                    if (announcement.type === 'queue') {
+                        console.log(`Starting QUEUE announcement: ${announcement.queue}/${announcement.station}`);
+                        playLanguagesSequentially(announcement, 0);
+                    } else if (announcement.type === 'public') {
+                        console.log("Starting PUBLIC announcement.");
+                        playPublicAnnouncements(0);
+                    } else {
+                        console.error("Unknown announcement type in queue:", announcement);
+                        isPlayingTTS = false; // Reset flag
+                        setTimeout(playNextAnnouncement, 100); // Try next item quickly
+                    }
+                };
+                // If chime already ended or failed immediately, trigger manually
+                if (chimeAudio.paused || chimeAudio.ended) {
+                    chimeAudio.onended();
+                }
+            });
         }
 
-        function playLanguagesSequentially(queue, station, langIndex) {
+        // Plays QUEUE call languages
+        function playLanguagesSequentially(announcementData, langIndex) {
+            const { queue, station } = announcementData;
+
             if (langIndex >= languagesToSpeak.length) {
+                console.log(`Finished all languages for QUEUE ${queue}/${station}`);
                 isPlayingTTS = false;
-                setTimeout(playNextAnnouncement, 500); // Delay before checking queue again
+                setTimeout(playNextAnnouncement, 500); // Check queue after a delay
                 return;
             }
-            const lang = languagesToSpeak[langIndex];
-            const ttsUrl = `/speak?queue=${encodeURIComponent(queue)}&station=${encodeURIComponent(station)}&lang=${lang}`;
 
-            console.log(`Playing TTS: ${lang} for ${queue}/${station}`);
-            ttsAudio.src = ttsUrl;
-            ttsAudio.load(); // Important: Load the new source
+            const lang = languagesToSpeak[langIndex];
+            const ttsUrl = `/speak?queue=${encodeURIComponent(queue)}&station=${encodeURIComponent(station)}&lang=${encodeURIComponent(lang)}`;
+
+            console.log(`Playing QUEUE TTS: ${lang} for ${queue}/${station} - URL: ${ttsUrl}`);
+            playTTSAudio(ttsUrl, () => {
+                // On successful playback end
+                playLanguagesSequentially(announcementData, langIndex + 1);
+            }, () => {
+                // On error during playback
+                console.error(`Error during QUEUE TTS playback for ${lang}. Skipping to next.`);
+                playLanguagesSequentially(announcementData, langIndex + 1);
+            });
+        }
+
+        // Plays PUBLIC announcement languages
+        function playPublicAnnouncements(langIndex) {
+            if (langIndex >= publicAnnouncementLanguages.length) {
+                console.log("Finished all languages for PUBLIC announcement.");
+                isPlayingTTS = false;
+                setTimeout(playNextAnnouncement, 500); // Check queue after a delay
+                return;
+            }
+
+            const lang = publicAnnouncementLanguages[langIndex];
+            const ttsUrl = `/speak-announcement?lang=${encodeURIComponent(lang)}`;
+
+            console.log(`Playing PUBLIC TTS: ${lang} - URL: ${ttsUrl}`);
+            playTTSAudio(ttsUrl, () => {
+                // On successful playback end
+                playPublicAnnouncements(langIndex + 1);
+            }, () => {
+                // On error during playback
+                console.error(`Error during PUBLIC TTS playback for ${lang}. Skipping to next.`);
+                playPublicAnnouncements(langIndex + 1);
+            });
+        }
+
+
+        // --- Generic TTS Audio Player Function ---
+        function playTTSAudio(url, onEndCallback, onErrorCallback) {
+            ttsAudio.src = url;
+            ttsAudio.load(); // Important to load the new source
 
             const playPromise = ttsAudio.play();
 
             if (playPromise !== undefined) {
                 playPromise.then(() => {
-                    // Playback started successfully
+                    // Playback started
+                    console.log(`Audio playback started for: ${url}`);
                     ttsAudio.onended = () => {
-                        console.log(`Finished TTS: ${lang} for ${queue}/${station}`);
+                        console.log(`Audio playback finished for: ${url}`);
                         ttsAudio.onended = null; // Clean up listener
-                        // Add a small delay before the next language
-                        setTimeout(() => playLanguagesSequentially(queue, station, langIndex + 1), 100);
+                        ttsAudio.onerror = null;  // Clean up error listener too
+                        setTimeout(onEndCallback, 100); // Small delay before next action
+                    };
+                    ttsAudio.onerror = (e) => {
+                        console.error(`Audio playback error (promise API) for ${url}:`, e);
+                        ttsAudio.onended = null;
+                        ttsAudio.onerror = null;
+                        setTimeout(onErrorCallback, 100); // Move to next on error
                     };
                 }).catch(error => {
-                    // Log error and proceed to next language
-                    console.error(`Error playing ${lang} TTS for ${queue}/${station}:`, error);
-                    ttsAudio.onended = null; // Clean up listener in case of error
-                    // Proceed to the next language even if one fails
-                    setTimeout(() => playLanguagesSequentially(queue, station, langIndex + 1), 100);
+                    console.error(`Error initiating playback for ${url}:`, error);
+                    // If play() promise rejects, trigger the error callback
+                    setTimeout(onErrorCallback, 100);
                 });
             } else {
-                // Fallback for browsers where play() doesn't return a promise (older?)
-                console.warn(`ttsAudio.play() did not return a promise for ${lang}. Using event listener fallback.`);
-                const playingHandler = () => {
-                    console.log(`Playback started (event): ${lang} for ${queue}/${station}`);
-                    ttsAudio.removeEventListener('playing', playingHandler); // Clean up
-                };
+                // Fallback for browsers without promise support (less common now)
+                console.warn(`ttsAudio.play() did not return a promise for ${url}. Using event listener fallback.`);
                 const endedHandler = () => {
-                    console.log(`Finished TTS (event): ${lang} for ${queue}/${station}`);
-                    ttsAudio.removeEventListener('ended', endedHandler); // Clean up
-                    ttsAudio.removeEventListener('error', errorHandler); // Clean up
-                    setTimeout(() => playLanguagesSequentially(queue, station, langIndex + 1), 100);
+                    console.log(`Audio playback finished (event) for: ${url}`);
+                    cleanupListeners();
+                    setTimeout(onEndCallback, 100);
                 };
                 const errorHandler = (e) => {
-                    console.error(`Error playing ${lang} TTS for ${queue}/${station} (event):`, e);
-                    ttsAudio.removeEventListener('playing', playingHandler); // Clean up
-                    ttsAudio.removeEventListener('ended', endedHandler); // Clean up
-                    ttsAudio.removeEventListener('error', errorHandler); // Clean up
-                    setTimeout(() => playLanguagesSequentially(queue, station, langIndex + 1), 100);
+                    console.error(`Audio playback error (event) for ${url}:`, e);
+                    cleanupListeners();
+                    setTimeout(onErrorCallback, 100);
                 };
-                ttsAudio.addEventListener('playing', playingHandler);
+                const cleanupListeners = () => {
+                    ttsAudio.removeEventListener('ended', endedHandler);
+                    ttsAudio.removeEventListener('error', errorHandler);
+                    ttsAudio.removeEventListener('canplaythrough', canPlayHandler); // Also cleanup this if used
+                }
+                // Use canplaythrough to ensure audio is somewhat ready
+                const canPlayHandler = () => {
+                    console.log(`Audio can play through for: ${url}`);
+                };
+
                 ttsAudio.addEventListener('ended', endedHandler);
                 ttsAudio.addEventListener('error', errorHandler);
+                ttsAudio.addEventListener('canplaythrough', canPlayHandler);
+
+                // Try playing anyway
+                ttsAudio.play();
             }
         }
 
-        // General error handler for the audio element itself (e.g., network issues loading src)
-        ttsAudio.onerror = (e) => {
-            // Avoid logging redundant errors if caught by playPromise.catch or specific listeners
-            if (!isPlayingTTS) return; // Only log if we expected it to be playing
-            console.error("General TTS Audio Element Error:", e);
-            // Potentially try to advance the queue if a general error occurs
-            // isPlayingTTS = false;
-            // setTimeout(playNextAnnouncement, 500);
-        };
+        // General error handler on the audio element (e.g., network error loading src)
+        ttsAudio.addEventListener('error', (e) => {
+            // This catches errors like 404 or network issues BEFORE play() is even called successfully
+            // Check if we are *expecting* playback. Avoid logging if src is just changing.
+            if (isPlayingTTS && !ttsAudio.ended && ttsAudio.currentSrc === ttsAudio.src) {
+                console.error("General TTS Audio Element Error (e.g., loading failed):", e, "for src:", ttsAudio.src);
+                // If this happens, the specific error handler in playTTSAudio might not have been attached yet or fired.
+                // We should try to recover the playback queue.
+                // Caution: This could lead to double-skipping if not handled carefully.
+                // A simple recovery: mark as not playing and try next after delay.
+                // isPlayingTTS = false;
+                // setTimeout(playNextAnnouncement, 500);
+            }
+        });
 
 
-        // --- Initialization (Unchanged) ---
+        // --- Initialization ---
         window.addEventListener('load', () => {
             // Delay calculation slightly to ensure layout is stable
-            setTimeout(calculateMaxHistory, 250); // Initial calculation
-            // Set up periodic recalculation
-            if (historyRecalcIntervalId) clearInterval(historyRecalcIntervalId);
-            historyRecalcIntervalId = setInterval(calculateMaxHistory, HISTORY_RECALC_INTERVAL_MS);
-            console.log(`Started periodic history recalculation every ${HISTORY_RECALC_INTERVAL_MS / 1000} seconds.`);
+            setTimeout(() => {
+                calculateMaxHistory(); // Initial calculation
+                // Set up periodic recalculation
+                if (historyRecalcIntervalId) clearInterval(historyRecalcIntervalId);
+                historyRecalcIntervalId = setInterval(calculateMaxHistory, HISTORY_RECALC_INTERVAL_MS);
+                console.log(`Started periodic history recalculation every ${HISTORY_RECALC_INTERVAL_MS / 1000} seconds.`);
+            }, 250);
+
             // Connect to the server for events
             connectEventSource(); // Start SSE connection
+
+            // Add a click listener to potentially unlock audio playback on mobile/strict browsers
+            document.body.addEventListener('click', () => {
+                chimeAudio.load(); // Try loading audio elements on first interaction
+                ttsAudio.load();
+                console.log("User interaction detected, attempting to load audio.");
+            }, { once: true }); // Only run once
         });
         window.addEventListener('resize', calculateMaxHistory); // Recalculate on resize
         window.addEventListener('beforeunload', () => {
@@ -498,6 +595,9 @@
             if (socket) socket.close();
             if (reconnectTimeoutId) clearTimeout(reconnectTimeoutId);
             if (historyRecalcIntervalId) clearInterval(historyRecalcIntervalId);
+            // Stop any ongoing TTS
+            ttsAudio.pause();
+            ttsAudio.src = ""; // Clear source
         });
 
     </script>
