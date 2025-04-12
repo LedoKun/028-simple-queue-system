@@ -1,6 +1,13 @@
 # Use the official Node LTS Alpine image as the base
 FROM node:lts-alpine
 
+ENV NODE_ENV=production
+ENV PORT=3000
+ENV TZ=Asia/Bangkok
+ENV DEBOUNCINGINTERVALMS=3000
+ENV PUBLICANNOUNCEMENTINTERVALMS=1800000
+ENV STARTPUBLICANNOUNCEMENTSAFTERMS=30000
+
 # Install Tini for proper process management
 RUN apk add --no-cache tini
 
