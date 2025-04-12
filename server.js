@@ -4,8 +4,9 @@ const gtts = require('node-gtts');
 const app = express();
 const port = process.env.PORT || 3000;
 
-const debouncingIntervalMs = 3000; // 3 seconds
-const publicAnnouncementIntervalMs = 30 * 60 * 1000; // 30 minutes
+const debouncingIntervalMs = process.env.DEBOUNCINGINTERVALMS || 3000; // 3 seconds
+const publicAnnouncementIntervalMs = process.env.PUBLICANNOUNCEMENTINTERVALMS || 30 * 60 * 1000; // 30 minutes
+const startPublicAnnouncementsAfterMs = process.env.STARTPUBLICANNOUNCEMENTSAFTERMS || 30 * 1000; // 30 seconds
 
 // Array to store connected SSE clients
 let clients = [];
@@ -266,7 +267,7 @@ function startPublicAnnouncements() {
     };
 
     // Make the first announcement shortly after start, then set interval
-    setTimeout(makeAnnouncement, 5000); // Announce 5 seconds after start
+    setTimeout(makeAnnouncement, startPublicAnnouncementsAfterMs); // Initial announcement
     publicAnnouncementIntervalId = setInterval(makeAnnouncement, publicAnnouncementIntervalMs);
 }
 
