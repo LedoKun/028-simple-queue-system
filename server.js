@@ -142,13 +142,9 @@ app.get('/speak', (req, res) => {
     let text = '';
     let speakLang = lang; // Use the provided lang code directly for gtts
 
-    // Split queue number into digits for individual pronunciation if needed, especially for Thai
-    const queueDigits = queue.split('').join(' '); // e.g., "1 2 3"
-    const stationDigits = station.split('').join(' '); // e.g., "4 5"
-
     switch (lang) {
         case 'th':
-            text = `คิวหมายเลข ${queueDigits} เชิญที่ช่องบริการ ${stationDigits} ค่ะ`;
+            text = `คิวหมายเลข ${queue} เชิญที่ช่องบริการ ${station} ค่ะ`;
             break;
         case 'en':
             text = `Queue number ${queue}, please proceed to station ${station}.`;
