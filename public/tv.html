@@ -66,7 +66,7 @@
         }
 
         .number-large {
-            font-size: 8vw;
+            font-size: 12vw;
             font-weight: bold;
             color: #b19cd9;
             margin: 0.1em 0;
@@ -101,9 +101,6 @@
         .history-table thead {
             /* Standard header group */
             background-color: #333;
-            /* REMOVED: position: sticky; */
-            /* REMOVED: top: 0; */
-            /* REMOVED: z-index: 1; */
         }
 
         .history-table th {
@@ -126,7 +123,6 @@
             background-color: #2a2a2a;
         }
 
-        /* Note: TD background is often preferred for full width color */
         .history-table tbody tr:nth-child(odd) {
             background-color: #222;
         }
@@ -156,7 +152,6 @@
                 min-height: 200px;
             }
 
-            /* Ensure it scrolls */
             .label {
                 font-size: 5vw;
             }
@@ -254,7 +249,7 @@
         let reconnectTimeoutId = null;
         let historyRecalcIntervalId = null;
 
-        // --- History Calculation (Reverted to Available Height Method) ---
+        // --- History Calculation (Unchanged) ---
         function calculateMaxHistory() {
             console.log("--- Running calculateMaxHistory (Simplified Layout Method) ---");
             try {
@@ -355,25 +350,48 @@
             };
         }
 
+        // --- MODIFIED updateDisplay Function ---
         function updateDisplay(queue, station) {
             const rows = historyTableBody.getElementsByTagName("tr");
+            // Convert queue and station to strings for reliable comparison
+            const queueStr = String(queue);
+            const stationStr = String(station);
+
+            // Loop through existing history rows to find an exact match
             for (let i = rows.length - 1; i >= 0; i--) {
                 const cells = rows[i].getElementsByTagName("td");
-                if (cells.length > 0 && cells[0].textContent === String(queue)) {
-                    historyTableBody.removeChild(rows[i]); break;
+                // Ensure we have at least two cells (queue and station) before checking
+                if (cells.length > 1 && cells[0].textContent === queueStr && cells[1].textContent === stationStr) {
+                    console.log(`Found exact match in history for ${queueStr}:${stationStr}. Removing row.`);
+                    historyTableBody.removeChild(rows[i]);
+                    break; // Exit loop once the match is found and removed
                 }
             }
-            currentQueueEl.textContent = queue;
-            currentStationEl.textContent = station;
-            currentQueueEl.style.animation = 'none'; currentQueueEl.offsetHeight; currentQueueEl.style.animation = null;
-            currentStationEl.style.animation = 'none'; currentStationEl.offsetHeight; currentStationEl.style.animation = null;
 
+            // Update the main display elements
+            currentQueueEl.textContent = queueStr;
+            currentStationEl.textContent = stationStr;
+
+            // Trigger animation restart for the updated numbers
+            currentQueueEl.style.animation = 'none';
+            currentQueueEl.offsetHeight; /* trigger reflow */
+            currentQueueEl.style.animation = null;
+            currentStationEl.style.animation = 'none';
+            currentStationEl.offsetHeight; /* trigger reflow */
+            currentStationEl.style.animation = null;
+
+            // Create a new row for the history table
             const row = document.createElement("tr");
-            // REMOVED: Inline styles for display: table / table-cell
-            row.innerHTML = `<td>${queue}</td><td>${station}</td>`;
+            row.innerHTML = `<td>${queueStr}</td><td>${stationStr}</td>`;
+
+            // Add the new row to the top of the history
             historyTableBody.insertBefore(row, historyTableBody.firstChild);
+
+            // Trim history if it exceeds the maximum allowed rows
             trimHistory();
         }
+        // --- End of MODIFIED updateDisplay Function ---
+
 
         function playNextAnnouncement() {
             if (isPlayingTTS || announcementQueue.length === 0) { return; }
@@ -388,7 +406,9 @@
                     };
                 })
                 .catch(err => {
-                    console.warn("Chime playback failed:", err, "- proceeding with TTS.");
+                    // Log warning but continue, maybe user interaction needed first time
+                    console.warn("Chime playback failed (perhaps needs user interaction first?):", err, "- proceeding with TTS.");
+                    // Add a small delay before TTS if chime fails immediately
                     setTimeout(() => playLanguagesSequentially(queue, station, 0), 200);
                 });
         }
@@ -396,40 +416,85 @@
         function playLanguagesSequentially(queue, station, langIndex) {
             if (langIndex >= languagesToSpeak.length) {
                 isPlayingTTS = false;
-                setTimeout(playNextAnnouncement, 500);
+                setTimeout(playNextAnnouncement, 500); // Delay before checking queue again
                 return;
             }
             const lang = languagesToSpeak[langIndex];
             const ttsUrl = `/speak?queue=${encodeURIComponent(queue)}&station=${encodeURIComponent(station)}&lang=${lang}`;
+
+            console.log(`Playing TTS: ${lang} for ${queue}/${station}`);
             ttsAudio.src = ttsUrl;
-            ttsAudio.load();
+            ttsAudio.load(); // Important: Load the new source
+
             const playPromise = ttsAudio.play();
+
             if (playPromise !== undefined) {
                 playPromise.then(() => {
+                    // Playback started successfully
                     ttsAudio.onended = () => {
-                        ttsAudio.onended = null;
+                        console.log(`Finished TTS: ${lang} for ${queue}/${station}`);
+                        ttsAudio.onended = null; // Clean up listener
+                        // Add a small delay before the next language
                         setTimeout(() => playLanguagesSequentially(queue, station, langIndex + 1), 100);
                     };
                 }).catch(error => {
+                    // Log error and proceed to next language
                     console.error(`Error playing ${lang} TTS for ${queue}/${station}:`, error);
-                    ttsAudio.onended = null;
+                    ttsAudio.onended = null; // Clean up listener in case of error
+                    // Proceed to the next language even if one fails
                     setTimeout(() => playLanguagesSequentially(queue, station, langIndex + 1), 100);
                 });
+            } else {
+                // Fallback for browsers where play() doesn't return a promise (older?)
+                console.warn(`ttsAudio.play() did not return a promise for ${lang}. Using event listener fallback.`);
+                const playingHandler = () => {
+                    console.log(`Playback started (event): ${lang} for ${queue}/${station}`);
+                    ttsAudio.removeEventListener('playing', playingHandler); // Clean up
+                };
+                const endedHandler = () => {
+                    console.log(`Finished TTS (event): ${lang} for ${queue}/${station}`);
+                    ttsAudio.removeEventListener('ended', endedHandler); // Clean up
+                    ttsAudio.removeEventListener('error', errorHandler); // Clean up
+                    setTimeout(() => playLanguagesSequentially(queue, station, langIndex + 1), 100);
+                };
+                const errorHandler = (e) => {
+                    console.error(`Error playing ${lang} TTS for ${queue}/${station} (event):`, e);
+                    ttsAudio.removeEventListener('playing', playingHandler); // Clean up
+                    ttsAudio.removeEventListener('ended', endedHandler); // Clean up
+                    ttsAudio.removeEventListener('error', errorHandler); // Clean up
+                    setTimeout(() => playLanguagesSequentially(queue, station, langIndex + 1), 100);
+                };
+                ttsAudio.addEventListener('playing', playingHandler);
+                ttsAudio.addEventListener('ended', endedHandler);
+                ttsAudio.addEventListener('error', errorHandler);
             }
         }
+
+        // General error handler for the audio element itself (e.g., network issues loading src)
         ttsAudio.onerror = (e) => {
-            console.error("General TTS Audio Element Error (likely network/source issue):", e);
+            // Avoid logging redundant errors if caught by playPromise.catch or specific listeners
+            if (!isPlayingTTS) return; // Only log if we expected it to be playing
+            console.error("General TTS Audio Element Error:", e);
+            // Potentially try to advance the queue if a general error occurs
+            // isPlayingTTS = false;
+            // setTimeout(playNextAnnouncement, 500);
         };
 
+
+        // --- Initialization (Unchanged) ---
         window.addEventListener('load', () => {
-            setTimeout(calculateMaxHistory, 250); // Initial calc
+            // Delay calculation slightly to ensure layout is stable
+            setTimeout(calculateMaxHistory, 250); // Initial calculation
+            // Set up periodic recalculation
             if (historyRecalcIntervalId) clearInterval(historyRecalcIntervalId);
             historyRecalcIntervalId = setInterval(calculateMaxHistory, HISTORY_RECALC_INTERVAL_MS);
             console.log(`Started periodic history recalculation every ${HISTORY_RECALC_INTERVAL_MS / 1000} seconds.`);
-            connectEventSource(); // Start SSE
+            // Connect to the server for events
+            connectEventSource(); // Start SSE connection
         });
-        window.addEventListener('resize', calculateMaxHistory);
+        window.addEventListener('resize', calculateMaxHistory); // Recalculate on resize
         window.addEventListener('beforeunload', () => {
+            // Clean up resources on page close
             if (socket) socket.close();
             if (reconnectTimeoutId) clearTimeout(reconnectTimeoutId);
             if (historyRecalcIntervalId) clearInterval(historyRecalcIntervalId);
