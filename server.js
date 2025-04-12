@@ -1,5 +1,6 @@
 const express = require('express');
 const path = require('path');
+const gtts = require('node-gtts'); // <--- Import node-gtts
 const app = express();
 const port = process.env.PORT || 3000;
 
@@ -22,10 +23,13 @@ app.use(express.static(path.join(__dirname, 'public')));
 // POST /call endpoint - handles incoming queue call requests
 app.post('/call', (req, res) => {
     const { queue, station } = req.body;
+    // Ensure queue and station are treated as strings for consistency
+    const queueStr = String(queue);
+    const stationStr = String(station);
     const now = Date.now();
-    const callKey = `${queue}:${station}`;
+    const callKey = `${queueStr}:${stationStr}`;
 
-    console.log(`${getTimestamp()} - POST /call - Received call: ${JSON.stringify({ queue, station })}`);
+    console.log(`${getTimestamp()} - POST /call - Received call: ${JSON.stringify({ queue: queueStr, station: stationStr })}`);
 
     // Check if the same call was processed recently
     if (lastProcessedTime[callKey] && (now - lastProcessedTime[callKey] < debouncingIntervalMs)) {
@@ -40,7 +44,7 @@ app.post('/call', (req, res) => {
     }
 
     // Add the new call to the pending calls queue
-    const callObj = { queue, station, callKey };
+    const callObj = { queue: queueStr, station: stationStr, callKey };
     pendingCalls.push(callObj);
     console.log(`${getTimestamp()} - POST /call - Added call to queue: ${callKey}. Queue length: ${pendingCalls.length}`);
 
@@ -104,8 +108,16 @@ app.get('/events', (req, res) => {
     // Send a heartbeat message every 15 seconds to prevent the connection from timing out
     const heartbeatIntervalMs = 15000;
     const heartbeatInterval = setInterval(() => {
-        res.write(': heartbeat\n\n');
-        console.log(`${getTimestamp()} - GET /events - Sent heartbeat to client.`);
+        try {
+            res.write(': heartbeat\n\n');
+            // console.log(`${getTimestamp()} - GET /events - Sent heartbeat to client.`); // Less verbose logging
+        } catch (error) {
+            console.error(`${getTimestamp()} - GET /events - Error sending heartbeat:`, error);
+            // Stop trying to send heartbeats and remove the client
+            clearInterval(heartbeatInterval);
+            clients = clients.filter(client => client !== res);
+            console.log(`${getTimestamp()} - GET /events - Removed unresponsive client after heartbeat error. Total clients: ${clients.length}`);
+        }
     }, heartbeatIntervalMs);
 
     // Handle client disconnection
@@ -115,5 +127,80 @@ app.get('/events', (req, res) => {
         console.log(`${getTimestamp()} - GET /events - Client disconnected. Total clients: ${clients.length}`);
     });
 });
+
+// --- TTS Endpoint ---
+app.get('/speak', (req, res) => {
+    const { queue, station, lang } = req.query;
+
+    if (!queue || !station || !lang) {
+        console.error(`${getTimestamp()} - GET /speak - Missing parameters: queue, station, or lang`);
+        return res.status(400).send('Missing queue, station, or lang parameter');
+    }
+
+    // --- Text generation based on language ---
+    // !! IMPORTANT: Verify and adjust these translations for accuracy and naturalness !!
+    let text = '';
+    let speakLang = lang; // Use the provided lang code directly for gtts
+
+    // Split queue number into digits for individual pronunciation if needed, especially for Thai
+    const queueDigits = queue.split('').join(' '); // e.g., "1 2 3"
+    const stationDigits = station.split('').join(' '); // e.g., "4 5"
+
+    switch (lang) {
+        case 'th':
+            text = `คิวหมายเลข ${queueDigits} เชิญที่ช่องบริการ ${stationDigits} ค่ะ`;
+            break;
+        case 'en':
+            text = `Queue number ${queue}, please proceed to station ${station}.`;
+            break;
+        case 'vi': // Vietnamese
+            text = `Số thứ tự ${queue}, mời đến quầy ${station}.`; // Example translation
+            break;
+        case 'zh': // Chinese (Simplified)
+            speakLang = 'zh-CN'; // Specify variant if needed
+            text = `排队号码 ${queue}，请到 ${station} 号窗口。`; // Example translation
+            break;
+        // Add other Chinese variants like 'zh-TW' if needed
+        default:
+            console.warn(`${getTimestamp()} - GET /speak - Unsupported language: ${lang}`);
+            return res.status(400).send('Unsupported language');
+    }
+    // --- End Text Generation ---
+
+    console.log(`${getTimestamp()} - GET /speak - Generating speech for lang=${lang}, queue=${queue}, station=${station}, text="${text}"`);
+
+    try {
+        // Set response headers for audio streaming
+        res.setHeader('Content-Type', 'audio/mpeg');
+        res.setHeader('Cache-Control', 'no-cache'); // Don't cache the audio
+
+        // Get the audio stream from gTTS
+        const stream = gtts(speakLang).stream(text);
+
+        // Pipe the stream directly to the response
+        stream.pipe(res);
+
+        stream.on('error', (err) => {
+            console.error(`${getTimestamp()} - GET /speak - gTTS stream error for lang=${lang}:`, err);
+            if (!res.headersSent) {
+                res.status(500).send('Error generating speech');
+            } else {
+                // If headers are already sent, we can only try to end the connection
+                res.end();
+            }
+        });
+
+        stream.on('end', () => {
+            console.log(`${getTimestamp()} - GET /speak - Finished streaming speech for lang=${lang}, queue=${queue}, station=${station}`);
+        });
+
+    } catch (err) {
+        console.error(`${getTimestamp()} - GET /speak - Error processing request for lang=${lang}:`, err);
+        if (!res.headersSent) {
+            res.status(500).send('Internal server error');
+        }
+    }
+});
+// --- End TTS Endpoint ---
 
 app.listen(port, () => console.log(`${getTimestamp()} - Queue server running on http://localhost:${port}`));

@@ -6,16 +6,20 @@
     <title>Queue TV Display</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link href="https://fonts.googleapis.com/css2?family=Battambang&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Thai:wght@400;700&display=swap" rel="stylesheet">
     <style>
         body {
             margin: 0;
             padding: 0;
             background-color: #1a1a1a;
             color: #f0f0f0;
-            font-family: Arial, sans-serif;
+            /* Using Noto Sans Thai as primary, falling back */
+            font-family: 'Noto Sans Thai', 'Battambang', Arial, sans-serif;
             display: flex;
             height: 100vh;
             width: 100vw;
+            overflow: hidden;
+            /* Prevent body scroll */
         }
 
         .container {
@@ -30,95 +34,151 @@
             justify-content: center;
             align-items: center;
             border-right: 2px solid #333;
+            padding: 1em;
+            box-sizing: border-box;
         }
 
         .label {
-            font-size: 2.5em;
+            font-size: 2.5vw;
+            /* Responsive font size */
             text-transform: uppercase;
             letter-spacing: 1px;
             margin-bottom: 0.1em;
             animation: fadeIn 0.5s ease-in-out;
+            text-align: center;
         }
 
         .subtitle {
-            font-size: 1.5em;
+            font-size: 1.5vw;
+            /* Responsive font size */
             font-weight: normal;
             margin-bottom: 0.5em;
             color: #bbb;
             animation: fadeIn 0.5s ease-in-out 0.2s;
             font-family: 'Battambang', Arial, sans-serif;
+            /* Keep specific font for subtitles */
+            text-align: center;
+            line-height: 1.2;
         }
 
         .number-large {
-            font-size: 7em;
+            font-size: 8vw;
+            /* Responsive font size */
             font-weight: bold;
             color: #b19cd9;
-            margin: 0.2em 0;
+            /* Light purple */
+            margin: 0.1em 0;
+            /* Reduced margin */
             animation: numberChange 0.8s ease-in-out;
+            text-align: center;
+            line-height: 1.1;
         }
 
         .history-section {
             flex: 1;
             display: flex;
             flex-direction: column;
-            overflow: hidden;
+            overflow-y: auto;
+            /* Allow scrolling if history exceeds height */
+            max-height: 100vh;
+            /* Ensure it doesn't overflow body */
         }
 
         .history-table {
             width: 100%;
             border-collapse: collapse;
-            font-size: 2em;
+            font-size: 2vw;
+            /* Responsive font size */
             text-align: center;
         }
 
         .history-table th,
         .history-table td {
-            padding: 0.5em 1em;
+            padding: 0.4em 0.8em;
+            /* Adjusted padding */
             border-bottom: 1px solid #333;
+            word-break: break-all;
+            /* Prevent long numbers overflowing */
         }
 
         .history-table th {
             font-weight: 600;
             text-transform: uppercase;
             background-color: #333;
+            position: sticky;
+            /* Keep header visible */
+            top: 0;
+            z-index: 1;
         }
 
         .history-table .subtitle {
-            font-size: 0.5em;
+            font-size: 0.6em;
+            /* Relative to parent th/td */
             font-weight: normal;
             margin: 0;
             display: block;
             color: #999;
             font-family: 'Battambang', Arial, sans-serif;
+            /* Keep specific font */
+            line-height: 1.1;
+        }
+
+        .history-table tr:nth-child(even) td {
+            background-color: #2a2a2a;
+            /* Subtle row striping */
+        }
+
+        .history-table tr:nth-child(odd) td {
+            background-color: #222;
+            /* Darker stripe */
         }
 
         .history-table td {
-            background-color: #2a2a2a;
             animation: rowFadeIn 0.5s ease-in-out;
         }
 
-        @media only screen and (max-width: 800px) {
+        /* Media query for smaller screens if needed */
+        @media only screen and (max-width: 768px) {
             .container {
                 flex-direction: column;
+                height: auto;
+                /* Allow scrolling on small screens */
+                overflow-y: auto;
             }
 
-            .current-queue-station,
+            .current-queue-station {
+                flex: 0 0 auto;
+                /* Don't shrink */
+                border-right: none;
+                border-bottom: 2px solid #333;
+                padding: 2em 1em;
+            }
+
             .history-section {
                 flex: 1 1 auto;
-            }
-
-            .number-large {
-                font-size: 5em;
+                max-height: none;
+                /* Allow history to take remaining space */
+                overflow-y: visible;
+                /* Disable internal scroll */
             }
 
             .label {
-                font-size: 2em;
+                font-size: 5vw;
             }
 
             .subtitle {
-                font-size: 0.7em;
+                font-size: 3vw;
+            }
+
+            .number-large {
+                font-size: 15vw;
+            }
+
+            .history-table {
+                font-size: 4vw;
             }
         }
+
 
         @keyframes numberChange {
             from {
@@ -183,65 +243,220 @@
 
     <audio id="chimeAudio" src="chime.mp3" preload="auto"></audio>
 
+    <audio id="ttsAudio" preload="none"></audio>
+
     <script>
         const socket = new EventSource("/events");
         const currentQueueEl = document.getElementById("currentQueue");
         const currentStationEl = document.getElementById("currentStation");
         const historyTableBody = document.getElementById("historyTable");
         const chimeAudio = document.getElementById("chimeAudio");
+        const ttsAudio = document.getElementById("ttsAudio"); // Get TTS audio element
 
-        let MAX_HISTORY = 10; // Default value
+        let MAX_HISTORY = 10; // Default value, will be calculated
+        let isPlayingTTS = false; // Flag to prevent overlapping TTS calls
+        const announcementQueue = []; // Queue for pending announcements {queue, station}
+        const languagesToSpeak = ['th', 'en', 'vi', 'zh']; // Order of languages
 
-        function updateMaxHistory() {
+        function calculateMaxHistory() {
+            const tableHeader = historyTableBody.previousElementSibling; // Get the thead
+            const containerHeight = historyTableBody.parentElement.offsetHeight;
+            const headerHeight = tableHeader ? tableHeader.offsetHeight : 0;
+            const availableHeight = containerHeight - headerHeight;
+
             if (historyTableBody.children.length > 0) {
                 const firstRow = historyTableBody.children[0];
                 const rowHeight = firstRow.offsetHeight;
-                if (rowHeight > 0) {
-                    MAX_HISTORY = Math.floor(historyTableBody.parentElement.offsetHeight / rowHeight);
+                if (rowHeight > 0 && availableHeight > 0) {
+                    // Calculate how many rows fit, leaving a little space
+                    MAX_HISTORY = Math.max(1, Math.floor(availableHeight / rowHeight) - 1); // Ensure at least 1
+                    console.log(`Calculated MAX_HISTORY: ${MAX_HISTORY} (Container: ${containerHeight}, Header: ${headerHeight}, Row: ${rowHeight})`);
+                } else {
+                    MAX_HISTORY = 10; // Fallback if calculation fails
+                    console.log(`Using fallback MAX_HISTORY: ${MAX_HISTORY}`);
                 }
             } else {
-                // If no rows, try to estimate based on font size.
-                MAX_HISTORY = Math.floor(historyTableBody.parentElement.offsetHeight / 40);
+                // Estimate based on font size if no rows exist (less accurate)
+                const estimatedRowHeight = window.innerWidth * 0.02 * 2.5; // Approx based on 2vw font size * line-height/padding factor
+                MAX_HISTORY = Math.max(1, Math.floor(availableHeight / estimatedRowHeight) - 1);
+                console.log(`Estimated MAX_HISTORY: ${MAX_HISTORY}`);
             }
         }
 
-        window.addEventListener('resize', updateMaxHistory);
+
+        window.addEventListener('resize', calculateMaxHistory);
+        window.addEventListener('load', () => {
+            // Calculate after everything is loaded and rendered
+            setTimeout(calculateMaxHistory, 100); // Short delay for rendering
+        });
+
 
         socket.onmessage = function (event) {
-            const { queue, station } = JSON.parse(event.data);
-
-            const rows = historyTableBody.getElementsByTagName("tr");
-            for (let i = rows.length - 1; i >= 0; i--) {
-                if (rows[i].getElementsByTagName("td")[0].textContent === String(queue)) {
-                    historyTableBody.removeChild(rows[i]);
+            try {
+                // Ignore heartbeat messages
+                if (event.data.startsWith(':')) {
+                    return;
                 }
+
+                const { queue, station } = JSON.parse(event.data);
+
+                // --- Update Display ---
+                // Remove existing row with the same queue number if present
+                const rows = historyTableBody.getElementsByTagName("tr");
+                for (let i = rows.length - 1; i >= 0; i--) {
+                    const cells = rows[i].getElementsByTagName("td");
+                    if (cells.length > 0 && cells[0].textContent === String(queue)) {
+                        historyTableBody.removeChild(rows[i]);
+                        break; // Assume only one entry per queue number
+                    }
+                }
+
+                // Update current display
+                currentQueueEl.textContent = queue;
+                currentStationEl.textContent = station;
+                // Trigger reflow/repaint to restart animation
+                currentQueueEl.style.animation = 'none';
+                currentQueueEl.offsetHeight; // Trigger reflow
+                currentQueueEl.style.animation = null;
+                currentStationEl.style.animation = 'none';
+                currentStationEl.offsetHeight; // Trigger reflow
+                currentStationEl.style.animation = null;
+
+                // Add to history (at the top)
+                const row = document.createElement("tr");
+                row.innerHTML = `<td>${queue}</td><td>${station}</td>`;
+                historyTableBody.insertBefore(row, historyTableBody.firstChild);
+
+                // Recalculate max history *after* adding a row, in case row heights changed slightly
+                calculateMaxHistory();
+
+                // Trim history if it exceeds max
+                while (historyTableBody.children.length > MAX_HISTORY) {
+                    historyTableBody.removeChild(historyTableBody.lastChild);
+                }
+
+                // --- Handle Audio ---
+                // Add the announcement details to the queue
+                announcementQueue.push({ queue, station });
+                console.log("Added to announcement queue:", { queue, station }, "Queue length:", announcementQueue.length);
+                // Start processing the announcement queue if not already playing
+                playNextAnnouncement();
+
+
+            } catch (error) {
+                console.error("Error processing SSE message:", error, "Data:", event.data);
             }
-
-            currentQueueEl.textContent = queue;
-            currentStationEl.textContent = station;
-            currentQueueEl.style.animation = 'none';
-            currentQueueEl.offsetHeight;
-            currentQueueEl.style.animation = null;
-            currentStationEl.style.animation = 'none';
-            currentStationEl.offsetHeight;
-            currentStationEl.style.animation = null;
-
-            const row = document.createElement("tr");
-            row.innerHTML = `<td>${queue}</td><td>${station}</td>`;
-            historyTableBody.insertBefore(row, historyTableBody.firstChild);
-
-            updateMaxHistory(); // Update after adding a row
-
-            while (historyTableBody.children.length > MAX_HISTORY) {
-                historyTableBody.removeChild(historyTableBody.lastChild);
-            }
-
-            chimeAudio.currentTime = 0;
-            chimeAudio.play().catch(err => console.warn("Chime playback failed:", err));
         };
 
-        // Initial calculation
-        setTimeout(updateMaxHistory, 100);
+        socket.onerror = function (error) {
+            console.error("EventSource failed:", error);
+            // Optional: Implement reconnection logic here if needed
+            socket.close();
+            // setTimeout(() => { /* Reconnect logic */ }, 5000);
+        };
+
+        // --- TTS Playback Logic ---
+
+        function playNextAnnouncement() {
+            // If already playing or queue is empty, do nothing
+            if (isPlayingTTS || announcementQueue.length === 0) {
+                // console.log("Skipping playNextAnnouncement. isPlayingTTS:", isPlayingTTS, "Queue empty:", announcementQueue.length === 0);
+                return;
+            }
+
+            isPlayingTTS = true;
+            const { queue, station } = announcementQueue.shift(); // Get the oldest announcement
+            console.log("Processing announcement:", { queue, station });
+
+            // Start with the chime
+            chimeAudio.currentTime = 0;
+            chimeAudio.play()
+                .then(() => {
+                    // Wait for chime to finish before starting TTS sequence
+                    chimeAudio.onended = () => {
+                        console.log("Chime finished, starting TTS sequence.");
+                        playLanguagesSequentially(queue, station, 0); // Start with the first language
+                        chimeAudio.onended = null; // Clean up listener
+                    };
+                })
+                .catch(err => {
+                    console.warn("Chime playback failed:", err);
+                    // If chime fails, still try to play TTS after a short delay
+                    setTimeout(() => {
+                        playLanguagesSequentially(queue, station, 0);
+                    }, 200); // Small delay
+                });
+        }
+
+        function playLanguagesSequentially(queue, station, langIndex) {
+            if (langIndex >= languagesToSpeak.length) {
+                console.log("Finished all languages for:", { queue, station });
+                isPlayingTTS = false;
+                // Check if there are more announcements waiting
+                setTimeout(playNextAnnouncement, 500); // Small delay before next announcement
+                return; // End of sequence for this call
+            }
+
+            const lang = languagesToSpeak[langIndex];
+            const ttsUrl = `/speak?queue=${encodeURIComponent(queue)}&station=${encodeURIComponent(station)}&lang=${lang}`;
+            console.log(`Playing ${lang}: ${ttsUrl}`);
+
+            ttsAudio.src = ttsUrl;
+            ttsAudio.load(); // Important: load the new source
+
+            // Using a Promise wrapper for play() for better handling
+            const playPromise = ttsAudio.play();
+
+            if (playPromise !== undefined) {
+                playPromise.then(() => {
+                    // Playback started successfully
+                    console.log(`Playback started for ${lang}`);
+                    ttsAudio.onended = () => {
+                        console.log(`Playback finished for ${lang}`);
+                        ttsAudio.onended = null; // Clean up listener for this language
+                        // Play the next language after a short pause
+                        setTimeout(() => playLanguagesSequentially(queue, station, langIndex + 1), 100); // 100ms pause
+                    };
+                }).catch(error => {
+                    console.error(`Error playing ${lang} TTS for ${queue}/${station}:`, error);
+                    ttsAudio.onended = null; // Clean up listener on error too
+                    // Try the next language even if one fails
+                    setTimeout(() => playLanguagesSequentially(queue, station, langIndex + 1), 100);
+                });
+            } else {
+                // Fallback for browsers where play() doesn't return a promise (older?)
+                console.warn("ttsAudio.play() did not return a promise.");
+                ttsAudio.onended = () => {
+                    console.log(`Playback finished for ${lang} (no promise)`);
+                    ttsAudio.onended = null;
+                    setTimeout(() => playLanguagesSequentially(queue, station, langIndex + 1), 100);
+                };
+                ttsAudio.onerror = (e) => {
+                    console.error(`Error event playing ${lang} TTS for ${queue}/${station}:`, e);
+                    ttsAudio.onerror = null;
+                    ttsAudio.onended = null; // Ensure onended doesn't fire after error
+                    setTimeout(() => playLanguagesSequentially(queue, station, langIndex + 1), 100);
+                }
+            }
+        }
+
+        // --- Error handling for the TTS audio element itself ---
+        ttsAudio.onerror = (e) => {
+            console.error("General TTS Audio Element Error:", e);
+            // If an error occurs (e.g., network issue loading src),
+            // we might be stuck in isPlayingTTS = true. Reset it.
+            // This is a safety net, the sequence handler should also manage this.
+            if (isPlayingTTS) {
+                console.warn("Resetting isPlayingTTS due to general audio error.");
+                isPlayingTTS = false;
+                // Try to advance the queue after a delay
+                setTimeout(playNextAnnouncement, 1000);
+            }
+        };
+
+        // Initial calculation on load
+        // Moved to window load listener above
+
     </script>
 </body>
 
