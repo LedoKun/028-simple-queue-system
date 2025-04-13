@@ -102,11 +102,10 @@
             stationInput.select();
         };
 
-        document.getElementById('station').addEventListener('focus', function () {
-            this.select(); // Always select the station input on focus
-        });
+        const queueInput = document.getElementById('queue');
+        const stationInput = document.getElementById('station');
 
-        document.getElementById('queue').addEventListener('focus', function () {
+        queueInput.addEventListener('focus', function () {
             this.select();
         });
 
@@ -114,6 +113,12 @@
             if (event.key === 'Enter') {
                 event.preventDefault();
                 callQueue();
+            } else {
+                // If queue and station are not focused and not empty
+                if (document.activeElement !== queueInput && document.activeElement !== stationInput && queueInput.value && stationInput.value) {
+                    queueInput.value = event.key;
+                    queueInput.focus();
+                }
             }
         });
 
