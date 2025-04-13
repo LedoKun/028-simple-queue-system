@@ -104,6 +104,11 @@
 
         const queueInput = document.getElementById('queue');
         const stationInput = document.getElementById('station');
+        const callButtonInput = document.getElementById('callButton');
+
+        stationInput.addEventListener('focus', function () {
+            this.select();
+        });
 
         queueInput.addEventListener('focus', function () {
             this.select();
@@ -112,13 +117,18 @@
         document.addEventListener('keydown', function (event) {
             if (event.key === 'Enter') {
                 event.preventDefault();
+                callButtonInput.focus();
                 callQueue();
-            } else {
-                // If queue and station are not focused and not empty
-                if (document.activeElement !== queueInput && document.activeElement !== stationInput && queueInput.value && stationInput.value) {
-                    queueInput.value = event.key;
-                    queueInput.focus();
-                }
+            } else if (
+                document.activeElement !== queueInput &&
+                document.activeElement !== stationInput &&
+                queueInput.value &&
+                stationInput.value &&
+                event.key.length === 1 // Simplified check for char/number
+            ) {
+                queueInput.value = '';
+                queueInput.value = event.key;
+                queueInput.focus();
             }
         });
 
