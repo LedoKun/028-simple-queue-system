@@ -13,7 +13,7 @@ const startPublicAnnouncementsAfterMs = process.env.STARTPUBLICANNOUNCEMENTSAFTE
 
 // --- Configuration ---
 // Keep language codes for queue fallbacks and filename consistency checks
-const languageCodes = ['th', 'en', 'my', 'vi', 'cn', 'ja'];
+const languageCodes = ['th', 'en', 'my', 'vi', 'fil', 'cn', 'ja'];
 const queueFallbackBasePath = path.join(__dirname, 'public', 'media', 'queue-fallback'); // Used for queue fallbacks
 
 // Helper function to generate a formatted timestamp for logs
@@ -51,7 +51,7 @@ const getFallbackQueueServerPath = (langCode) => {
     return null;
 };
 
-// --- Error Handling Helpers --- (Unchanged)
+// --- Error Handling Helpers ---
 function handleGttsError(err, res, context, fallbackPath) {
     console.error(`${getTimestamp()} - ERROR (${context}) - gTTS stream error:`, err);
     if (!res.headersSent) {
@@ -72,7 +72,7 @@ function handleServerError(err, res, context) {
 
 // --- API Endpoints ---
 
-// POST /call - (Unchanged)
+// POST /call -
 app.post('/call', (req, res) => {
     const { queue, station } = req.body; const queueStr = String(queue); const stationStr = String(station);
     const now = Date.now(); const callKey = `${queueStr}:${stationStr}`;
@@ -84,7 +84,7 @@ app.post('/call', (req, res) => {
     if (!isProcessingQueue) { processQueue(); } res.sendStatus(200);
 });
 
-// SSE endpoint /events - (Unchanged)
+// SSE endpoint /events -
 app.get('/events', (req, res) => {
     res.setHeader('Content-Type', 'text/event-stream'); res.setHeader('Cache-Control', 'no-cache'); res.setHeader('Connection', 'keep-alive');
     res.flushHeaders(); clients.push(res);
@@ -102,12 +102,12 @@ app.get('/speak', (req, res) => {
     const { queue, station, lang } = req.query;
     if (!queue || !station || !lang) { console.error(`${getTimestamp()} - GET /speak - Missing parameters`); return res.status(400).send('Missing parameters'); }
     const fallbackPath = getFallbackQueueServerPath(lang);
-    if (lang === 'my') {
-        console.log(`${getTimestamp()} - GET /speak - Burmese requested, using fallback MP3 directly.`);
+    if (lang === 'my' || lang === 'fil') {
+        console.log(`${getTimestamp()} - GET /speak - Burmese / Filipino requested, using fallback MP3 directly. (Filepath = ${fallbackPath})`);
         if (fallbackPath) {
             res.setHeader('Content-Type', 'audio/mpeg'); res.setHeader('Cache-Control', 'no-cache');
-            res.sendFile(fallbackPath, (fileErr) => { if (fileErr) { console.error(`${getTimestamp()} - ERROR (speak - my fallback) - Error sending file:`, fileErr); if (!res.headersSent) res.status(500).send('Error sending Burmese fallback audio.'); } else { console.log(`${getTimestamp()} - GET /speak - Sent Burmese fallback MP3 for queue=${queue}, station=${station}`); } });
-        } else { console.error(`${getTimestamp()} - GET /speak - Burmese fallback MP3 not found for lang=my`); res.status(404).send('Burmese fallback audio not found.'); } return;
+            res.sendFile(fallbackPath, (fileErr) => { if (fileErr) { console.error(`${getTimestamp()} - ERROR (speak - fallback) - Error sending file:`, fileErr); if (!res.headersSent) res.status(500).send('Error sending Burmese / Filipino fallback audio.'); } else { console.log(`${getTimestamp()} - GET /speak - Sent Burmese / Filipino fallback MP3 for queue=${queue}, station=${station}`); } });
+        } else { console.error(`${getTimestamp()} - GET /speak - Filipino fallback MP3 not found`); res.status(404).send('Filipino fallback audio not found.'); } return;
     }
     let text = ''; let speakLang = lang;
     switch (lang) {
@@ -134,7 +134,7 @@ app.get('/speak', (req, res) => {
     }
 });
 
-// --- Queue Processing Logic --- (Unchanged)
+// --- Queue Processing Logic ---
 function processQueue() {
     if (pendingCalls.length === 0) { isProcessingQueue = false; console.log(`${getTimestamp()} - processQueue - Queue is empty.`); return; }
     if (!isProcessingQueue) { isProcessingQueue = true; console.log(`${getTimestamp()} - processQueue - Starting processing.`); }
