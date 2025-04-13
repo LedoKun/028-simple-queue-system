@@ -134,6 +134,33 @@ app.get('/speak', (req, res) => {
     }
 });
 
+// POST /trigger-announcement - Manual trigger for public announcement cycle
+app.post('/trigger-announcement', (req, res) => {
+    console.log(`${getTimestamp()} - POST /trigger-announcement - Manual announcement trigger received.`);
+    // Manually trigger the announcement cycle
+    const payload = JSON.stringify({
+        type: 'public_announcement_cycle_start' // New event type
+    });
+
+    // Broadcast to clients
+    clients = clients.filter(clientRes => {
+        if (clientRes.writableEnded) {
+            console.log(`${getTimestamp()} - trigger-announcement - Removing client (connection ended before broadcast).`);
+            return false;
+        }
+        try {
+            clientRes.write(`data: ${payload}\n\n`);
+            return true;
+        } catch (error) {
+            console.error(`${getTimestamp()} - trigger-announcement - Error broadcasting public announcement CYCLE trigger:`, error);
+            return false; // Remove client on error
+        }
+    });
+    console.log(`${getTimestamp()} - trigger-announcement - CYCLE START event broadcasted. Total clients: ${clients.length}`);
+
+    res.sendStatus(200);
+});
+
 // --- Queue Processing Logic ---
 function processQueue() {
     if (pendingCalls.length === 0) { isProcessingQueue = false; console.log(`${getTimestamp()} - processQueue - Queue is empty.`); return; }
