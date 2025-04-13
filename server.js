@@ -9,13 +9,11 @@ const port = process.env.PORT || 3000;
 const debouncingIntervalMs = process.env.DEBOUNCINGINTERVALMS || 3000; // 3 seconds
 // Default interval for the *entire* announcement cycle
 const publicAnnouncementIntervalMs = process.env.PUBLICANNOUNCEMENTINTERVALMS || 30 * 60 * 1000; // 30 minutes (Adjust as needed)
-const startPublicAnnouncementsAfterMs = process.env.STARTPUBLICANNOUNCEMENTSAFTERMS || 5 * 1000; // 5 seconds
+const startPublicAnnouncementsAfterMs = process.env.STARTPUBLICANNOUNCEMENTSAFTERMS || 5 * 60 * 1000; // 5 minutes
 
 // --- Configuration ---
 // Keep language codes for queue fallbacks and filename consistency checks
 const languageCodes = ['th', 'en', 'my', 'vi', 'cn', 'ja'];
-// Paths now point inside 'public'
-const announcementBasePath = path.join(__dirname, 'public', 'media', 'announcement'); // Used for checking existence if needed elsewhere
 const queueFallbackBasePath = path.join(__dirname, 'public', 'media', 'queue-fallback'); // Used for queue fallbacks
 
 // Helper function to generate a formatted timestamp for logs
@@ -25,7 +23,6 @@ const getTimestamp = () => new Date().toISOString();
 app.use(express.json());
 // Serve static files from 'public' directory (Handles /media/... requests now)
 app.use(express.static(path.join(__dirname, 'public')));
-// REMOVED: app.use('/media', express.static(path.join(__dirname, 'media'))); // Redundant
 
 
 // --- SSE Setup ---
@@ -38,10 +35,6 @@ const lastProcessedTime = {};
 
 // --- Public Announcement ---
 let publicAnnouncementIntervalId = null;
-// REMOVED: let currentAnnouncementIndex = 0; // No longer needed for public announcements
-
-// --- Helper Functions ---
-// REMOVED: getAnnouncementClientPath helper function (no longer used)
 
 // Get the absolute server path for the fallback queue MP3
 const getFallbackQueueServerPath = (langCode) => {
@@ -156,14 +149,13 @@ function processQueue() {
     setTimeout(processQueue, debouncingIntervalMs);
 }
 
-// --- Public Announcement Triggering (Modified) ---
+// --- Public Announcement Triggering ---
 function startPublicAnnouncements() {
     console.log(`${getTimestamp()} - Starting periodic public announcement CYCLE trigger every ${publicAnnouncementIntervalMs / 1000} seconds.`);
     if (publicAnnouncementIntervalId) {
         clearInterval(publicAnnouncementIntervalId);
     }
 
-    // This function now just sends a simple trigger event
     const makeAnnouncement = () => {
         console.log(`${getTimestamp()} - makeAnnouncement - Interval triggered. Sending CYCLE START event.`);
 
@@ -175,7 +167,7 @@ function startPublicAnnouncements() {
         // Broadcast to clients
         clients = clients.filter(clientRes => {
             if (clientRes.writableEnded) {
-                // console.log(`${getTimestamp()} - makeAnnouncement - Removing client (connection ended before broadcast).`); // Optional log
+                console.log(`${getTimestamp()} - makeAnnouncement - Removing client (connection ended before broadcast).`);
                 return false;
             }
             try {
@@ -187,7 +179,7 @@ function startPublicAnnouncements() {
             }
         });
         console.log(`${getTimestamp()} - makeAnnouncement - CYCLE START event broadcasted. Total clients: ${clients.length}`);
-        // No language cycling or index needed here anymore
+
     };
 
     // Schedule first trigger, then set interval
