@@ -257,7 +257,7 @@
 
         // --- History Table Size Calculation & Trimming ---
         function calculateMaxHistory() {
-            // console.log("--- Running calculateMaxHistory ---");
+            console.log("--- Running calculateMaxHistory ---");
             try {
                 const tableHeader = historyTableBody.previousElementSibling;
                 const historySection = historyTableBody.closest('.history-section');
@@ -279,7 +279,7 @@
                 }
                 trimHistory();
             } catch (error) { console.error("Error during calculateMaxHistory:", error); MAX_HISTORY = 10; }
-            // console.log(`--- Current MAX_HISTORY = ${MAX_HISTORY} ---`);
+            console.log(`--- Current MAX_HISTORY = ${MAX_HISTORY} ---`);
         }
         function trimHistory() {
             while (historyTableBody.children.length > MAX_HISTORY) {
@@ -455,12 +455,15 @@
             const successCallbackWrapper = () => { onEndCallback(); };
             const failureCallbackWrapper = () => { onErrorCallback(); };
             announcementAudio.src = url; announcementAudio.load();
-            // console.log(`   playAudioFromUrl: Attempting to play audio from: ${url}`);
+            console.log(`   playAudioFromUrl: Attempting to play audio from: ${url}`);
             const playPromise = announcementAudio.play();
             if (playPromise !== undefined) {
                 playPromise.then(() => {
-                    // console.log(`   playAudioFromUrl: Playback started for: ${url}`);
-                    announcementAudio.onended = () => { /*console.log(`   playAudioFromUrl: Playback finished (onended event) for: ${url}`);*/ announcementAudio.onended = null; announcementAudio.onerror = null; setTimeout(successCallbackWrapper, 50); };
+                    console.log(`   playAudioFromUrl: Playback started for: ${url}`);
+                    announcementAudio.onended = () => {
+                        console.log(`   playAudioFromUrl: Playback finished (onended event) for: ${url}`);
+                        announcementAudio.onended = null; announcementAudio.onerror = null; setTimeout(successCallbackWrapper, 50);
+                    };
                     announcementAudio.onerror = (e) => { console.error(`   playAudioFromUrl: Playback error during playback (onerror event) for ${url}:`, e); announcementAudio.onended = null; announcementAudio.onerror = null; setTimeout(failureCallbackWrapper, 50); };
                 }).catch(error => {
                     console.error(`   playAudioFromUrl: Error initiating playback (play() rejected) for ${url}:`, error);
