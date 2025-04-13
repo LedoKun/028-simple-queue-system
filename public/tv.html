@@ -11,6 +11,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;700&display=swap" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;700&display=swap" rel="stylesheet">
     <style>
+        /* CSS Styles */
         * {
             box-sizing: border-box;
         }
@@ -24,7 +25,7 @@
             padding: 0;
             background-color: #1a1a1a;
             color: #f0f0f0;
-            /* Added more fonts to the stack */
+            /* Font stack for multi-language support */
             font-family: 'Noto Sans Thai', 'Noto Sans SC', 'Noto Sans JP', 'Roboto', 'Battambang', Arial, sans-serif;
             display: flex;
             height: 100vh;
@@ -65,7 +66,7 @@
             color: #bbb;
             animation: fadeIn 0.5s ease-in-out 0.2s;
             font-family: 'Roboto', 'Battambang', Arial, sans-serif;
-            /* Separate font stack for subtitles if needed */
+            /* Separate font for subtitles if needed */
             text-align: center;
             line-height: 1.2;
         }
@@ -98,11 +99,8 @@
         .history-table thead {
             background-color: #333;
             position: sticky;
-            /* Make header sticky */
             top: 0;
-            /* Stick to the top of the scrollable container */
             z-index: 1;
-            /* Keep header above scrolling content */
         }
 
         .history-table th {
@@ -127,6 +125,7 @@
             background-color: #222;
         }
 
+        /* Responsive adjustments */
         @media only screen and (max-width: 768px) {
             body {
                 height: auto;
@@ -149,9 +148,7 @@
                 flex: 1 1 auto;
                 overflow-y: auto;
                 min-height: 200px;
-                /* Adjust as needed */
                 max-height: 50vh;
-                /* Prevent history taking too much space */
             }
 
             .label {
@@ -172,23 +169,10 @@
 
             .history-table thead {
                 position: static;
-                /* Disable sticky header on small screens if problematic */
             }
         }
 
-        @keyframes numberChange {
-            /* ... unchanged ... */
-        }
-
-        @keyframes fadeIn {
-            /* ... unchanged ... */
-        }
-
-        @keyframes rowFadeIn {
-            /* ... unchanged ... */
-        }
-
-        /* Keyframes (Unchanged) */
+        /* Animations */
         @keyframes numberChange {
             from {
                 opacity: 0.5;
@@ -248,8 +232,8 @@
         </div>
     </div>
 
-    <audio id="chimeAudio" src="chime.mp3" preload="auto"></audio>
-    <audio id="ttsAudio" preload="none"></audio>
+    <audio id="chimeAudio" src="media/chime.mp3" preload="auto"></audio>
+    <audio id="announcementAudio" preload="none"></audio>
 
     <script>
         // DOM Elements
@@ -257,106 +241,96 @@
         const currentStationEl = document.getElementById("currentStation");
         const historyTableBody = document.getElementById("historyTable");
         const chimeAudio = document.getElementById("chimeAudio");
-        const ttsAudio = document.getElementById("ttsAudio");
+        const announcementAudio = document.getElementById("announcementAudio");
 
         // State Variables
-        let MAX_HISTORY = 10; // Default, will be calculated
-        let isPlayingTTS = false;
-        const announcementQueue = []; // Holds objects: { type: 'queue', queue: '...', station: '...' } or { type: 'public' }
-        const languagesToSpeak = ['th', 'en', 'vi', 'zh-CN', 'ja']; // <<< UPDATED LANGUAGES ORDER
-        const publicAnnouncementLanguages = ['th', 'en', 'vi', 'zh-CN', 'ja']; // Languages for public announcements
-        const RECONNECT_DELAY_MS = 5000;
-        const HISTORY_RECALC_INTERVAL_MS = 30000; // Recalculate history size periodically
-        let socket;
-        let reconnectTimeoutId = null;
-        let historyRecalcIntervalId = null;
+        let MAX_HISTORY = 10; // Max rows in history table
+        let isPlayingAudio = false; // <<< Global lock to prevent audio overlap
+        const announcementQueue = []; // FIFO queue for audio events {type: 'queue'|'public_cycle', data?: {...}}
+        // Language sequence for individual queue calls
+        const languagesToSpeak = ['th', 'en', 'my', 'vi', 'cn', 'ja'];
+        // Language sequence for the periodic public announcement cycle
+        const publicAnnouncementLanguages = ['th', 'en', 'my', 'vi', 'cn', 'ja'];
+        const RECONNECT_DELAY_MS = 5000; // SSE reconnect delay
+        const HISTORY_RECALC_INTERVAL_MS = 30000; // How often to recalculate history size
+        let socket; // Holds the EventSource object
+        let reconnectTimeoutId = null; // Timer ID for SSE reconnection
+        let historyRecalcIntervalId = null; // Timer ID for history recalculation
 
-        // --- History Calculation (Simplified Layout Method - unchanged) ---
+        // --- History Table Size Calculation & Trimming ---
         function calculateMaxHistory() {
-            console.log("--- Running calculateMaxHistory ---");
+            // console.log("--- Running calculateMaxHistory ---");
             try {
                 const tableHeader = historyTableBody.previousElementSibling; // thead
                 const historySection = historyTableBody.closest('.history-section');
                 if (!historySection) { console.error("Cannot find parent .history-section!"); MAX_HISTORY = 10; return; }
-
                 const containerHeight = historySection.offsetHeight;
                 const headerHeight = tableHeader ? tableHeader.offsetHeight : 0;
                 const availableHeight = containerHeight - headerHeight;
-                console.log(`[Calc] Container: ${containerHeight}, Header: ${headerHeight}, Available: ${availableHeight.toFixed(2)}`);
-
-                if (availableHeight <= 0) {
-                    console.warn(`Fallback: availableHeight (${availableHeight.toFixed(2)}) <= 0`); MAX_HISTORY = 10; trimHistory(); return;
-                }
-
+                // console.log(`[Calc] Container: ${containerHeight}, Header: ${headerHeight}, Available: ${availableHeight.toFixed(2)}`);
+                if (availableHeight <= 0) { MAX_HISTORY = 10; trimHistory(); return; }
                 if (historyTableBody.children.length > 0) {
-                    const firstRow = historyTableBody.children[0];
-                    const rowHeight = firstRow.offsetHeight;
-                    if (rowHeight > 0) {
-                        MAX_HISTORY = Math.max(1, Math.floor(availableHeight / rowHeight));
-                        console.log(`[Calc Real Row] Row Height: ${rowHeight.toFixed(2)}, Calculated MAX_HISTORY: ${MAX_HISTORY}`);
-                    } else { console.warn(`Fallback: Measured rowHeight is ${rowHeight}`); MAX_HISTORY = 10; }
+                    const firstRow = historyTableBody.children[0]; const rowHeight = firstRow.offsetHeight;
+                    if (rowHeight > 0) { MAX_HISTORY = Math.max(1, Math.floor(availableHeight / rowHeight)); } else { MAX_HISTORY = 10; }
                 } else {
-                    // Estimate if no rows exist (less reliable)
-                    let tableFontSizeVw = 2;
-                    if (window.matchMedia("only screen and (max-width: 768px)").matches) { tableFontSizeVw = 4; }
-                    const baseFontSizePx = window.innerWidth * (tableFontSizeVw / 100);
-                    const rowPaddingTopEm = 0.4; const rowPaddingBottomEm = 0.4;
-                    const approxLineHeightFactor = 1.3; const borderBottomPx = 1;
-                    const estimatedRowHeight = (rowPaddingTopEm * baseFontSizePx) + (rowPaddingBottomEm * baseFontSizePx) + (approxLineHeightFactor * baseFontSizePx) + borderBottomPx;
-                    console.log(`[Estimation] Base Font(px): ${baseFontSizePx.toFixed(2)}, Estimated Row Height: ${estimatedRowHeight.toFixed(2)}`);
-                    if (estimatedRowHeight > 0) { MAX_HISTORY = Math.max(1, Math.floor(availableHeight / estimatedRowHeight)); console.log(`Estimated MAX_HISTORY (no rows): ${MAX_HISTORY}`); }
-                    else { console.warn(`Fallback: Estimated rowHeight is ${estimatedRowHeight.toFixed(2)}`); MAX_HISTORY = 10; }
+                    let tableFontSizeVw = 2; if (window.matchMedia("only screen and (max-width: 768px)").matches) tableFontSizeVw = 4;
+                    const baseFontSizePx = window.innerWidth * (tableFontSizeVw / 100); const rowPaddingTopEm = 0.4; const rowPaddingBottomEm = 0.4;
+                    const approxLineHeightFactor = 1.3; const borderBottomPx = 1; const estimatedRowHeight = (rowPaddingTopEm * baseFontSizePx) + (rowPaddingBottomEm * baseFontSizePx) + (approxLineHeightFactor * baseFontSizePx) + borderBottomPx;
+                    if (estimatedRowHeight > 0) { MAX_HISTORY = Math.max(1, Math.floor(availableHeight / estimatedRowHeight)); } else { MAX_HISTORY = 10; }
                 }
-                trimHistory(); // Apply the calculated limit
+                trimHistory();
             } catch (error) { console.error("Error during calculateMaxHistory:", error); MAX_HISTORY = 10; }
-            console.log(`--- Current MAX_HISTORY = ${MAX_HISTORY} ---`);
+            // console.log(`--- Current MAX_HISTORY = ${MAX_HISTORY} ---`);
         }
-
-        // --- Trim History ---
         function trimHistory() {
             while (historyTableBody.children.length > MAX_HISTORY) {
                 historyTableBody.removeChild(historyTableBody.lastChild);
             }
         }
 
-        // --- Connect to SSE ---
+
+        // --- Server-Sent Events (SSE) Connection ---
         function connectEventSource() {
             if (reconnectTimeoutId) { clearTimeout(reconnectTimeoutId); reconnectTimeoutId = null; }
             if (socket) { socket.close(); }
-            console.log("Attempting to connect to SSE endpoint...");
-            socket = new EventSource("/events"); // Assuming server serves from root
+            console.log("Attempting to connect to SSE endpoint (/events)...");
+            socket = new EventSource("/events"); // Server endpoint for events
 
             socket.onopen = function () { console.log("SSE connection established."); };
 
             socket.onmessage = function (event) {
                 try {
-                    if (event.data.startsWith(': heartbeat')) { return; } // Ignore heartbeats
+                    // Ignore heartbeat messages
+                    if (event.data.startsWith(': heartbeat')) { return; }
 
-                    console.log("SSE message received:", event.data);
                     const data = JSON.parse(event.data);
+                    console.log("SSE Received Data:", data);
 
-                    // Check if it's a public announcement trigger or a queue call
-                    if (data.type === 'public_announcement') {
-                        console.log("Public announcement trigger received.");
-                        announcementQueue.push({ type: 'public' });
-                        playNextAnnouncement(); // Attempt to play if not already playing
-                    } else if (data.queue && data.station) {
-                        // Assume it's a queue call if it has queue and station
-                        console.log(`Queue call received: ${data.queue} / ${data.station}`);
-                        updateDisplay(data.queue, data.station);
-                        announcementQueue.push({ type: 'queue', queue: data.queue, station: data.station });
-                        playNextAnnouncement(); // Attempt to play if not already playing
+                    // Handle specific event types from the server
+                    if (data.type === 'public_announcement_cycle_start') {
+                        console.log("SSE Received: Public Announcement Cycle Trigger");
+                        announcementQueue.push({ type: 'public_cycle' });
+                        playNextAnnouncement(); // Check if we can start playing now
+
+                    } else if (data.type === 'queue_call' && data.data && data.data.queue && data.data.station) {
+                        const { queue, station } = data.data;
+                        console.log(`SSE Received: Queue Call ${queue} / ${station}`);
+                        updateDisplay(queue, station); // Update visual display
+                        announcementQueue.push({ type: 'queue', data: { queue: queue, station: station } });
+                        playNextAnnouncement(); // Check if we can start playing now
+
                     } else {
-                        console.warn("Received unknown SSE message format:", data);
+                        console.warn("Received unknown or incomplete SSE message format:", data);
                     }
                 } catch (error) {
-                    console.error("Error processing SSE message:", error, "Data:", event.data);
+                    console.error("Error processing SSE message:", error, "Raw Data:", event.data);
                 }
             };
 
             socket.onerror = function (error) {
                 console.error("SSE connection error:", error);
                 socket.close();
+                // Attempt to reconnect after a delay
                 if (!reconnectTimeoutId) {
                     console.log(`Scheduling SSE reconnection attempt in ${RECONNECT_DELAY_MS / 1000} seconds...`);
                     reconnectTimeoutId = setTimeout(connectEventSource, RECONNECT_DELAY_MS);
@@ -364,240 +338,232 @@
             };
         }
 
-        // --- Update Display --- (Modified to handle potential duplicates better)
+        // --- Update Visual Display ---
         function updateDisplay(queue, station) {
-            const queueStr = String(queue);
-            const stationStr = String(station);
-
-            // Update main display
+            const queueStr = String(queue); const stationStr = String(station);
+            // Update large display numbers
             currentQueueEl.textContent = queueStr;
             currentStationEl.textContent = stationStr;
-
-            // Trigger animations
+            // Re-trigger animations
             currentQueueEl.style.animation = 'none'; currentQueueEl.offsetHeight; currentQueueEl.style.animation = null;
             currentStationEl.style.animation = 'none'; currentStationEl.offsetHeight; currentStationEl.style.animation = null;
 
-            // Check if exact same call is already *the first* item in history
+            // Add to history table if it's not the same as the last call
             const firstRow = historyTableBody.firstChild;
-            if (firstRow) {
-                const cells = firstRow.getElementsByTagName("td");
-                if (cells.length > 1 && cells[0].textContent === queueStr && cells[1].textContent === stationStr) {
-                    console.log(`Call ${queueStr}:${stationStr} is already the latest in history. Skipping add.`);
-                    return; // Don't add if it's already the most recent
-                }
+            if (!firstRow || firstRow.cells[0].textContent !== queueStr || firstRow.cells[1].textContent !== stationStr) {
+                const row = document.createElement("tr");
+                row.innerHTML = `<td>${queueStr}</td><td>${stationStr}</td>`;
+                historyTableBody.insertBefore(row, historyTableBody.firstChild);
+                trimHistory(); // Remove oldest rows if history exceeds max size
             }
-
-            // Create and add new history row
-            const row = document.createElement("tr");
-            row.innerHTML = `<td>${queueStr}</td><td>${stationStr}</td>`;
-            historyTableBody.insertBefore(row, historyTableBody.firstChild);
-
-            // Trim history based on calculated MAX_HISTORY
-            trimHistory();
         }
 
 
-        // --- Announcement Playback Logic ---
+        // --- Core Announcement Playback Logic ---
 
+        /**
+         * Checks if audio is idle and if there are announcements in the queue.
+         * If both conditions are met, it takes the next item, acquires the audio lock (isPlayingAudio=true),
+         * plays a chime, and then delegates to the appropriate sequential playback function.
+         */
         function playNextAnnouncement() {
-            if (isPlayingTTS || announcementQueue.length === 0) {
-                return; // Don't play if already playing or queue is empty
+            // **Strict Check:** Only proceed if nothing is playing AND queue is not empty
+            if (isPlayingAudio || announcementQueue.length === 0) {
+                console.log(`playNextAnnouncement: Bypassed (isPlayingAudio=${isPlayingAudio}, queueLength=${announcementQueue.length})`);
+                return;
             }
 
-            const announcement = announcementQueue[0]; // Peek at the next item
+            // **Acquire Lock & Dequeue:** Get item and set flag
+            isPlayingAudio = true;
+            const announcement = announcementQueue.shift();
+            console.log(`playNextAnnouncement: Starting Processing. Set isPlayingAudio=true. Item: ${announcement.type}. Queue length: ${announcementQueue.length}`);
 
-            isPlayingTTS = true; // Set flag *before* starting async operations
-
-            // Play chime first (optional, based on your preference)
+            // Play chime first (optional, can be removed if not desired)
             chimeAudio.currentTime = 0;
-            const chimePromise = chimeAudio.play().catch(err => {
-                console.warn("Chime playback failed (user interaction needed?):", err);
-                // Don't stop the process if chime fails, just continue after a short delay
-                return new Promise(resolve => setTimeout(resolve, 100));
-            });
-
+            const chimePromise = chimeAudio.play().catch(err => { console.warn("Chime playback failed:", err); return new Promise(resolve => setTimeout(resolve, 100)); /* Continue anyway */ });
 
             chimePromise.then(() => {
-                // Use onended for chime to ensure it finishes before TTS starts
-                chimeAudio.onended = () => {
-                    chimeAudio.onended = null; // Clear listener
-                    // Remove the announcement from the queue *now* that we are processing it
-                    announcementQueue.shift();
-                    // Delegate based on type
+                const playAfterChime = () => {
+                    chimeAudio.onended = null; // Cleanup listener
+                    console.log(`playNextAnnouncement: Chime finished/skipped. Delegating item type: ${announcement.type}`);
+
+                    // Delegate to the appropriate sequence player
                     if (announcement.type === 'queue') {
-                        console.log(`Starting QUEUE announcement: ${announcement.queue}/${announcement.station}`);
-                        playLanguagesSequentially(announcement, 0);
-                    } else if (announcement.type === 'public') {
-                        console.log("Starting PUBLIC announcement.");
-                        playPublicAnnouncements(0);
+                        playQueueLanguagesSequentially(announcement.data, 0); // Start queue call sequence
+                    } else if (announcement.type === 'public_cycle') {
+                        playPublicCycleSequentially(0); // Start public announcement cycle sequence
                     } else {
-                        console.error("Unknown announcement type in queue:", announcement);
-                        isPlayingTTS = false; // Reset flag
-                        setTimeout(playNextAnnouncement, 100); // Try next item quickly
+                        console.error("Unknown announcement type processed:", announcement);
+                        // **Release Lock** immediately if type is unknown to prevent deadlock
+                        console.log("!!! Releasing lock due to unknown type !!!");
+                        isPlayingAudio = false;
+                        setTimeout(playNextAnnouncement, 100); // Check queue again quickly
                     }
                 };
-                // If chime already ended or failed immediately, trigger manually
-                if (chimeAudio.paused || chimeAudio.ended) {
-                    chimeAudio.onended();
+                // Ensure chime completion triggers the next step
+                chimeAudio.onended = playAfterChime;
+                if (chimeAudio.paused || chimeAudio.ended) { // If chime finished instantly or failed
+                    playAfterChime();
                 }
             });
         }
 
-        // Plays QUEUE call languages
-        function playLanguagesSequentially(announcementData, langIndex) {
-            const { queue, station } = announcementData;
+        /**
+         * Plays the multi-language announcement for a single queue call sequentially.
+         * Manages the isPlayingAudio lock for the duration of its sequence.
+         * @param {object} queueData - { queue: string, station: string }
+         * @param {number} langIndex - Current index in the languagesToSpeak array
+         */
+        function playQueueLanguagesSequentially(queueData, langIndex) {
+            const { queue, station } = queueData;
 
+            // **Base Case: Sequence Finished**
             if (langIndex >= languagesToSpeak.length) {
-                console.log(`Finished all languages for QUEUE ${queue}/${station}`);
-                isPlayingTTS = false;
-                setTimeout(playNextAnnouncement, 500); // Check queue after a delay
-                return;
+                console.log(`<- Finished QUEUE sequence for ${queue}/${station}. Releasing lock.`);
+                // **Release Lock** for this entire sequence
+                isPlayingAudio = false;
+                // Check the main queue for the next item after a short delay
+                setTimeout(playNextAnnouncement, 500);
+                return; // End the sequence
             }
 
+            // **Recursive Step: Play current language audio**
             const lang = languagesToSpeak[langIndex];
-            const ttsUrl = `/speak?queue=${encodeURIComponent(queue)}&station=${encodeURIComponent(station)}&lang=${encodeURIComponent(lang)}`;
+            // URL points to the server endpoint that generates TTS or serves fallback
+            const audioUrl = `/speak?queue=${encodeURIComponent(queue)}&station=${encodeURIComponent(station)}&lang=${encodeURIComponent(lang)}`;
+            console.log(`-> Playing QUEUE audio part ${langIndex + 1}/${languagesToSpeak.length}: ${lang} for ${queue}/${station}`);
 
-            console.log(`Playing QUEUE TTS: ${lang} for ${queue}/${station} - URL: ${ttsUrl}`);
-            playTTSAudio(ttsUrl, () => {
-                // On successful playback end
-                playLanguagesSequentially(announcementData, langIndex + 1);
-            }, () => {
-                // On error during playback
-                console.error(`Error during QUEUE TTS playback for ${lang}. Skipping to next.`);
-                playLanguagesSequentially(announcementData, langIndex + 1);
-            });
+            // Use the generic player; the lock remains TRUE until the base case above
+            playAudioFromUrl(audioUrl,
+                () => { // onEndCallback (Success): Called when this language finishes
+                    console.log(`<- Finished QUEUE part OK: ${lang}.`);
+                    playQueueLanguagesSequentially(queueData, langIndex + 1); // Play next language
+                },
+                () => { // onErrorCallback: Called when this language fails
+                    console.error(`<- Finished QUEUE part ERROR: ${lang}. Skipping to next language.`);
+                    playQueueLanguagesSequentially(queueData, langIndex + 1); // Try next language anyway
+                }
+            );
         }
 
-        // Plays PUBLIC announcement languages
-        function playPublicAnnouncements(langIndex) {
+        /**
+         * Plays the full cycle of public announcements sequentially.
+         * Manages the isPlayingAudio lock for the duration of its sequence.
+         * @param {number} langIndex - Current index in the publicAnnouncementLanguages array
+         */
+        function playPublicCycleSequentially(langIndex) {
+            // **Base Case: Sequence Finished**
             if (langIndex >= publicAnnouncementLanguages.length) {
-                console.log("Finished all languages for PUBLIC announcement.");
-                isPlayingTTS = false;
-                setTimeout(playNextAnnouncement, 500); // Check queue after a delay
-                return;
+                console.log("<- Finished PUBLIC announcement cycle sequence. Releasing lock.");
+                // **Release Lock** for this entire sequence
+                isPlayingAudio = false;
+                // Check the main queue for the next item after a short delay
+                setTimeout(playNextAnnouncement, 500);
+                return; // End the sequence
             }
 
+            // **Recursive Step: Play current language audio**
             const lang = publicAnnouncementLanguages[langIndex];
-            const ttsUrl = `/speak-announcement?lang=${encodeURIComponent(lang)}`;
+            // Construct the direct path to the public MP3 file
+            const audioUrl = `/media/announcement/${lang}.mp3`; // Assumes files are served from /public/media/...
+            console.log(`-> Playing PUBLIC cycle part ${langIndex + 1}/${publicAnnouncementLanguages.length}: ${lang} (${audioUrl})`);
 
-            console.log(`Playing PUBLIC TTS: ${lang} - URL: ${ttsUrl}`);
-            playTTSAudio(ttsUrl, () => {
-                // On successful playback end
-                playPublicAnnouncements(langIndex + 1);
-            }, () => {
-                // On error during playback
-                console.error(`Error during PUBLIC TTS playback for ${lang}. Skipping to next.`);
-                playPublicAnnouncements(langIndex + 1);
-            });
+            // Use the generic player; the lock remains TRUE until the base case above
+            playAudioFromUrl(audioUrl,
+                () => { // onEndCallback (Success): Called when this language finishes
+                    console.log(`<- Finished PUBLIC cycle part OK: ${lang}.`);
+                    playPublicCycleSequentially(langIndex + 1); // Play next language
+                },
+                () => { // onErrorCallback: Called when this language fails
+                    console.error(`<- Finished PUBLIC cycle part ERROR: ${lang}. Skipping to next language.`);
+                    playPublicCycleSequentially(langIndex + 1); // Try next language anyway
+                }
+            );
         }
 
 
-        // --- Generic TTS Audio Player Function ---
-        function playTTSAudio(url, onEndCallback, onErrorCallback) {
-            ttsAudio.src = url;
-            ttsAudio.load(); // Important to load the new source
+        /**
+         * Generic function to play audio from a given URL using the announcementAudio element.
+         * It handles the play promise and sets up 'onended' and 'onerror' listeners.
+         * IMPORTANT: It does NOT manage the global isPlayingAudio flag.
+         * @param {string} url - The URL of the audio file or stream to play.
+         * @param {function} onEndCallback - Function to call when playback finishes successfully.
+         * @param {function} onErrorCallback - Function to call if playback encounters an error.
+         */
+        function playAudioFromUrl(url, onEndCallback, onErrorCallback) {
+            // Simple wrappers just to ensure callbacks are called
+            const successCallbackWrapper = () => { onEndCallback(); };
+            const failureCallbackWrapper = () => { onErrorCallback(); };
 
-            const playPromise = ttsAudio.play();
+            // Set source and load
+            announcementAudio.src = url;
+            announcementAudio.load();
+            console.log(`   playAudioFromUrl: Attempting to play audio from: ${url}`);
 
+            // Attempt to play, handle promise
+            const playPromise = announcementAudio.play();
             if (playPromise !== undefined) {
                 playPromise.then(() => {
-                    // Playback started
-                    console.log(`Audio playback started for: ${url}`);
-                    ttsAudio.onended = () => {
-                        console.log(`Audio playback finished for: ${url}`);
-                        ttsAudio.onended = null; // Clean up listener
-                        ttsAudio.onerror = null;  // Clean up error listener too
-                        setTimeout(onEndCallback, 100); // Small delay before next action
+                    // Playback started successfully
+                    console.log(`   playAudioFromUrl: Playback started for: ${url}`);
+                    // Setup listeners for completion or error during playback
+                    announcementAudio.onended = () => {
+                        console.log(`   playAudioFromUrl: Playback finished (onended event) for: ${url}`);
+                        announcementAudio.onended = null; announcementAudio.onerror = null; // Cleanup
+                        setTimeout(successCallbackWrapper, 50); // Callback after short delay
                     };
-                    ttsAudio.onerror = (e) => {
-                        console.error(`Audio playback error (promise API) for ${url}:`, e);
-                        ttsAudio.onended = null;
-                        ttsAudio.onerror = null;
-                        setTimeout(onErrorCallback, 100); // Move to next on error
+                    announcementAudio.onerror = (e) => {
+                        console.error(`   playAudioFromUrl: Playback error during playback (onerror event) for ${url}:`, e);
+                        announcementAudio.onended = null; announcementAudio.onerror = null; // Cleanup
+                        setTimeout(failureCallbackWrapper, 50); // Callback after short delay
                     };
                 }).catch(error => {
-                    console.error(`Error initiating playback for ${url}:`, error);
-                    // If play() promise rejects, trigger the error callback
-                    setTimeout(onErrorCallback, 100);
+                    // Error initiating playback (e.g., browser restriction, invalid source)
+                    console.error(`   playAudioFromUrl: Error initiating playback (play() rejected) for ${url}:`, error);
+                    announcementAudio.onended = null; announcementAudio.onerror = null; // Cleanup
+                    setTimeout(failureCallbackWrapper, 50); // Callback after short delay
                 });
-            } else {
-                // Fallback for browsers without promise support (less common now)
-                console.warn(`ttsAudio.play() did not return a promise for ${url}. Using event listener fallback.`);
-                const endedHandler = () => {
-                    console.log(`Audio playback finished (event) for: ${url}`);
-                    cleanupListeners();
-                    setTimeout(onEndCallback, 100);
-                };
-                const errorHandler = (e) => {
-                    console.error(`Audio playback error (event) for ${url}:`, e);
-                    cleanupListeners();
-                    setTimeout(onErrorCallback, 100);
-                };
-                const cleanupListeners = () => {
-                    ttsAudio.removeEventListener('ended', endedHandler);
-                    ttsAudio.removeEventListener('error', errorHandler);
-                    ttsAudio.removeEventListener('canplaythrough', canPlayHandler); // Also cleanup this if used
-                }
-                // Use canplaythrough to ensure audio is somewhat ready
-                const canPlayHandler = () => {
-                    console.log(`Audio can play through for: ${url}`);
-                };
-
-                ttsAudio.addEventListener('ended', endedHandler);
-                ttsAudio.addEventListener('error', errorHandler);
-                ttsAudio.addEventListener('canplaythrough', canPlayHandler);
-
-                // Try playing anyway
-                ttsAudio.play();
             }
+            // Note: Fallback for browsers without promise support could be added here if needed
         }
 
-        // General error handler on the audio element (e.g., network error loading src)
-        ttsAudio.addEventListener('error', (e) => {
-            // This catches errors like 404 or network issues BEFORE play() is even called successfully
-            // Check if we are *expecting* playback. Avoid logging if src is just changing.
-            if (isPlayingTTS && !ttsAudio.ended && ttsAudio.currentSrc === ttsAudio.src) {
-                console.error("General TTS Audio Element Error (e.g., loading failed):", e, "for src:", ttsAudio.src);
-                // If this happens, the specific error handler in playTTSAudio might not have been attached yet or fired.
-                // We should try to recover the playback queue.
-                // Caution: This could lead to double-skipping if not handled carefully.
-                // A simple recovery: mark as not playing and try next after delay.
-                // isPlayingTTS = false;
-                // setTimeout(playNextAnnouncement, 500);
+        // Optional: General error listener on the audio element for loading issues etc.
+        announcementAudio.addEventListener('error', (e) => {
+            if (isPlayingAudio && announcementAudio.src && announcementAudio.networkState === announcementAudio.NETWORK_NO_SOURCE) {
+                console.error("General Audio Element Error (e.g., loading failed, 404?):", e, "for src:", announcementAudio.src);
+                // This might indicate a deeper issue, but the specific error handlers should ideally catch playback problems.
             }
         });
-
 
         // --- Initialization ---
         window.addEventListener('load', () => {
-            // Delay calculation slightly to ensure layout is stable
+            // Calculate history size after layout stabilizes
             setTimeout(() => {
-                calculateMaxHistory(); // Initial calculation
-                // Set up periodic recalculation
+                calculateMaxHistory();
                 if (historyRecalcIntervalId) clearInterval(historyRecalcIntervalId);
                 historyRecalcIntervalId = setInterval(calculateMaxHistory, HISTORY_RECALC_INTERVAL_MS);
-                console.log(`Started periodic history recalculation every ${HISTORY_RECALC_INTERVAL_MS / 1000} seconds.`);
             }, 250);
-
-            // Connect to the server for events
-            connectEventSource(); // Start SSE connection
-
-            // Add a click listener to potentially unlock audio playback on mobile/strict browsers
+            // Start listening for server events
+            connectEventSource();
+            // Add a click listener to unlock audio playback on mobile/strict browsers
+            // This helps ensure audio can play when initiated by code later
             document.body.addEventListener('click', () => {
-                chimeAudio.load(); // Try loading audio elements on first interaction
-                ttsAudio.load();
-                console.log("User interaction detected, attempting to load audio.");
+                chimeAudio.load();
+                announcementAudio.load();
+                console.log("User interaction detected. Audio elements loaded.");
             }, { once: true }); // Only run once
         });
-        window.addEventListener('resize', calculateMaxHistory); // Recalculate on resize
+        // Recalculate history size on window resize
+        window.addEventListener('resize', calculateMaxHistory);
+        // Cleanup resources when the page is closed
         window.addEventListener('beforeunload', () => {
-            // Clean up resources on page close
             if (socket) socket.close();
             if (reconnectTimeoutId) clearTimeout(reconnectTimeoutId);
             if (historyRecalcIntervalId) clearInterval(historyRecalcIntervalId);
-            // Stop any ongoing TTS
-            ttsAudio.pause();
-            ttsAudio.src = ""; // Clear source
+            // Stop any potentially playing audio
+            chimeAudio.pause();
+            announcementAudio.pause();
+            announcementAudio.src = ""; // Clear source
         });
 
     </script>
