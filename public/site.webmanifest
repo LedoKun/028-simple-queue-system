@@ -1,0 +1,19 @@
+{
+    "name": "Queue Calling System",
+    "short_name": "Queue",
+    "icons": [
+        {
+            "src": "/media/icons/android-chrome-192x192.png",
+            "sizes": "192x192",
+            "type": "image/png"
+        },
+        {
+            "src": "/media/icons/android-chrome-512x512.png",
+            "sizes": "512x512",
+            "type": "image/png"
+        }
+    ],
+    "theme_color": "#b19cd9",
+    "background_color": "#b19cd9",
+    "display": "standalone"
+}
