@@ -30,6 +30,8 @@
             height: 100vh;
             width: 100vw;
             overflow: hidden;
+            /* Add padding at the bottom to prevent status indicator overlap */
+            padding-bottom: 30px;
         }
 
         .container {
@@ -123,11 +125,51 @@
             background-color: #222;
         }
 
+        /* --- NEW: Server Status Indicator Styles --- */
+        .status-indicator {
+            position: fixed;
+            /* Keep it fixed on screen */
+            bottom: 5px;
+            right: 10px;
+            padding: 4px 12px;
+            border-radius: 5px;
+            font-size: 0.8em;
+            /* Smaller font */
+            font-weight: bold;
+            z-index: 1000;
+            /* Ensure it's above other elements */
+            color: #fff;
+            /* Default text color */
+            transition: background-color 0.5s ease;
+            /* Smooth transition */
+        }
+
+        .status-connected {
+            background-color: #28a745;
+            /* Green */
+        }
+
+        .status-disconnected {
+            background-color: #dc3545;
+            /* Red */
+        }
+
+        .status-connecting {
+            background-color: #ffc107;
+            /* Yellow/Orange */
+            color: #333;
+            /* Darker text for better contrast on yellow */
+        }
+
+        /* --- END NEW STYLES --- */
+
         /* Responsive adjustments */
         @media only screen and (max-width: 768px) {
             body {
                 height: auto;
                 min-height: 100vh;
+                /* Adjust padding for smaller screens if needed */
+                padding-bottom: 35px;
             }
 
             .container {
@@ -167,6 +209,14 @@
 
             .history-table thead {
                 position: static;
+            }
+
+            .status-indicator {
+                font-size: 1.5vw;
+                /* Adjust font size for mobile */
+                padding: 6px 10px;
+                bottom: 8px;
+                right: 8px;
             }
         }
 
@@ -230,6 +280,7 @@
         </div>
     </div>
 
+    <div id="serverStatus" class="status-indicator status-connecting">Connecting...</div>
     <audio id="chimeAudio" src="media/chime.mp3" preload="auto"></audio>
     <audio id="announcementAudio" preload="none"></audio>
 
@@ -240,6 +291,7 @@
         const historyTableBody = document.getElementById("historyTable");
         const chimeAudio = document.getElementById("chimeAudio");
         const announcementAudio = document.getElementById("announcementAudio");
+        const serverStatusEl = document.getElementById("serverStatus"); // <-- NEW: Get status element
 
         // State Variables
         let MAX_HISTORY = 10;
@@ -254,6 +306,24 @@
         let historyRecalcIntervalId = null;
         let previousQueue = null;
         let previousStation = null;
+
+        // --- NEW: Update Server Status Display ---
+        function updateServerStatus(status, message) {
+            if (!serverStatusEl) return; // Safety check
+            serverStatusEl.textContent = message;
+            // Remove existing status classes
+            serverStatusEl.classList.remove('status-connected', 'status-disconnected', 'status-connecting');
+            // Add the appropriate class based on the status
+            if (status === 'connected') {
+                serverStatusEl.classList.add('status-connected');
+            } else if (status === 'disconnected') {
+                serverStatusEl.classList.add('status-disconnected');
+            } else { // Default to 'connecting' for initial or unknown states
+                serverStatusEl.classList.add('status-connecting');
+            }
+            console.log(`UI: Server status updated to: ${status} - ${message}`);
+        }
+        // --- END NEW FUNCTION ---
 
         // --- History Table Size Calculation & Trimming ---
         function calculateMaxHistory() {
@@ -292,14 +362,27 @@
         function connectEventSource() {
             if (reconnectTimeoutId) { clearTimeout(reconnectTimeoutId); reconnectTimeoutId = null; }
             if (socket) { socket.close(); }
+
             console.log("Attempting to connect to SSE endpoint (/events)...");
+            updateServerStatus('connecting', 'Connecting...'); // <-- NEW: Update status on attempt
+
             socket = new EventSource("/events");
 
-            socket.onopen = function () { console.log("SSE connection established."); };
+            socket.onopen = function () {
+                console.log("SSE connection established.");
+                updateServerStatus('connected', 'Connected'); // <-- NEW: Update status on success
+            };
 
             socket.onmessage = function (event) {
+                // --- Heartbeat Check ---
+                if (event.data.startsWith(': heartbeat')) {
+                    // Optional: update status to 'connected' here too, in case 'onopen' was missed or for reassurance
+                    // updateServerStatus('connected', 'Connected');
+                    return; // Ignore heartbeats for data processing
+                }
+                // --- End Heartbeat Check ---
+
                 try {
-                    if (event.data.startsWith(': heartbeat')) { return; }
                     const data = JSON.parse(event.data);
                     // console.log("SSE Received Data:", data);
 
@@ -325,9 +408,11 @@
 
             socket.onerror = function (error) {
                 console.error("SSE connection error:", error);
-                socket.close();
+                updateServerStatus('disconnected', 'Disconnected'); // <-- NEW: Update status on error
+                socket.close(); // Ensure it's closed
                 if (!reconnectTimeoutId) {
                     console.log(`Scheduling SSE reconnection attempt in ${RECONNECT_DELAY_MS / 1000} seconds...`);
+                    updateServerStatus('disconnected', 'Retrying...'); // <-- NEW: Show retrying message
                     reconnectTimeoutId = setTimeout(connectEventSource, RECONNECT_DELAY_MS);
                 }
             };
@@ -478,13 +563,14 @@
         // --- Initialization ---
         window.addEventListener('load', () => {
             setTimeout(() => { calculateMaxHistory(); if (historyRecalcIntervalId) clearInterval(historyRecalcIntervalId); historyRecalcIntervalId = setInterval(calculateMaxHistory, HISTORY_RECALC_INTERVAL_MS); }, 250);
-            connectEventSource();
+            connectEventSource(); // <-- Connects and sets initial 'Connecting...' status
             document.body.addEventListener('click', () => { chimeAudio.load(); announcementAudio.load(); console.log("User interaction detected. Audio elements loaded."); }, { once: true });
         });
         window.addEventListener('resize', calculateMaxHistory);
         window.addEventListener('beforeunload', () => {
             if (socket) socket.close(); if (reconnectTimeoutId) clearTimeout(reconnectTimeoutId); if (historyRecalcIntervalId) clearInterval(historyRecalcIntervalId);
             chimeAudio.pause(); announcementAudio.pause(); announcementAudio.src = "";
+            updateServerStatus('disconnected', 'Disconnected'); // <-- NEW: Update status on page unload
         });
 
     </script>
