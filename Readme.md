@@ -2,8 +2,6 @@
 
 A responsive, TV-friendly queue display and calling system. It features real-time updates via Server-Sent Events (SSE), displays current queue numbers and stations, maintains a history of recent calls, and supports multiple languages for both the display (subtitles) and audio announcements (via dynamic generation/TTS and pre-recorded files). Includes a separate interface for calling queues and triggering announcements, along with live server connection status. The system is also Dockerized for easy deployment.
 
-**(Optional: Consider adding a screenshot or GIF of the TV display and Caller interface here)**
-
 ## Features
 
 -   **Real-time TV Display (`tv.html`):**
