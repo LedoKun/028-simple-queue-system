@@ -377,7 +377,7 @@
                 // --- Heartbeat Check ---
                 if (event.data.startsWith(': heartbeat')) {
                     // Optional: update status to 'connected' here too, in case 'onopen' was missed or for reassurance
-                    // updateServerStatus('connected', 'Connected');
+                    updateServerStatus('connected', 'Connected');
                     return; // Ignore heartbeats for data processing
                 }
                 // --- End Heartbeat Check ---
