@@ -9,11 +9,9 @@
     <style>
         html,
         body {
-            /* Apply to html and body */
             margin: 0;
             padding: 0;
             height: 100%;
-            /* Take up the entire viewport */
         }
 
         body {
@@ -26,7 +24,8 @@
             align-items: center;
             justify-content: center;
             box-sizing: border-box;
-            /* Include padding in height */
+            padding-bottom: 40px;
+            /* Space for status */
         }
 
         h2 {
@@ -42,7 +41,18 @@
             display: block;
             width: 100%;
             max-width: 400px;
+            text-align: center;
+            /* Center label text */
         }
+
+        label input[type="text"] {
+            margin-left: auto;
+            /* Center input within label */
+            margin-right: auto;
+            display: block;
+            /* Make input block to center */
+        }
+
 
         input[type="text"] {
             padding: 10px;
@@ -52,8 +62,22 @@
             border: 1px solid #333;
             border-radius: 5px;
             width: calc(100% - 22px);
+            /* Adjust width as needed */
+            max-width: 300px;
+            /* Max width for inputs */
             margin-top: 5px;
             box-sizing: border-box;
+            text-align: center;
+            /* Center text inside input */
+        }
+
+        .button-wrapper {
+            /* Optional wrapper for button group styling */
+            width: 100%;
+            max-width: 400px;
+            /* Match label max-width */
+            text-align: center;
+            /* Center buttons */
         }
 
         button {
@@ -64,8 +88,14 @@
             border: none;
             border-radius: 5px;
             cursor: pointer;
-            margin-top: 20px;
             transition: background-color 0.3s ease;
+            /* --- Button Layout Changes --- */
+            display: block;
+            /* Make buttons block level */
+            width: fit-content;
+            /* Size button to content */
+            margin: 15px auto 0 auto;
+            /* Top margin for spacing, auto L/R for centering */
         }
 
         button:hover {
@@ -73,7 +103,6 @@
         }
 
         button:disabled {
-            /* Added styles for disabled button */
             background-color: #555;
             color: #aaa;
             cursor: not-allowed;
@@ -83,7 +112,47 @@
             background-color: #555;
         }
 
+        /* Server Status Indicator Styles */
+        .status-indicator {
+            position: fixed;
+            bottom: 5px;
+            /* --- Status Position Change --- */
+            right: 10px;
+            /* Position bottom-right */
+            /* left: 10px; */
+            /* Removed left positioning */
+            padding: 4px 12px;
+            border-radius: 5px;
+            font-size: 0.8em;
+            font-weight: bold;
+            z-index: 1000;
+            color: #fff;
+            transition: background-color 0.5s ease;
+            max-width: 90%;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .status-connected {
+            background-color: #28a745;
+            /* Green */
+        }
+
+        .status-disconnected {
+            background-color: #dc3545;
+            /* Red */
+        }
+
+        .status-connecting {
+            background-color: #ffc107;
+            /* Yellow/Orange */
+            color: #333;
+        }
+
         @media only screen and (max-width: 600px) {
+
+            /* ... other responsive styles ... */
             h2 {
                 font-size: 2em;
             }
@@ -96,71 +165,127 @@
             button {
                 font-size: 1em;
             }
+
+            body {
+                padding-bottom: 50px;
+            }
+
+            .status-indicator {
+                font-size: 0.7em;
+                padding: 5px 8px;
+                bottom: 8px;
+                right: 8px;
+                /* Adjust position for smaller screens */
+            }
         }
     </style>
 </head>
 
 <body>
     <h2>Queue Caller Interface</h2>
-    <label>Station Number: <input type="text" id="station"></label><br>
-    <label>Queue Number: <input type="text" id="queue" autofocus></label><br>
-    <button id="callButton" onclick="callQueue()">Call Queue</button>
-    <button id="announceButton" onclick="triggerAnnouncement()">Trigger Announcement</button>
+
+    <label>Station Number: <input type="text" id="station"></label>
+    <label>Queue Number: <input type="text" id="queue" autofocus></label>
+
+    <div class="button-wrapper">
+        <button id="callButton" onclick="callQueue()">Call Queue</button>
+        <button id="announceButton" onclick="triggerAnnouncement()">Trigger Announcement</button>
+    </div>
+
+    <div id="serverStatus" class="status-indicator status-connecting">Connecting...</div>
 
     <script>
-        window.onload = function () {
-            const stationInput = document.getElementById('station');
-            stationInput.focus();
-            stationInput.select();
-        };
-
+        // --- Elements ---
         const queueInput = document.getElementById('queue');
         const stationInput = document.getElementById('station');
-        const callButtonInput = document.getElementById('callButton');
+        const callButton = document.getElementById('callButton');
         const announceButton = document.getElementById('announceButton');
+        const serverStatusEl = document.getElementById("serverStatus");
 
-        stationInput.addEventListener('focus', function () {
-            this.select();
-        });
+        // --- State Variables ---
+        let socket = null; // SSE connection
+        let reconnectTimeoutId = null;
+        const RECONNECT_DELAY_MS = 5000; // 5 seconds
 
-        queueInput.addEventListener('focus', function () {
-            this.select();
-        });
+        // --- Initial Setup ---
+        window.onload = function () {
+            stationInput.focus();
+            stationInput.select();
+            connectEventSource(); // Start SSE connection for status
+        };
+
+        // --- Event Listeners ---
+        stationInput.addEventListener('focus', function () { this.select(); });
+        queueInput.addEventListener('focus', function () { this.select(); });
 
         document.addEventListener('keydown', function (event) {
             if (event.key === 'Enter') {
                 event.preventDefault();
-                callButtonInput.focus();
-                callQueue();
+                if (document.activeElement === stationInput) {
+                    queueInput.focus();
+                } else if (document.activeElement === queueInput) {
+                    callButton.focus();
+                    callQueue();
+                } else {
+                    callQueue();
+                }
             } else if (
                 document.activeElement !== queueInput &&
                 document.activeElement !== stationInput &&
-                queueInput.value &&
                 stationInput.value &&
-                event.key.length === 1 // Simplified check for char/number
+                event.key.length === 1 &&
+                !event.ctrlKey && !event.altKey && !event.metaKey
             ) {
-                queueInput.value = '';
-                queueInput.value = event.key;
-                queueInput.focus();
+                if (/^[a-zA-Z0-9]$/.test(event.key)) {
+                    queueInput.value = event.key;
+                    queueInput.focus();
+                }
             }
         });
 
-        function callQueue() {
-            const queue = document.getElementById("queue").value;
-            const station = document.getElementById("station").value;
-            if (!queue || !station) return alert("Please enter both fields.");
+        window.addEventListener('beforeunload', () => {
+            console.log("Page unloading. Closing SSE connection.");
+            if (socket) { socket.close(); socket = null; }
+            if (reconnectTimeoutId) { clearTimeout(reconnectTimeoutId); reconnectTimeoutId = null; }
+        });
 
+        // --- Core Functions ---
+        function callQueue() {
+            const queue = queueInput.value;
+            const station = stationInput.value;
+            if (!queue || !station) {
+                alert("Please enter both Station and Queue numbers.");
+                if (!station) stationInput.focus();
+                else if (!queue) queueInput.focus();
+                return;
+            }
+
+            console.log(`Sending call: Queue=${queue}, Station=${station}`);
             fetch('/call', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ queue, station })
-            });
+            })
+                .then(response => {
+                    if (!response.ok) {
+                        console.error("Failed to send call command. Status:", response.status);
+                        alert(`Error calling queue: Server responded with status ${response.status}`);
+                    } else {
+                        console.log("Call command sent successfully.");
+                        queueInput.value = '';
+                        queueInput.focus();
+                    }
+                })
+                .catch(error => {
+                    console.error("Network error calling queue:", error);
+                    alert("Network error trying to call queue. Please check connection.");
+                });
         }
 
         function triggerAnnouncement() {
             announceButton.disabled = true;
             let timeLeft = 120;
-            announceButton.textContent = `Trigger Announcement - Wait ${timeLeft}s`;
+            announceButton.textContent = `Wait ${timeLeft}s`;
 
             const timer = setInterval(() => {
                 timeLeft--;
@@ -169,16 +294,86 @@
                     announceButton.disabled = false;
                     announceButton.textContent = "Trigger Announcement";
                 } else {
-                    announceButton.textContent = `Trigger Announcement - Wait ${timeLeft}s`;
+                    announceButton.textContent = `Wait ${timeLeft}s`;
                 }
             }, 1000);
 
+            console.log("Sending trigger announcement command...");
             fetch('/trigger-announcement', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({})
-            });
+            })
+                .then(response => {
+                    if (!response.ok) {
+                        console.error("Failed to trigger announcement. Status:", response.status);
+                        clearInterval(timer);
+                        announceButton.disabled = false;
+                        announceButton.textContent = "Trigger Announcement";
+                        alert(`Error triggering announcement: Server responded with status ${response.status}`);
+                    } else {
+                        console.log("Trigger announcement command sent successfully.");
+                    }
+                })
+                .catch(error => {
+                    console.error("Network error triggering announcement:", error);
+                    clearInterval(timer);
+                    announceButton.disabled = false;
+                    announceButton.textContent = "Trigger Announcement";
+                    alert("Network error trying to trigger announcement. Please check connection.");
+                });
         }
+
+        // --- Server Status Functions ---
+        function updateServerStatus(status, message) {
+            if (!serverStatusEl) return;
+            serverStatusEl.textContent = message;
+            serverStatusEl.title = message;
+            serverStatusEl.classList.remove('status-connected', 'status-disconnected', 'status-connecting');
+
+            if (status === 'connected') {
+                serverStatusEl.classList.add('status-connected');
+            } else if (status === 'disconnected') {
+                serverStatusEl.classList.add('status-disconnected');
+            } else {
+                serverStatusEl.classList.add('status-connecting');
+            }
+            console.log(`UI: Server status updated to: ${status} - ${message}`);
+        }
+
+        function connectEventSource() {
+            if (reconnectTimeoutId) { clearTimeout(reconnectTimeoutId); reconnectTimeoutId = null; }
+            if (socket) { socket.close(); }
+
+            console.log("Attempting to connect to SSE endpoint (/events)...");
+            updateServerStatus('connecting', 'Connecting...');
+
+            socket = new EventSource("/events");
+
+            socket.onopen = function () {
+                console.log("SSE connection established.");
+                updateServerStatus('connected', 'Connected');
+            };
+
+            socket.onmessage = function (event) {
+                if (event.data.startsWith(': heartbeat')) { return; }
+                console.log("SSE Received generic message:", event.data);
+            };
+
+            socket.onerror = function (error) {
+                console.error("SSE connection error:", error);
+                updateServerStatus('disconnected', 'Disconnected');
+                if (socket) socket.close(); // Ensure close on error
+                socket = null;
+
+                if (!reconnectTimeoutId) {
+                    console.log(`Scheduling SSE reconnection attempt in ${RECONNECT_DELAY_MS / 1000} seconds...`);
+                    updateServerStatus('disconnected', 'Retrying...');
+                    reconnectTimeoutId = setTimeout(connectEventSource, RECONNECT_DELAY_MS);
+                }
+            };
+        }
+
     </script>
 </body>
 
