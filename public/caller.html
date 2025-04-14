@@ -25,7 +25,9 @@
             justify-content: center;
             box-sizing: border-box;
             padding-bottom: 40px;
-            /* Space for status */
+            /* Space for bottom status */
+            padding-top: 60px;
+            /* Add space at top to avoid overlap with fixed button */
         }
 
         h2 {
@@ -42,17 +44,13 @@
             width: 100%;
             max-width: 400px;
             text-align: center;
-            /* Center label text */
         }
 
         label input[type="text"] {
             margin-left: auto;
-            /* Center input within label */
             margin-right: auto;
             display: block;
-            /* Make input block to center */
         }
-
 
         input[type="text"] {
             padding: 10px;
@@ -62,24 +60,19 @@
             border: 1px solid #333;
             border-radius: 5px;
             width: calc(100% - 22px);
-            /* Adjust width as needed */
             max-width: 300px;
-            /* Max width for inputs */
             margin-top: 5px;
             box-sizing: border-box;
             text-align: center;
-            /* Center text inside input */
         }
 
         .button-wrapper {
-            /* Optional wrapper for button group styling */
             width: 100%;
             max-width: 400px;
-            /* Match label max-width */
             text-align: center;
-            /* Center buttons */
         }
 
+        /* General Button Style (excluding announceButton layout) */
         button {
             padding: 15px 30px;
             font-size: 1.2em;
@@ -89,13 +82,6 @@
             border-radius: 5px;
             cursor: pointer;
             transition: background-color 0.3s ease;
-            /* --- Button Layout Changes --- */
-            display: block;
-            /* Make buttons block level */
-            width: fit-content;
-            /* Size button to content */
-            margin: 15px auto 0 auto;
-            /* Top margin for spacing, auto L/R for centering */
         }
 
         button:hover {
@@ -112,15 +98,41 @@
             background-color: #555;
         }
 
+
+        /* Style for the main call button */
+        #callButton {
+            display: block;
+            width: fit-content;
+            margin: 15px auto 0 auto;
+            /* Center the call button */
+        }
+
+        /* --- NEW Style for the Trigger Announcement Button --- */
+        #announceButton {
+            position: fixed;
+            /* Position relative to viewport */
+            top: 15px;
+            /* Distance from top */
+            right: 15px;
+            /* Distance from right */
+            z-index: 1001;
+            /* Ensure it's above other elements if needed */
+            /* Keep general appearance, override layout */
+            margin: 0;
+            /* Reset margin */
+            /* Optionally make it slightly smaller */
+            /* font-size: 1em; */
+            /* padding: 10px 20px; */
+        }
+
+        /* --- End New Style --- */
+
+
         /* Server Status Indicator Styles */
         .status-indicator {
             position: fixed;
             bottom: 5px;
-            /* --- Status Position Change --- */
             right: 10px;
-            /* Position bottom-right */
-            /* left: 10px; */
-            /* Removed left positioning */
             padding: 4px 12px;
             border-radius: 5px;
             font-size: 0.8em;
@@ -136,23 +148,24 @@
 
         .status-connected {
             background-color: #28a745;
-            /* Green */
         }
 
         .status-disconnected {
             background-color: #dc3545;
-            /* Red */
         }
 
         .status-connecting {
             background-color: #ffc107;
-            /* Yellow/Orange */
             color: #333;
         }
 
         @media only screen and (max-width: 600px) {
+            body {
+                padding-bottom: 50px;
+                padding-top: 70px;
+                /* More top padding on mobile */
+            }
 
-            /* ... other responsive styles ... */
             h2 {
                 font-size: 2em;
             }
@@ -161,13 +174,23 @@
                 font-size: 1.2em;
             }
 
-            input[type="text"],
-            button {
+            input[type="text"] {
                 font-size: 1em;
             }
 
-            body {
-                padding-bottom: 50px;
+            button {
+                font-size: 1em;
+                padding: 12px 25px;
+            }
+
+            /* Adjust button size */
+
+            #announceButton {
+                top: 10px;
+                right: 10px;
+                /* Smaller padding on mobile */
+                padding: 8px 15px;
+                font-size: 0.9em;
             }
 
             .status-indicator {
@@ -175,13 +198,14 @@
                 padding: 5px 8px;
                 bottom: 8px;
                 right: 8px;
-                /* Adjust position for smaller screens */
             }
         }
     </style>
 </head>
 
 <body>
+    <button id="announceButton" onclick="triggerAnnouncement()">Trigger Announcement</button>
+
     <h2>Queue Caller Interface</h2>
 
     <label>Station Number: <input type="text" id="station"></label>
@@ -189,7 +213,6 @@
 
     <div class="button-wrapper">
         <button id="callButton" onclick="callQueue()">Call Queue</button>
-        <button id="announceButton" onclick="triggerAnnouncement()">Trigger Announcement</button>
     </div>
 
     <div id="serverStatus" class="status-indicator status-connecting">Connecting...</div>
@@ -199,7 +222,7 @@
         const queueInput = document.getElementById('queue');
         const stationInput = document.getElementById('station');
         const callButton = document.getElementById('callButton');
-        const announceButton = document.getElementById('announceButton');
+        const announceButton = document.getElementById('announceButton'); // Still need reference
         const serverStatusEl = document.getElementById("serverStatus");
 
         // --- State Variables ---
@@ -221,6 +244,9 @@
         document.addEventListener('keydown', function (event) {
             if (event.key === 'Enter') {
                 event.preventDefault();
+                // If focus is on announce button, do nothing special on Enter
+                if (document.activeElement === announceButton) return;
+
                 if (document.activeElement === stationInput) {
                     queueInput.focus();
                 } else if (document.activeElement === queueInput) {
@@ -230,6 +256,8 @@
                     callQueue();
                 }
             } else if (
+                // Prevent input capture if announce button has focus
+                document.activeElement !== announceButton &&
                 document.activeElement !== queueInput &&
                 document.activeElement !== stationInput &&
                 stationInput.value &&
@@ -283,18 +311,27 @@
         }
 
         function triggerAnnouncement() {
+            // Prevent accidental double-clicks
+            if (announceButton.disabled) return;
+
             announceButton.disabled = true;
             let timeLeft = 120;
+            // Keep original text, show time in tooltip or temporarily
+            const originalText = announceButton.textContent;
             announceButton.textContent = `Wait ${timeLeft}s`;
+            announceButton.title = `Wait ${timeLeft}s before triggering again`; // Use title for timer
 
             const timer = setInterval(() => {
                 timeLeft--;
                 if (timeLeft <= 0) {
                     clearInterval(timer);
                     announceButton.disabled = false;
-                    announceButton.textContent = "Trigger Announcement";
+                    announceButton.textContent = originalText; // Restore original text
+                    announceButton.title = ''; // Clear title
                 } else {
-                    announceButton.textContent = `Wait ${timeLeft}s`;
+                    // Update title instead of text content
+                    announceButton.title = `Wait ${timeLeft}s before triggering again`;
+                    announceButton.textContent = `Wait ${timeLeft}s`; // Or keep this brief text
                 }
             }, 1000);
 
@@ -307,19 +344,22 @@
                 .then(response => {
                     if (!response.ok) {
                         console.error("Failed to trigger announcement. Status:", response.status);
-                        clearInterval(timer);
+                        clearInterval(timer); // Stop timer on failure
                         announceButton.disabled = false;
-                        announceButton.textContent = "Trigger Announcement";
+                        announceButton.textContent = originalText; // Restore text
+                        announceButton.title = ''; // Clear title
                         alert(`Error triggering announcement: Server responded with status ${response.status}`);
                     } else {
                         console.log("Trigger announcement command sent successfully.");
+                        // Timer continues
                     }
                 })
                 .catch(error => {
                     console.error("Network error triggering announcement:", error);
-                    clearInterval(timer);
+                    clearInterval(timer); // Stop timer on failure
                     announceButton.disabled = false;
-                    announceButton.textContent = "Trigger Announcement";
+                    announceButton.textContent = originalText; // Restore text
+                    announceButton.title = ''; // Clear title
                     alert("Network error trying to trigger announcement. Please check connection.");
                 });
         }
@@ -363,7 +403,7 @@
             socket.onerror = function (error) {
                 console.error("SSE connection error:", error);
                 updateServerStatus('disconnected', 'Disconnected');
-                if (socket) socket.close(); // Ensure close on error
+                if (socket) socket.close();
                 socket = null;
 
                 if (!reconnectTimeoutId) {
