@@ -34,7 +34,7 @@ A responsive, TV-friendly queue display and calling system. It features real-tim
 
 1.  Clone the repository:
     ```bash
-    git clone [https://github.com/LedoKun/028-simple-queue-system.git](https://github.com/LedoKun/028-simple-queue-system.git)
+    git clone https://github.com/LedoKun/028-simple-queue-system.git
     cd 028-simple-queue-system
     ```
 
