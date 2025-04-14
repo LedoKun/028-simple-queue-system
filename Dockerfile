@@ -1,5 +1,5 @@
 # Use the official Node LTS Alpine image as the base
-FROM node:lts-alpine
+FROM node:22-alpine3.21
 
 ENV NODE_ENV=production
 ENV PORT=3000
