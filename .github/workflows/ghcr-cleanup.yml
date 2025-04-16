@@ -15,15 +15,30 @@ jobs:
     steps:
       - name: Extract and lowercase repo name
         run: |
-          REPO_FULL=${GITHUB_REPOSITORY}               # e.g. "LedoKun/028-simple-queue-system"
-          REPO_NAME=${REPO_FULL#*/}                    # strips the owner, yields "028-simple-queue-system"
+          REPO_FULL=${GITHUB_REPOSITORY}          # e.g. "LedoKun/028-simple-queue-system"
+          REPO_NAME=${REPO_FULL#*/}               # → "028-simple-queue-system"
           echo "REPO_NAME_LC=${REPO_NAME,,}" >> $GITHUB_ENV
+
+      - name: Dry‑run cleanup (preview what would be deleted)
+        uses: dataaxiom/ghcr-cleanup-action@v1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          owner: ${{ github.repository_owner }}
+          repository: ${{ github.repository }}      # optional, defaults to current repo
+          package: ${{ env.REPO_NAME_LC }}
+          dry-run: false
+          delete-untagged: true                     # remove all except kept untagged
+          keep-n-untagged: 2                        # preserve 2 newest untagged
+          keep-n-tagged: 2                          # preserve 2 newest tagged
+          exclude-tags: latest                      # never delete “latest”
 
       - name: Cleanup old images
         uses: dataaxiom/ghcr-cleanup-action@v1
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           owner: ${{ github.repository_owner }}
-          package: ${{ env.REPO_NAME_LC }}             # now just "028-simple-queue-system"
-          keep-n-tagged: 2
+          package: ${{ env.REPO_NAME_LC }}
+          delete-untagged: true
           keep-n-untagged: 2
+          keep-n-tagged: 2
+          exclude-tags: latest
