@@ -16,8 +16,8 @@ jobs:
       # 1. Extract and lowercase both owner & repo
       - name: Extract and lowercase owner and repo
         env:
-          FULL_REPO: ${{ github.repository }}      # "LedoKun/028-simple-queue-system"
-          OWNER:     ${{ github.repository_owner }}# "LedoKun"
+          FULL_REPO: ${{ github.repository }}
+          OWNER:     ${{ github.repository_owner }}
         run: |
           # strip off "owner/"
           REPO_NAME=${FULL_REPO#*/}
@@ -30,10 +30,10 @@ jobs:
         uses: dataaxiom/ghcr-cleanup-action@v1
         with:
           token:            ${{ secrets.GITHUB_TOKEN }}
-          owner:            ${{ env.OWNER_LC }}        # now "ledokun"
-          repository:       ${{ env.REPO_NAME_LC }}    # now "028-simple-queue-system"
+          owner:            ${{ env.OWNER_LC }}
+          repository:       ${{ env.REPO_NAME_LC }}
           package:          ${{ env.REPO_NAME_LC }}
-          dry-run:          true
+          dry-run:          false
           delete-untagged:  true
           keep-n-tagged:    2
           exclude-tags:     latest
