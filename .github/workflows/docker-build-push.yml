@@ -35,7 +35,7 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           push: true
-          tags: ghcr.io/${{ github.repository_owner }}:latest
+          tags: ghcr.io/${{ github.OWNER_LC }}:latest
           build-args: |
             BUILD_DATE=${{ github.event.head_commit.timestamp }}
             VCS_REF=${{ github.sha }}
