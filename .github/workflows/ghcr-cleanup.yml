@@ -25,20 +25,7 @@ jobs:
           echo "OWNER_LC=${OWNER,,}"     >> $GITHUB_ENV
           echo "REPO_NAME_LC=${REPO_NAME,,}" >> $GITHUB_ENV
 
-      # 2. Dry‑run so you can inspect what WILL be deleted
-      - name: Dry‑run cleanup (preview deletions)
-        uses: dataaxiom/ghcr-cleanup-action@v1
-        with:
-          token:            ${{ secrets.GITHUB_TOKEN }}
-          owner:            ${{ env.OWNER_LC }}
-          repository:       ${{ env.REPO_NAME_LC }}
-          package:          ${{ env.REPO_NAME_LC }}
-          dry-run:          false
-          delete-untagged:  true
-          keep-n-tagged:    2
-          exclude-tags:     latest
-
-      # 3. When the dry‑run looks right, uncomment this to actually delete:
+      # 2. When the dry‑run looks right, uncomment this to actually delete:
       - name: Cleanup old images
         uses: dataaxiom/ghcr-cleanup-action@v1
         with:
@@ -47,5 +34,7 @@ jobs:
           repository:       ${{ env.REPO_NAME_LC }}
           package:          ${{ env.REPO_NAME_LC }}
           delete-untagged:  true
-          keep-n-tagged:    2
-          exclude-tags:     latest
+          delete-ghost-images: true
+          delete-partial-images: true
+          delete-orphaned-images: true
+          keep-n-tagged:    1
