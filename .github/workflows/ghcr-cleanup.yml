@@ -13,30 +13,39 @@ jobs:
       contents: read
 
     steps:
-      - name: Extract and lowercase repo name
+      # 1. Extract and lowercase both owner & repo
+      - name: Extract and lowercase owner and repo
+        env:
+          FULL_REPO: ${{ github.repository }}      # "LedoKun/028-simple-queue-system"
+          OWNER:     ${{ github.repository_owner }}# "LedoKun"
         run: |
-          REPO_FULL=${GITHUB_REPOSITORY}          # e.g. "LedoKun/028-simple-queue-system"
-          REPO_NAME=${REPO_FULL#*/}               # → "028-simple-queue-system"
+          # strip off "owner/"
+          REPO_NAME=${FULL_REPO#*/}
+          # lowercase both
+          echo "OWNER_LC=${OWNER,,}"     >> $GITHUB_ENV
           echo "REPO_NAME_LC=${REPO_NAME,,}" >> $GITHUB_ENV
 
-      - name: Dry‑run cleanup (preview what would be deleted)
+      # 2. Dry‑run so you can inspect what WILL be deleted
+      - name: Dry‑run cleanup (preview deletions)
         uses: dataaxiom/ghcr-cleanup-action@v1
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          owner: ${{ github.repository_owner }}
-          repository: ${{ github.repository }}      # optional, defaults to current repo
-          package: ${{ env.REPO_NAME_LC }}
-          dry-run: false
-          delete-untagged: true                     # remove all except kept untagged
-          keep-n-tagged: 2                          # preserve 2 newest tagged
-          exclude-tags: latest                      # never delete “latest”
+          token:            ${{ secrets.GITHUB_TOKEN }}
+          owner:            ${{ env.OWNER_LC }}        # now "ledokun"
+          repository:       ${{ env.REPO_NAME_LC }}    # now "028-simple-queue-system"
+          package:          ${{ env.REPO_NAME_LC }}
+          dry-run:          true
+          delete-untagged:  true
+          keep-n-tagged:    2
+          exclude-tags:     latest
 
+      # 3. When the dry‑run looks right, uncomment this to actually delete:
       - name: Cleanup old images
         uses: dataaxiom/ghcr-cleanup-action@v1
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          owner: ${{ github.repository_owner }}
-          package: ${{ env.REPO_NAME_LC }}
-          delete-untagged: true
-          keep-n-tagged: 2
-          exclude-tags: latest
+          token:            ${{ secrets.GITHUB_TOKEN }}
+          owner:            ${{ env.OWNER_LC }}
+          repository:       ${{ env.REPO_NAME_LC }}
+          package:          ${{ env.REPO_NAME_LC }}
+          delete-untagged:  true
+          keep-n-tagged:    2
+          exclude-tags:     latest
