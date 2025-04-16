@@ -28,7 +28,6 @@ jobs:
           package: ${{ env.REPO_NAME_LC }}
           dry-run: false
           delete-untagged: true                     # remove all except kept untagged
-          keep-n-untagged: 2                        # preserve 2 newest untagged
           keep-n-tagged: 2                          # preserve 2 newest tagged
           exclude-tags: latest                      # never delete “latest”
 
@@ -39,6 +38,5 @@ jobs:
           owner: ${{ github.repository_owner }}
           package: ${{ env.REPO_NAME_LC }}
           delete-untagged: true
-          keep-n-untagged: 2
           keep-n-tagged: 2
           exclude-tags: latest
