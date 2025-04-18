@@ -2,6 +2,7 @@ const express = require('express');
 const path = require('path');
 const fs = require('fs'); // Import file system module
 const gtts = require('node-gtts'); // Keep for queue calls
+const rateLimit = require('express-rate-limit'); // Import rate limiting middleware
 const app = express();
 const port = process.env.PORT || 3000;
 
@@ -10,6 +11,18 @@ const debouncingIntervalMs = process.env.DEBOUNCINGINTERVALMS || 3000; // 3 seco
 // Default interval for the *entire* announcement cycle
 const publicAnnouncementIntervalMs = process.env.PUBLICANNOUNCEMENTINTERVALMS || 30 * 60 * 1000; // 30 minutes (Adjust as needed)
 const startPublicAnnouncementsAfterMs = process.env.STARTPUBLICANNOUNCEMENTSAFTERMS || 5 * 60 * 1000; // 5 minutes
+
+// --- Rate Limiting Configuration ---
+// Configure limits via environment variables or use defaults
+const callRateLimitWindowMs = parseInt(process.env.CALL_RATE_LIMIT_WINDOW_MS || '60000', 10); // 1 minute
+const callRateLimitMax = parseInt(process.env.CALL_RATE_LIMIT_MAX || '20', 10); // Max 20 requests per minute per IP for /call
+
+const speakRateLimitWindowMs = parseInt(process.env.SPEAK_RATE_LIMIT_WINDOW_MS || '60000', 10); // 1 minute
+const speakRateLimitMax = parseInt(process.env.SPEAK_RATE_LIMIT_MAX || '30', 10); // Max 30 requests per minute per IP for /speak
+
+const triggerRateLimitWindowMs = parseInt(process.env.TRIGGER_RATE_LIMIT_WINDOW_MS || '300000', 10); // 5 minutes
+const triggerRateLimitMax = parseInt(process.env.TRIGGER_RATE_LIMIT_MAX || '5', 10); // Max 5 requests per 5 minutes per IP for /trigger-announcement
+
 
 // --- Configuration ---
 // Keep language codes for queue fallbacks and filename consistency checks
@@ -25,6 +38,31 @@ app.use(express.json());
 // Serve static files from 'public' directory (Handles /media/... requests now)
 app.use(express.static(path.join(__dirname, 'public')));
 
+// --- Apply Rate Limiting ---
+const callLimiter = rateLimit({
+    windowMs: callRateLimitWindowMs,
+    max: callRateLimitMax,
+    message: 'Too many calls from this IP, please try again later.',
+    standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
+    legacyHeaders: false, // Disable the `X-RateLimit-*` headers
+});
+
+const speakLimiter = rateLimit({
+    windowMs: speakRateLimitWindowMs,
+    max: speakRateLimitMax,
+    message: 'Too many speak requests from this IP, please try again later.',
+    standardHeaders: true,
+    legacyHeaders: false,
+});
+
+const triggerLimiter = rateLimit({
+    windowMs: triggerRateLimitWindowMs,
+    max: triggerRateLimitMax,
+    message: 'Too many announcement triggers from this IP, please try again later.',
+    standardHeaders: true,
+    legacyHeaders: false,
+});
+
 
 // --- SSE Setup ---
 let clients = [];
@@ -39,9 +77,13 @@ let publicAnnouncementIntervalId = null;
 
 // Get the absolute server path for the fallback queue MP3
 const getFallbackQueueServerPath = (langCode) => {
-    const fileLangCode = langCode === 'zh-CN' ? 'cn' : langCode;
+    // Sanitize langCode input slightly for path construction, though languageCodes check is the main guard
+    const safeLangCode = String(langCode || '').replace(/[^a-z0-9-]/gi, '').toLowerCase();
+
+    const fileLangCode = safeLangCode === 'zh-cn' ? 'cn' : safeLangCode; // Handle zh-CN mapping
     if (languageCodes.includes(fileLangCode)) {
         const filePath = path.join(queueFallbackBasePath, `queue-${fileLangCode}.mp3`);
+        // Use async fs.promises.access or sync fs.existsSync carefully if performance is critical
         if (fs.existsSync(filePath)) {
             return filePath;
         } else {
@@ -49,6 +91,7 @@ const getFallbackQueueServerPath = (langCode) => {
             return null;
         }
     }
+    console.warn(`${getTimestamp()} - WARN (getFallbackQueueServerPath) - Invalid or unsupported language code attempted: ${safeLangCode}`);
     return null;
 };
 
@@ -59,13 +102,22 @@ function handleGttsError(err, res, context, fallbackPath) {
         if (fallbackPath) {
             console.log(`${getTimestamp()} - INFO (${context}) - gTTS failed, attempting fallback: ${fallbackPath}`);
             res.setHeader('Content-Type', 'audio/mpeg'); res.setHeader('Cache-Control', '86400');
-            res.sendFile(fallbackPath, (fileErr) => {
-                if (fileErr) { console.error(`${getTimestamp()} - ERROR (${context}) - Error sending fallback MP3:`, fileErr); if (!res.headersSent) res.status(500).send('Error generating speech and fallback failed.'); }
-                else { console.log(`${getTimestamp()} - INFO (${context}) - Successfully sent fallback MP3.`); }
+            // Use pipe for potentially large files, handle errors
+            const readStream = fs.createReadStream(fallbackPath);
+            readStream.on('error', (fileErr) => {
+                console.error(`${getTimestamp()} - ERROR (${context}) - Error reading fallback MP3:`, fileErr);
+                if (!res.headersSent) {
+                    res.status(500).send('Error generating speech and fallback failed (read error).');
+                } else {
+                    res.end(); // Attempt to close response if headers sent
+                }
             });
+            readStream.pipe(res); // Pipe file stream to response
+            console.log(`${getTimestamp()} - INFO (${context}) - Started sending fallback MP3.`);
         } else { console.error(`${getTimestamp()} - ERROR (${context}) - gTTS failed and no fallback MP3 available.`); res.status(500).send('Error generating speech and fallback unavailable.'); }
     } else { console.warn(`${getTimestamp()} - WARN (${context}) - gTTS error after headers sent. Cannot send fallback.`); res.end(); }
 }
+
 function handleServerError(err, res, context) {
     console.error(`${getTimestamp()} - ERROR (${context}) - Internal server error:`, err);
     if (!res.headersSent) { res.status(500).send('Internal server error'); }
@@ -73,44 +125,108 @@ function handleServerError(err, res, context) {
 
 // --- API Endpoints ---
 
-// POST /call -
-app.post('/call', (req, res) => {
-    const { queue, station } = req.body; const queueStr = String(queue); const stationStr = String(station);
-    const now = Date.now(); const callKey = `${queueStr}:${stationStr}`;
-    console.log(`${getTimestamp()} - POST /call - Received call: ${JSON.stringify({ queue: queueStr, station: stationStr })}`);
-    if (lastProcessedTime[callKey] && (now - lastProcessedTime[callKey] < debouncingIntervalMs)) { console.log(`${getTimestamp()} - POST /call - Ignoring duplicate call (debounced): ${callKey}`); return res.sendStatus(200); }
-    if (pendingCalls.some(call => call.callKey === callKey)) { console.log(`${getTimestamp()} - POST /call - Ignoring duplicate call (already in queue): ${callKey}`); return res.sendStatus(200); }
-    const callObj = { type: 'queue', queue: queueStr, station: stationStr, callKey }; pendingCalls.push(callObj);
+// POST /call - Apply rate limiting
+app.post('/call', callLimiter, (req, res) => {
+    // Basic sanitization/validation for queue and station
+    // Keep alphanumeric characters and spaces
+    const queue = String(req.body.queue || '').replace(/[^a-zA-Z0-9 ]/g, '');
+    const station = String(req.body.station || '').replace(/[^a-zA-Z0-9 ]/g, '');
+
+    if (!queue || !station) {
+        console.warn(`${getTimestamp()} - POST /call - Invalid or empty queue/station after sanitization.`);
+        return res.status(400).send('Invalid queue or station data.');
+    }
+
+    const now = Date.now();
+    const callKey = `${queue}:${station}`; // Use sanitized values for key
+
+    console.log(`${getTimestamp()} - POST /call - Received call: ${JSON.stringify({ queue, station })}`);
+
+    // Debouncing logic remains the same, using sanitized callKey
+    if (lastProcessedTime[callKey] && (now - lastProcessedTime[callKey] < debouncingIntervalMs)) {
+        console.log(`${getTimestamp()} - POST /call - Ignoring duplicate call (debounced): ${callKey}`);
+        return res.sendStatus(200);
+    }
+    if (pendingCalls.some(call => call.callKey === callKey)) {
+        console.log(`${getTimestamp()} - POST /call - Ignoring duplicate call (already in queue): ${callKey}`);
+        return res.sendStatus(200);
+    }
+
+    // Store sanitized values in the pendingCalls queue
+    const callObj = { type: 'queue', queue: queue, station: station, callKey: callKey };
+    pendingCalls.push(callObj);
     console.log(`${getTimestamp()} - POST /call - Added call to queue: ${callKey}. Queue length: ${pendingCalls.length}`);
-    if (!isProcessingQueue) { processQueue(); } res.sendStatus(200);
+
+    if (!isProcessingQueue) { processQueue(); }
+    res.sendStatus(200);
 });
 
-// SSE endpoint /events -
+// SSE endpoint /events - No rate limiting needed for the SSE connection itself
 app.get('/events', (req, res) => {
-    res.setHeader('Content-Type', 'text/event-stream'); res.setHeader('Cache-Control', '86400'); res.setHeader('Connection', 'keep-alive');
+    res.setHeader('Content-Type', 'text/event-stream'); res.setHeader('Cache-Control', 'no-cache'); // Changed to no-cache for SSE
+    res.setHeader('Connection', 'keep-alive');
     res.flushHeaders(); clients.push(res);
     console.log(`${getTimestamp()} - GET /events - Client connected. Total clients: ${clients.length}`);
     const heartbeatIntervalMs = 15000;
     const heartbeatInterval = setInterval(() => {
-        try { if (res.writableEnded) { clearInterval(heartbeatInterval); clients = clients.filter(client => client !== res); return; } res.write(': heartbeat\n\n'); }
-        catch (error) { console.error(`${getTimestamp()} - GET /events - Error sending heartbeat:`, error); clearInterval(heartbeatInterval); clients = clients.filter(client => client !== res); }
+        try {
+            // Check if the client is still writable before writing
+            if (res.writableFinished || res.writableEnded) {
+                console.log(`${getTimestamp()} - GET /events - Client connection ended, clearing heartbeat.`);
+                clearInterval(heartbeatInterval);
+                clients = clients.filter(client => client !== res);
+                return;
+            }
+            res.write(': heartbeat\n\n');
+        }
+        catch (error) {
+            console.error(`${getTimestamp()} - GET /events - Error sending heartbeat:`, error);
+            clearInterval(heartbeatInterval);
+            clients = clients.filter(client => client !== res);
+        }
     }, heartbeatIntervalMs);
     req.on('close', () => { clearInterval(heartbeatInterval); clients = clients.filter(client => client !== res); console.log(`${getTimestamp()} - GET /events - Client disconnected. Total clients: ${clients.length}`); });
 });
 
-// GET /speak - Queue Call Audio (Unchanged - still handles TTS/fallback)
-app.get('/speak', (req, res) => {
-    const { queue, station, lang } = req.query;
-    if (!queue || !station || !lang) { console.error(`${getTimestamp()} - GET /speak - Missing parameters`); return res.status(400).send('Missing parameters'); }
+// GET /speak - Queue Call Audio (Apply rate limiting and input sanitization)
+app.get('/speak', speakLimiter, (req, res) => {
+    // Sanitize inputs from query parameters
+    const queue = String(req.query.queue || '').replace(/[^a-zA-Z0-9 ]/g, '');
+    const station = String(req.query.station || '').replace(/[^a-zA-Z0-9 ]/g, '');
+    // Lang is handled by the switch, but basic path sanitization is added in getFallbackQueueServerPath
+    const lang = req.query.lang;
+
+    if (!queue || !station || !lang) {
+        console.warn(`${getTimestamp()} - GET /speak - Missing or invalid parameters after sanitization.`);
+        return res.status(400).send('Missing or invalid parameters');
+    }
+
     const fallbackPath = getFallbackQueueServerPath(lang);
+
+    // Handle languages that explicitly use fallback MP3s
     if (lang === 'my' || lang === 'fil') {
         console.log(`${getTimestamp()} - GET /speak - Burmese / Filipino requested, using fallback MP3 directly. (Filepath = ${fallbackPath})`);
         if (fallbackPath) {
             res.setHeader('Content-Type', 'audio/mpeg'); res.setHeader('Cache-Control', '86400');
-            res.sendFile(fallbackPath, (fileErr) => { if (fileErr) { console.error(`${getTimestamp()} - ERROR (speak - fallback) - Error sending file:`, fileErr); if (!res.headersSent) res.status(500).send('Error sending Burmese / Filipino fallback audio.'); } else { console.log(`${getTimestamp()} - GET /speak - Sent Burmese / Filipino fallback MP3 for queue=${queue}, station=${station}`); } });
-        } else { console.error(`${getTimestamp()} - GET /speak - Filipino fallback MP3 not found`); res.status(404).send('Filipino fallback audio not found.'); } return;
+            // Use pipe for streaming the file
+            const readStream = fs.createReadStream(fallbackPath);
+            readStream.on('error', (fileErr) => {
+                console.error(`${getTimestamp()} - ERROR (speak - fallback) - Error reading file:`, fileErr);
+                if (!res.headersSent) res.status(500).send('Error sending Burmese / Filipino fallback audio (read error).');
+                else res.end();
+            });
+            readStream.pipe(res);
+            console.log(`${getTimestamp()} - GET /speak - Started sending Burmese / Filipino fallback MP3 for queue=${queue}, station=${station}`);
+        } else {
+            console.error(`${getTimestamp()} - GET /speak - Burmese / Filipino fallback MP3 not found for lang=${lang}`);
+            res.status(404).send('Burmese / Filipino fallback audio not found.');
+        }
+        return; // Important to return after sending fallback
     }
-    let text = ''; let speakLang = lang;
+
+    // Prepare text for gTTS using the sanitized inputs
+    let text = '';
+    let speakLang = lang; // Default to requested lang
     switch (lang) {
         case 'th': speakLang = 'th'; text = `เชิญคิวหมายเลข ${queue} ที่ช่องบริการ ${station} ค่ะ`; break;
         case 'en': speakLang = 'en-uk'; text = `Queue number ${queue}, please proceed to station ${station}.`; break;
@@ -119,24 +235,57 @@ app.get('/speak', (req, res) => {
         case 'ja': speakLang = 'ja'; text = `整理番号 ${queue} 番の方、 ${station} 番窓口までお越しください。`; break;
         default:
             console.warn(`${getTimestamp()} - GET /speak - Unsupported language for TTS: ${lang}`);
-            if (fallbackPath) { console.log(`${getTimestamp()} - GET /speak - Unsupported TTS lang ${lang}, attempting fallback.`); res.setHeader('Content-Type', 'audio/mpeg'); res.setHeader('Cache-Control', '86400'); res.sendFile(fallbackPath, (fileErr) => { if (fileErr) { console.error(`${getTimestamp()} - ERROR (speak - unsupported fallback) - Error sending file:`, fileErr); if (!res.headersSent) res.status(500).send('Error sending fallback audio.'); } else { console.log(`${getTimestamp()} - GET /speak - Sent fallback MP3 for unsupported lang ${lang}, queue=${queue}, station=${station}`); } }); } else { res.status(400).send(`Unsupported language and no fallback: ${lang}`); } return;
+            if (fallbackPath) {
+                console.log(`${getTimestamp()} - GET /speak - Unsupported TTS lang ${lang}, attempting fallback.`);
+                res.setHeader('Content-Type', 'audio/mpeg'); res.setHeader('Cache-Control', '86400');
+                const readStream = fs.createReadStream(fallbackPath);
+                readStream.on('error', (fileErr) => {
+                    console.error(`${getTimestamp()} - ERROR (speak - unsupported fallback) - Error reading file:`, fileErr);
+                    if (!res.headersSent) res.status(500).send('Error sending fallback audio (read error).');
+                    else res.end();
+                });
+                readStream.pipe(res);
+                console.log(`${getTimestamp()} - GET /speak - Started sending fallback MP3 for unsupported lang ${lang}, queue=${queue}, station=${station}`);
+            } else {
+                res.status(400).send(`Unsupported language and no fallback: ${lang}`);
+            }
+            return; // Important to return after handling unsupported lang
     }
+
     console.log(`${getTimestamp()} - GET /speak - Attempting TTS generation for lang=${lang} (using ${speakLang}), queue=${queue}, station=${station}`);
+
     try {
         if (typeof gtts !== 'function') { throw new Error('node-gtts module not loaded correctly.'); }
-        res.setHeader('Content-Type', 'audio/mpeg'); res.setHeader('Cache-Control', '86400');
+        res.setHeader('Content-Type', 'audio/mpeg'); res.setHeader('Cache-Control', '86400'); // Cache for 1 day
         const stream = gtts(speakLang).stream(text);
         stream.on('error', (err) => handleGttsError(err, res, `speak (lang=${lang}, queue=${queue})`, fallbackPath));
         stream.on('end', () => console.log(`${getTimestamp()} - GET /speak - Finished streaming TTS speech for lang=${lang}, queue=${queue}, station=${station}`));
-        stream.pipe(res);
+        stream.pipe(res); // Pipe gTTS stream to response
     } catch (err) {
         console.error(`${getTimestamp()} - ERROR (speak setup - lang=${lang}) - Error setting up TTS:`, err);
-        if (!res.headersSent && fallbackPath) { console.log(`${getTimestamp()} - INFO (speak setup) - TTS setup failed, attempting fallback: ${fallbackPath}`); res.setHeader('Content-Type', 'audio/mpeg'); res.setHeader('Cache-Control', '86400'); res.sendFile(fallbackPath, (fileErr) => { if (fileErr) { console.error(`${getTimestamp()} - ERROR (speak setup fallback) - Error sending fallback MP3:`, fileErr); if (!res.headersSent) { res.status(500).send('Error generating speech and fallback failed.'); } } else { console.log(`${getTimestamp()} - INFO (speak setup) - Successfully sent fallback MP3 after setup error.`); } }); } else if (!res.headersSent) { handleServerError(err, res, `speak setup (lang=${lang})`); } else { console.warn(`${getTimestamp()} - WARN (speak setup) - TTS setup error after headers sent. Cannot send fallback.`); res.end(); }
+        // Handle errors during gTTS setup, attempting fallback if available and headers not sent
+        if (!res.headersSent && fallbackPath) {
+            console.log(`${getTimestamp()} - INFO (speak setup) - TTS setup failed, attempting fallback: ${fallbackPath}`);
+            res.setHeader('Content-Type', 'audio/mpeg'); res.setHeader('Cache-Control', '86400');
+            const readStream = fs.createReadStream(fallbackPath);
+            readStream.on('error', (fileErr) => {
+                console.error(`${getTimestamp()} - ERROR (speak setup fallback) - Error reading fallback MP3:`, fileErr);
+                if (!res.headersSent) { res.status(500).send('Error generating speech and fallback failed (read error).'); }
+                else { res.end(); }
+            });
+            readStream.pipe(res);
+            console.log(`${getTimestamp()} - INFO (speak setup) - Started sending fallback MP3 after setup error.`);
+        } else if (!res.headersSent) {
+            handleServerError(err, res, `speak setup (lang=${lang})`);
+        } else {
+            console.warn(`${getTimestamp()} - WARN (speak setup) - TTS setup error after headers sent. Cannot send fallback or send 500.`);
+            res.end(); // Ensure response is closed
+        }
     }
 });
 
-// POST /trigger-announcement - Manual trigger for public announcement cycle
-app.post('/trigger-announcement', (req, res) => {
+// POST /trigger-announcement - Manual trigger for public announcement cycle (Apply rate limiting)
+app.post('/trigger-announcement', triggerLimiter, (req, res) => {
     console.log(`${getTimestamp()} - POST /trigger-announcement - Manual announcement trigger received.`);
     // Manually trigger the announcement cycle
     const payload = JSON.stringify({
@@ -145,7 +294,7 @@ app.post('/trigger-announcement', (req, res) => {
 
     // Broadcast to clients
     clients = clients.filter(clientRes => {
-        if (clientRes.writableEnded) {
+        if (clientRes.writableEnded || clientRes.writableFinished) { // Check both for robustness
             console.log(`${getTimestamp()} - trigger-announcement - Removing client (connection ended before broadcast).`);
             return false;
         }
@@ -166,11 +315,14 @@ app.post('/trigger-announcement', (req, res) => {
 function processQueue() {
     if (pendingCalls.length === 0) { isProcessingQueue = false; console.log(`${getTimestamp()} - processQueue - Queue is empty.`); return; }
     if (!isProcessingQueue) { isProcessingQueue = true; console.log(`${getTimestamp()} - processQueue - Starting processing.`); }
-    const callObj = pendingCalls.shift(); lastProcessedTime[callObj.callKey] = Date.now();
+    const callObj = pendingCalls.shift(); lastProcessedTime[callObj.callKey] = Date.now(); // Use callKey with sanitized values
     console.log(`${getTimestamp()} - processQueue - Processing call: ${callObj.callKey}. Remaining: ${pendingCalls.length}`);
+
+    // The payload uses the *sanitized* data already stored in callObj
     const payload = JSON.stringify({ type: 'queue_call', data: { queue: callObj.queue, station: callObj.station } });
+
     clients = clients.filter(clientRes => {
-        if (clientRes.writableEnded) { return false; }
+        if (clientRes.writableEnded || clientRes.writableFinished) { return false; } // Check both
         try { clientRes.write(`data: ${payload}\n\n`); return true; }
         catch (error) { console.error(`${getTimestamp()} - processQueue - Error writing queue_call:`, error); return false; }
     });
@@ -194,7 +346,7 @@ function startPublicAnnouncements() {
 
         // Broadcast to clients
         clients = clients.filter(clientRes => {
-            if (clientRes.writableEnded) {
+            if (clientRes.writableEnded || clientRes.writableFinished) { // Check both
                 console.log(`${getTimestamp()} - makeAnnouncement - Removing client (connection ended before broadcast).`);
                 return false;
             }
@@ -224,6 +376,13 @@ function startPublicAnnouncements() {
 // --- Start Server ---
 app.listen(port, () => {
     console.log(`${getTimestamp()} - Queue server running on http://localhost:${port}`);
+    // Log configured rate limits
+    console.log(`${getTimestamp()} - Configured Rate Limits:`);
+    console.log(`  /call: ${callRateLimitMax} requests per ${callRateLimitWindowMs / 1000} seconds`);
+    console.log(`  /speak: ${speakRateLimitMax} requests per ${speakRateLimitWindowMs / 1000} seconds`);
+    console.log(`  /trigger-announcement: ${triggerRateLimitMax} requests per ${triggerRateLimitWindowMs / 1000} seconds`);
+
+
     // Ensure media directories exist inside 'public'
     try {
         const publicAnnPath = path.join(__dirname, 'public', 'media', 'announcement');
