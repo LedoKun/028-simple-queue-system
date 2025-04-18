@@ -155,7 +155,7 @@ You have two primary ways to run the application using Docker: by building the i
 
 ## License
 
-This project is licensed under the [MIT License](LICENSE). *(Ensure you have a LICENSE file)*
+This project is licensed under the [MIT License](LICENSE).
 
 ## Contributing
 
