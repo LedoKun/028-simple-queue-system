@@ -13,7 +13,8 @@ const startPublicAnnouncementsAfterMs = process.env.STARTPUBLICANNOUNCEMENTSAFTE
 
 // --- Configuration ---
 // Keep language codes for queue fallbacks and filename consistency checks
-const languageCodes = ['th', 'en', 'my', 'vi', 'fil', 'cn', 'ja'];
+// const languageCodes = ['th', 'en', 'my', 'vi', 'fil', 'cn', 'ja'];
+const languageCodes = ['th', 'en', 'my'];
 const queueFallbackBasePath = path.join(__dirname, 'public', 'media', 'queue-fallback'); // Used for queue fallbacks
 
 // Helper function to generate a formatted timestamp for logs
