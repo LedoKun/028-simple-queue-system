@@ -276,8 +276,8 @@
             <table class="history-table">
                 <thead>
                     <tr>
-                        <th>คิว/Queue<br><span class="subtitle">(လိုင်း/Số/Pila/番号/排队)</span></th>
                         <th>ช่อง/Station<br><span class="subtitle">(ကောင်တာ/Quầy/Estasyon/窓口/窗口)</span></th>
+                        <th>คิว/Queue<br><span class="subtitle">(လိုင်း/Số/Pila/番号/排队)</span></th>
                     </tr>
                 </thead>
                 <tbody id="historyTable"></tbody>
@@ -446,7 +446,7 @@
                 if (addPrevious) {
                     console.log(`Adding previous item ${previousQueue}/${previousStation} to history.`);
                     const prevRow = document.createElement("tr");
-                    prevRow.innerHTML = `<td>${previousQueue}</td><td>${previousStation}</td>`;
+                    prevRow.innerHTML = `<td>${previousStation}</td><td>${previousQueue}</td>`;
                     historyTableBody.insertBefore(prevRow, historyTableBody.firstChild);
                 }
             }
