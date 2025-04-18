@@ -34,7 +34,7 @@ A responsive, TV-friendly queue display and calling system. It features real-tim
 
 1.  Clone the repository:
     ```bash
-    git clone https://github.com/LedoKun/028-simple-queue-system.git
+    git clone [https://github.com/LedoKun/028-simple-queue-system.git](https://github.com/LedoKun/028-simple-queue-system.git)
     cd 028-simple-queue-system
     ```
 
@@ -83,6 +83,10 @@ The application's behavior can be customized using the following environment var
 
 ### Using Docker
 
+You have two primary ways to run the application using Docker: by building the image locally or by pulling a pre-built image from GitHub Container Registry.
+
+#### Option 1: Building the Docker Image Locally
+
 1.  Build the Docker image:
     ```bash
     docker build -t queue-calling-system .
@@ -101,6 +105,30 @@ The application's behavior can be customized using the following environment var
            --rm --name queue-app queue-calling-system
     ```
     *(Note: `PORT` inside the container should match what the app listens to, usually the default unless overridden)*
+
+3.  Access the application:
+    * **TV Display:** [http://localhost:3000/tv.html](http://localhost:3000/tv.html) (or your mapped host port, e.g., `http://localhost:8080/tv.html`)
+    * **Caller Interface:** [http://localhost:3000/caller.html](http://localhost:3000/caller.html) (or your mapped host port)
+
+#### Option 2: Pulling the Pre-built Docker Image
+
+1.  Pull the latest pre-built Docker image from GitHub Container Registry:
+    ```bash
+    docker pull ghcr.io/ledokun/028-simple-queue-system:latest
+    ```
+
+2.  Run the Docker container, optionally mapping ports and setting environment variables:
+    ```bash
+    # Simple run with default port 3000:
+    docker run -p 3000:3000 --rm --name queue-app ghcr.io/ledokun/028-simple-queue-system:latest
+
+    # Example mapping to host port 8080 and setting custom announcement intervals:
+    docker run -p 8080:3000 \
+           -e PORT=3000 \
+           -e PUBLICANNOUNCEMENTINTERVALMS=3600000 \
+           -e STARTPUBLICANNOUNCEMENTSAFTERMS=600000 \
+           --rm --name queue-app ghcr.io/ledokun/028-simple-queue-system:latest
+    ```
 
 3.  Access the application:
     * **TV Display:** [http://localhost:3000/tv.html](http://localhost:3000/tv.html) (or your mapped host port, e.g., `http://localhost:8080/tv.html`)
