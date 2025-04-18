@@ -15,5 +15,8 @@
     },
     "devDependencies": {
         "nodemon": "^3.0.1"
+    },
+    "resolutions": {
+        "tough-cookie": "^4.1.3"
     }
 }
