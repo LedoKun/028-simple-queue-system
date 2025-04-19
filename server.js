@@ -129,9 +129,8 @@ function handleServerError(err, res, context) {
 app.post('/call', callLimiter, (req, res) => {
     // Basic sanitization/validation for queue and station
     // Keep alphanumeric characters and spaces
-    const queue = String(req.body.queue || '').replace(/[^a-zA-Z0-9 ]/g, '');
-    const station = String(req.body.station || '').replace(/[^a-zA-Z0-9 ]/g, '');
-
+    const queue = String(req.body.queue || '').replace(/[^a-zA-Z0-9 ]/g, '').toUpperCase();
+    const station = String(req.body.station || '').replace(/[^a-zA-Z0-9 ]/g, '').toUpperCase();
     if (!queue || !station) {
         console.warn(`${getTimestamp()} - POST /call - Invalid or empty queue/station after sanitization.`);
         return res.status(400).send('Invalid queue or station data.');
@@ -191,8 +190,8 @@ app.get('/events', (req, res) => {
 // GET /speak - Queue Call Audio (Apply rate limiting and input sanitization)
 app.get('/speak', speakLimiter, (req, res) => {
     // Sanitize inputs from query parameters
-    const queue = String(req.query.queue || '').replace(/[^a-zA-Z0-9 ]/g, '');
-    const station = String(req.query.station || '').replace(/[^a-zA-Z0-9 ]/g, '');
+    const queue = String(req.query.queue || '').replace(/[^a-zA-Z0-9 ]/g, '').toUpperCase();
+    const station = String(req.query.station || '').replace(/[^a-zA-Z0-9 ]/g, '').toUpperCase();
     // Lang is handled by the switch, but basic path sanitization is added in getFallbackQueueServerPath
     const lang = req.query.lang;
 
