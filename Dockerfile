@@ -23,6 +23,10 @@ RUN yarn install --production
 # Copy the rest of your application code
 COPY . .
 
+# Ensure /tmp is a clean directory with appropriate permissions
+# Raspberry Pi OS bug?
+RUN rm -rf /tmp && mkdir -p /tmp && chmod 1777 /tmp
+
 # Expose the port your app listens on (assuming 3000)
 EXPOSE 3000
 
