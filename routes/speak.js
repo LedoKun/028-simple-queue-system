@@ -14,13 +14,16 @@ router.get('/speak', speakLimiter, (req, res) => {
 
     const fallbackPath = getFallbackQueueServerPath(lang);
 
-    // Fallback-only languages
     if (['my', 'fil'].includes(lang)) {
+        console.log(`✅ ${getTimestamp()} - Serving fallback for ${lang}`);
         if (fallbackPath) {
             res.setHeader('Content-Type', 'audio/mpeg');
             res.setHeader('Cache-Control', '86400');
             fs.createReadStream(fallbackPath).pipe(res);
-        } else return res.status(404).send('Fallback not found');
+        } else {
+            console.error(`❌ ${getTimestamp()} - Fallback not found for ${lang}`);
+            return res.status(404).send('Fallback not found');
+        }
         return;
     }
 
@@ -28,15 +31,17 @@ router.get('/speak', speakLimiter, (req, res) => {
     switch (lang) {
         case 'th': text = `เชิญคิวหมายเลข ${queue} ที่ช่องบริการ ${station} ค่ะ`; speakLang = 'th'; break;
         case 'en': text = `Queue number ${queue}, please proceed to station ${station}.`; speakLang = 'en-uk'; break;
-        default: return res.status(400).send(`Unsupported lang ${lang}`);
+        default:
+            console.warn(`⚠️ ${getTimestamp()} - Unsupported lang: ${lang}`);
+            return res.status(400).send(`Unsupported lang ${lang}`);
     }
 
-    console.log(`${getTimestamp()} - TTS for ${lang}: ${text}`);
+    console.log(`✅ ${getTimestamp()} - TTS generation for ${lang}`);
     try {
         res.setHeader('Content-Type', 'audio/mpeg');
         res.setHeader('Cache-Control', '86400');
         const stream = gtts(speakLang).stream(text);
-        stream.on('error', (err) => handleGttsError(err, res, `speak`, fallbackPath));
+        stream.on('error', (err) => handleGttsError(err, res, 'speak', fallbackPath));
         stream.pipe(res);
     } catch (err) {
         handleServerError(err, res, 'speak setup');

@@ -1,7 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { addClient } = require('../services/queueService');
-const { getTimestamp } = require('../utils');
+const { addClient, removeClient } = require('../services/queueService');
 
 router.get('/events', (req, res) => {
     res.setHeader('Content-Type', 'text/event-stream');
@@ -21,7 +20,10 @@ router.get('/events', (req, res) => {
         }
     }, 15000);
 
-    req.on('close', () => clearInterval(heartbeat));
+    req.on('close', () => {
+        clearInterval(heartbeat);
+        removeClient(res);
+    });
 });
 
 module.exports = router;

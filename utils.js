@@ -9,10 +9,13 @@ const getFallbackQueueServerPath = (langCode) => {
     const fileLangCode = safeLangCode === 'zh-cn' ? 'cn' : safeLangCode;
     if (config.languageCodes.includes(fileLangCode)) {
         const filePath = path.join(config.queueFallbackBasePath, `queue-${fileLangCode}.mp3`);
-        if (fs.existsSync(filePath)) return filePath;
-        console.warn(`${getTimestamp()} - WARN (getFallbackQueueServerPath) - Fallback MP3 file not found: ${filePath}`);
+        if (fs.existsSync(filePath)) {
+            console.log(`✅ ${getTimestamp()} - Found fallback MP3: ${filePath}`);
+            return filePath;
+        }
+        console.warn(`⚠️ ${getTimestamp()} - Fallback MP3 not found: ${filePath}`);
     } else {
-        console.warn(`${getTimestamp()} - WARN (getFallbackQueueServerPath) - Unsupported language code: ${safeLangCode}`);
+        console.warn(`⚠️ ${getTimestamp()} - Unsupported language code: ${safeLangCode}`);
     }
     return null;
 };

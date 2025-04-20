@@ -8,10 +8,10 @@ router.post('/call', callLimiter, (req, res) => {
     const queue = String(req.body.queue || '').replace(/[^a-zA-Z0-9 ]/g, '').toUpperCase();
     const station = String(req.body.station || '').replace(/[^a-zA-Z0-9 ]/g, '').toUpperCase();
     if (!queue || !station) {
-        console.warn(`${getTimestamp()} - POST /call - Invalid data.`);
+        console.warn(`⚠️ ${getTimestamp()} - POST /call invalid data.`);
         return res.status(400).send('Invalid queue or station');
     }
-    console.log(`${getTimestamp()} - POST /call received: ${queue}, ${station}`);
+    console.log(`✅ ${getTimestamp()} - POST /call received: ${queue}, ${station}`);
     enqueueCall(queue, station);
     res.sendStatus(200);
 });
