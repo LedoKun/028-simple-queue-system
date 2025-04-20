@@ -34,7 +34,6 @@
             height: 100vh;
             width: 100vw;
             overflow: hidden;
-            /* Add padding at the bottom to prevent status indicator overlap */
             padding-bottom: 30px;
         }
 
@@ -129,50 +128,36 @@
             background-color: #222;
         }
 
-        /* --- NEW: Server Status Indicator Styles --- */
         .status-indicator {
             position: fixed;
-            /* Keep it fixed on screen */
             bottom: 5px;
             right: 10px;
             padding: 4px 12px;
             border-radius: 5px;
             font-size: 0.8em;
-            /* Smaller font */
             font-weight: bold;
             z-index: 1000;
-            /* Ensure it's above other elements */
             color: #fff;
-            /* Default text color */
             transition: background-color 0.5s ease;
-            /* Smooth transition */
         }
 
         .status-connected {
             background-color: #28a745;
-            /* Green */
         }
 
         .status-disconnected {
             background-color: #dc3545;
-            /* Red */
         }
 
         .status-connecting {
             background-color: #ffc107;
-            /* Yellow/Orange */
             color: #333;
-            /* Darker text for better contrast on yellow */
         }
 
-        /* --- END NEW STYLES --- */
-
-        /* Responsive adjustments */
         @media only screen and (max-width: 768px) {
             body {
                 height: auto;
                 min-height: 100vh;
-                /* Adjust padding for smaller screens if needed */
                 padding-bottom: 35px;
             }
 
@@ -217,14 +202,12 @@
 
             .status-indicator {
                 font-size: 1.5vw;
-                /* Adjust font size for mobile */
                 padding: 6px 10px;
                 bottom: 8px;
                 right: 8px;
             }
         }
 
-        /* Animations */
         @keyframes numberChange {
             from {
                 opacity: 0.5;
@@ -290,296 +273,109 @@
     <audio id="announcementAudio" preload="none"></audio>
 
     <script>
-        // DOM Elements
         const currentQueueEl = document.getElementById("currentQueue");
         const currentStationEl = document.getElementById("currentStation");
         const historyTableBody = document.getElementById("historyTable");
         const chimeAudio = document.getElementById("chimeAudio");
         const announcementAudio = document.getElementById("announcementAudio");
-        const serverStatusEl = document.getElementById("serverStatus"); // <-- NEW: Get status element
+        const serverStatusEl = document.getElementById("serverStatus");
 
-        // State Variables
         let MAX_HISTORY = 10;
         let isPlayingAudio = false;
         const announcementQueue = [];
-        // const languagesToSpeak = ['th', 'en', 'my', 'vi', 'fil', 'cn', 'ja'];
-        // const publicAnnouncementLanguages = ['th', 'en', 'my', 'vi', 'fil', 'cn', 'ja'];
         const languagesToSpeak = ['th', 'en', 'my'];
         const publicAnnouncementLanguages = ['th', 'en', 'my'];
         const RECONNECT_DELAY_MS = 5000;
         const HISTORY_RECALC_INTERVAL_MS = 30000;
-        let socket;
-        let reconnectTimeoutId = null;
-        let historyRecalcIntervalId = null;
-        let previousQueue = null;
-        let previousStation = null;
+        let socket, reconnectTimeoutId = null, historyRecalcIntervalId = null;
+        let previousQueue = null, previousStation = null;
 
-        // --- NEW: Update Server Status Display ---
         function updateServerStatus(status, message) {
-            if (!serverStatusEl) return; // Safety check
+            if (!serverStatusEl) return;
             serverStatusEl.textContent = message;
-            // Remove existing status classes
             serverStatusEl.classList.remove('status-connected', 'status-disconnected', 'status-connecting');
-            // Add the appropriate class based on the status
-            if (status === 'connected') {
-                serverStatusEl.classList.add('status-connected');
-            } else if (status === 'disconnected') {
-                serverStatusEl.classList.add('status-disconnected');
-            } else { // Default to 'connecting' for initial or unknown states
-                serverStatusEl.classList.add('status-connecting');
-            }
+            if (status === 'connected') serverStatusEl.classList.add('status-connected');
+            else if (status === 'disconnected') serverStatusEl.classList.add('status-disconnected');
+            else serverStatusEl.classList.add('status-connecting');
             console.log(`UI: Server status updated to: ${status} - ${message}`);
         }
-        // --- END NEW FUNCTION ---
 
-        // --- History Table Size Calculation & Trimming ---
         function calculateMaxHistory() {
-            console.log("--- Running calculateMaxHistory ---");
             try {
-                const tableHeader = historyTableBody.previousElementSibling;
-                const historySection = historyTableBody.closest('.history-section');
-                if (!historySection) { console.error("Cannot find parent .history-section!"); MAX_HISTORY = 10; return; }
-                const containerHeight = historySection.offsetHeight;
-                const headerHeight = tableHeader ? tableHeader.offsetHeight : 0;
-                const availableHeight = containerHeight - headerHeight;
-                if (availableHeight <= 0) { MAX_HISTORY = 10; trimHistory(); return; }
+                const header = historyTableBody.previousElementSibling;
+                const container = historyTableBody.closest('.history-section');
+                const available = container.offsetHeight - (header ? header.offsetHeight : 0);
                 if (historyTableBody.children.length > 0) {
-                    const firstRow = historyTableBody.children[0]; const rowHeight = firstRow.offsetHeight;
-                    if (rowHeight > 0) { MAX_HISTORY = Math.max(1, Math.floor(availableHeight / rowHeight)); }
-                    else { console.warn(`Measured rowHeight is ${rowHeight}`); MAX_HISTORY = 10; }
+                    const row = historyTableBody.children[0];
+                    MAX_HISTORY = Math.max(1, Math.floor(available / row.offsetHeight));
                 } else {
-                    let tableFontSizeVw = 2; if (window.matchMedia("only screen and (max-width: 768px)").matches) tableFontSizeVw = 4;
-                    const baseFontSizePx = window.innerWidth * (tableFontSizeVw / 100); const rowPaddingTopEm = 0.4; const rowPaddingBottomEm = 0.4;
-                    const approxLineHeightFactor = 1.3; const borderBottomPx = 1; const estimatedRowHeight = (rowPaddingTopEm * baseFontSizePx) + (rowPaddingBottomEm * baseFontSizePx) + (approxLineHeightFactor * baseFontSizePx) + borderBottomPx;
-                    if (estimatedRowHeight > 0) { MAX_HISTORY = Math.max(1, Math.floor(availableHeight / estimatedRowHeight)); }
-                    else { console.warn(`Estimated rowHeight is ${estimatedRowHeight.toFixed(2)}`); MAX_HISTORY = 10; }
+                    const base = window.innerWidth * ((window.matchMedia("only screen and (max-width: 768px)").matches ? 4 : 2) / 100);
+                    const est = (0.4 * base) + (0.4 * base) + (1.3 * base) + 1;
+                    MAX_HISTORY = Math.max(1, Math.floor(available / est));
                 }
                 trimHistory();
-            } catch (error) { console.error("Error during calculateMaxHistory:", error); MAX_HISTORY = 10; }
-            console.log(`--- Current MAX_HISTORY = ${MAX_HISTORY} ---`);
+            } catch (e) { MAX_HISTORY = 10; trimHistory(); }
         }
-        function trimHistory() {
-            while (historyTableBody.children.length > MAX_HISTORY) {
-                historyTableBody.removeChild(historyTableBody.lastChild);
-            }
-        }
+        function trimHistory() { while (historyTableBody.children.length > MAX_HISTORY) historyTableBody.removeChild(historyTableBody.lastChild); }
 
-
-        // --- Server-Sent Events (SSE) Connection ---
         function connectEventSource() {
-            if (reconnectTimeoutId) { clearTimeout(reconnectTimeoutId); reconnectTimeoutId = null; }
-            if (socket) { socket.close(); }
-
-            console.log("Attempting to connect to SSE endpoint (/events)...");
-            updateServerStatus('connecting', 'Connecting...'); // <-- NEW: Update status on attempt
-
+            if (reconnectTimeoutId) clearTimeout(reconnectTimeoutId);
+            if (socket) socket.close();
+            console.log("Attempting to connect to SSE (/events)...");
+            updateServerStatus('connecting', 'Connecting...');
             socket = new EventSource("/events");
-
-            socket.onopen = function () {
-                console.log("SSE connection established.");
-                updateServerStatus('connected', 'Connected'); // <-- NEW: Update status on success
-            };
-
-            socket.onmessage = function (event) {
-                // --- Heartbeat Check ---
-                if (event.data.startsWith(': heartbeat')) {
-                    // Optional: update status to 'connected' here too, in case 'onopen' was missed or for reassurance
-                    updateServerStatus('connected', 'Connected');
-                    return; // Ignore heartbeats for data processing
-                }
-                // --- End Heartbeat Check ---
-
+            socket.onopen = () => updateServerStatus('connected', 'Connected');
+            socket.onmessage = event => {
+                if (event.data.startsWith(': heartbeat')) return updateServerStatus('connected', 'Connected');
                 try {
-                    const data = JSON.parse(event.data);
-                    // console.log("SSE Received Data:", data);
-
-                    if (data.type === 'public_announcement_cycle_start') {
-                        console.log("SSE Received: Public Announcement Cycle Trigger");
-                        announcementQueue.push({ type: 'public_cycle' });
-                        playNextAnnouncement();
-
-                    } else if (data.type === 'queue_call' && data.data && data.data.queue && data.data.station) {
-                        const { queue, station } = data.data;
-                        console.log(`SSE Received: Queue Call ${queue} / ${station}`);
-                        updateDisplay(queue, station); // Update display + history
-                        announcementQueue.push({ type: 'queue', data: { queue: queue, station: station } });
-                        playNextAnnouncement();
-
-                    } else {
-                        console.warn("Received unknown or incomplete SSE message format:", data);
-                    }
-                } catch (error) {
-                    console.error("Error processing SSE message:", error, "Raw Data:", event.data);
-                }
+                    const d = JSON.parse(event.data);
+                    if (d.type === 'public_announcement_cycle_start') { announcementQueue.push({ type: 'public_cycle' }); playNextAnnouncement(); }
+                    else if (d.type === 'queue_call') { const { queue, station } = d.data; updateDisplay(queue, station); announcementQueue.push({ type: 'queue', data: { queue, station } }); playNextAnnouncement(); }
+                } catch (e) { console.error("Error processing SSE:", e); }
             };
-
-            socket.onerror = function (error) {
-                console.error("SSE connection error:", error);
-                updateServerStatus('disconnected', 'Disconnected'); // <-- NEW: Update status on error
-                socket.close(); // Ensure it's closed
-                if (!reconnectTimeoutId) {
-                    console.log(`Scheduling SSE reconnection attempt in ${RECONNECT_DELAY_MS / 1000} seconds...`);
-                    updateServerStatus('disconnected', 'Retrying...'); // <-- NEW: Show retrying message
-                    reconnectTimeoutId = setTimeout(connectEventSource, RECONNECT_DELAY_MS);
-                }
+            socket.onerror = err => {
+                console.error("SSE error:", err);
+                updateServerStatus('disconnected', 'Disconnected');
+                socket.close();
+                if (!reconnectTimeoutId) { updateServerStatus('disconnected', 'Retrying...'); reconnectTimeoutId = setTimeout(connectEventSource, RECONNECT_DELAY_MS); }
             };
         }
 
-        // --- Update Visual Display (with MODIFIED history logic) ---
         function updateDisplay(queue, station) {
-            const queueStr = String(queue);
-            const stationStr = String(station);
-
-            console.log(`updateDisplay called: New = ${queueStr}/${stationStr}, Previous = ${previousQueue}/${previousStation}`);
-
-            // Step 1: Add PREVIOUS item to history (if valid and different from new)
-            if (previousQueue !== null && previousStation !== null &&
-                (previousQueue !== queueStr || previousStation !== stationStr)) {
-                const firstRow = historyTableBody.firstChild;
-                let addPrevious = true;
-                if (firstRow) { // Avoid adding if already top row
-                    const cells = firstRow.getElementsByTagName("td");
-                    if (cells.length > 1 && cells[0].textContent === previousQueue && cells[1].textContent === previousStation) {
-                        addPrevious = false;
-                    }
-                }
-                if (addPrevious) {
-                    console.log(`Adding previous item ${previousQueue}/${previousStation} to history.`);
-                    const prevRow = document.createElement("tr");
-                    prevRow.innerHTML = `<td>${previousStation}</td><td>${previousQueue}</td>`;
-                    historyTableBody.insertBefore(prevRow, historyTableBody.firstChild);
-                }
+            const q = String(queue), s = String(station);
+            console.log(`updateDisplay called: New=${q}/${s}`);
+            if (previousQueue !== null && previousQueue !== q) {
+                const first = historyTableBody.firstChild;
+                let add = true;
+                if (first) { const c = first.getElementsByTagName('td'); if (c.length > 1 && c[1].textContent === previousQueue) add = false; }
+                if (add) { const r = document.createElement('tr'); r.innerHTML = `<td>${previousStation}</td><td>${previousQueue}</td>`; historyTableBody.insertBefore(r, historyTableBody.firstChild); }
             }
-
-            // Step 2: Update large display
-            currentQueueEl.textContent = queueStr;
-            currentStationEl.textContent = stationStr;
-            currentQueueEl.style.animation = 'none'; currentQueueEl.offsetHeight; currentQueueEl.style.animation = null;
-            currentStationEl.style.animation = 'none'; currentStationEl.offsetHeight; currentStationEl.style.animation = null;
-
-            // --- Step 3: Remove the NEW QUEUE number (regardless of station) if it exists anywhere in the history ---
-            console.log(`Searching history table for QUEUE ${queueStr} (any station) to remove...`);
-            const rowsToRemove = historyTableBody.querySelectorAll('tr');
-            let removedCount = 0;
-            rowsToRemove.forEach(row => {
-                if (!row.parentNode) return; // Skip if already removed
-                const cells = row.getElementsByTagName("td");
-                // *** MODIFIED CONDITION: Check only queue number (cells[0]) ***
-                if (cells.length > 0 && cells[0].textContent === queueStr) {
-                    console.log(`   > Found and removing row with matching QUEUE: ${cells[0].textContent}/${cells[1]?.textContent || '?'}`);
-                    row.remove();
-                    removedCount++;
-                }
-            });
-            if (removedCount > 0) console.log(`Removed ${removedCount} instance(s) of QUEUE ${queueStr} from history.`);
-
-            // Step 4: Update previous trackers
-            console.log(`Updating previous trackers to ${queueStr}/${stationStr}`);
-            previousQueue = queueStr;
-            previousStation = stationStr;
-
-            // Step 5: Trim overall history
-            trimHistory();
-            console.log("updateDisplay finished.");
+            currentQueueEl.textContent = q; currentStationEl.textContent = s; resetAnimation(currentQueueEl); resetAnimation(currentStationEl);
+            historyTableBody.querySelectorAll('tr').forEach(r => { const c = r.getElementsByTagName('td'); if (c.length >= 2 && c[1].textContent === q) r.remove(); });
+            previousQueue = q; previousStation = s; trimHistory(); console.log("updateDisplay finished.");
         }
+        function resetAnimation(el) { el.style.animation = 'none'; el.offsetHeight; el.style.animation = null; }
 
-
-        // --- Core Announcement Playback Logic (Unchanged from previous version) ---
         function playNextAnnouncement() {
-            if (isPlayingAudio || announcementQueue.length === 0) { return; }
-            isPlayingAudio = true; // Acquire lock
-            const announcement = announcementQueue.shift();
-            console.log(`playNextAnnouncement: Starting Processing. Set isPlayingAudio=true. Item: ${announcement.type}. Queue length: ${announcementQueue.length}`);
-            chimeAudio.currentTime = 0;
-            const chimePromise = chimeAudio.play().catch(err => { console.warn("Chime playback failed:", err); return new Promise(resolve => setTimeout(resolve, 100)); });
-            chimePromise.then(() => {
-                const playAfterChime = () => {
+            if (isPlayingAudio || announcementQueue.length === 0) return; isPlayingAudio = true; const item = announcementQueue.shift();
+            chimeAudio.currentTime = 0; const p = chimeAudio.play().catch(() => new Promise(r => setTimeout(r, 100)));
+            p.then(() => {
+                const cont = () => {
                     chimeAudio.onended = null;
-                    console.log(`playNextAnnouncement: Chime finished/skipped. Delegating item type: ${announcement.type}`);
-                    if (announcement.type === 'queue') {
-                        playQueueLanguagesSequentially(announcement.data, 0);
-                    } else if (announcement.type === 'public_cycle') {
-                        playPublicCycleSequentially(0);
-                    } else {
-                        console.error("Unknown announcement type processed:", announcement);
-                        console.log("!!! Releasing lock due to unknown type !!!");
-                        isPlayingAudio = false; // Release lock
-                        setTimeout(playNextAnnouncement, 100);
-                    }
+                    if (item.type === 'queue') playQueueSeq(item.data, 0);
+                    else if (item.type === 'public_cycle') playPubSeq(0);
+                    else { console.error("Unknown type."); isPlayingAudio = false; setTimeout(playNextAnnouncement, 100); }
                 };
-                chimeAudio.onended = playAfterChime;
-                if (chimeAudio.paused || chimeAudio.ended) { playAfterChime(); }
+                chimeAudio.onended = cont; if (chimeAudio.paused || chimeAudio.ended) cont();
             });
         }
+        function playQueueSeq(d, i) { if (i >= languagesToSpeak.length) { isPlayingAudio = false; setTimeout(playNextAnnouncement, 500); return; } const lang = languagesToSpeak[i]; playAudio(`/speak?queue=${encodeURIComponent(d.queue)}&station=${encodeURIComponent(d.station)}&lang=${encodeURIComponent(lang)}`, () => playQueueSeq(d, i + 1), () => playQueueSeq(d, i + 1)); }
+        function playPubSeq(i) { if (i >= publicAnnouncementLanguages.length) { isPlayingAudio = false; setTimeout(playNextAnnouncement, 500); return; } const lang = publicAnnouncementLanguages[i]; playAudio(`/media/announcement/${lang}.mp3`, () => playPubSeq(i + 1), () => playPubSeq(i + 1)); }
+        function playAudio(url, ok, err) { announcementAudio.src = url; announcementAudio.load(); const pr = announcementAudio.play(); if (pr) { pr.then(() => { announcementAudio.onended = () => { announcementAudio.onended = null; setTimeout(ok, 50); }; announcementAudio.onerror = () => { announcementAudio.onerror = null; setTimeout(err, 50); }; }).catch(() => { setTimeout(err, 50); }); } }
 
-        function playQueueLanguagesSequentially(queueData, langIndex) {
-            const { queue, station } = queueData;
-            if (langIndex >= languagesToSpeak.length) {
-                console.log(`<- Finished QUEUE sequence for ${queue}/${station}. Releasing lock.`);
-                isPlayingAudio = false; // Release lock
-                setTimeout(playNextAnnouncement, 500); return;
-            }
-            const lang = languagesToSpeak[langIndex];
-            const audioUrl = `/speak?queue=${encodeURIComponent(queue)}&station=${encodeURIComponent(station)}&lang=${encodeURIComponent(lang)}`;
-            console.log(`-> Playing QUEUE audio part ${langIndex + 1}/${languagesToSpeak.length}: ${lang}`);
-            playAudioFromUrl(audioUrl,
-                () => { console.log(`<- Finished QUEUE part OK: ${lang}.`); playQueueLanguagesSequentially(queueData, langIndex + 1); },
-                () => { console.error(`<- Finished QUEUE part ERROR: ${lang}. Skipping.`); playQueueLanguagesSequentially(queueData, langIndex + 1); }
-            );
-        }
-
-        function playPublicCycleSequentially(langIndex) {
-            if (langIndex >= publicAnnouncementLanguages.length) {
-                console.log("<- Finished PUBLIC announcement cycle sequence. Releasing lock.");
-                isPlayingAudio = false; // Release lock
-                setTimeout(playNextAnnouncement, 500); return;
-            }
-            const lang = publicAnnouncementLanguages[langIndex];
-            const audioUrl = `/media/announcement/${lang}.mp3`;
-            console.log(`-> Playing PUBLIC cycle part ${langIndex + 1}/${publicAnnouncementLanguages.length}: ${lang}`);
-            playAudioFromUrl(audioUrl,
-                () => { console.log(`<- Finished PUBLIC cycle part OK: ${lang}.`); playPublicCycleSequentially(langIndex + 1); },
-                () => { console.error(`<- Finished PUBLIC cycle part ERROR: ${lang}. Skipping.`); playPublicCycleSequentially(langIndex + 1); }
-            );
-        }
-
-        function playAudioFromUrl(url, onEndCallback, onErrorCallback) {
-            const successCallbackWrapper = () => { onEndCallback(); };
-            const failureCallbackWrapper = () => { onErrorCallback(); };
-            announcementAudio.src = url; announcementAudio.load();
-            console.log(`   playAudioFromUrl: Attempting to play audio from: ${url}`);
-            const playPromise = announcementAudio.play();
-            if (playPromise !== undefined) {
-                playPromise.then(() => {
-                    console.log(`   playAudioFromUrl: Playback started for: ${url}`);
-                    announcementAudio.onended = () => {
-                        console.log(`   playAudioFromUrl: Playback finished (onended event) for: ${url}`);
-                        announcementAudio.onended = null; announcementAudio.onerror = null; setTimeout(successCallbackWrapper, 50);
-                    };
-                    announcementAudio.onerror = (e) => { console.error(`   playAudioFromUrl: Playback error during playback (onerror event) for ${url}:`, e); announcementAudio.onended = null; announcementAudio.onerror = null; setTimeout(failureCallbackWrapper, 50); };
-                }).catch(error => {
-                    console.error(`   playAudioFromUrl: Error initiating playback (play() rejected) for ${url}:`, error);
-                    announcementAudio.onended = null; announcementAudio.onerror = null;
-                    setTimeout(failureCallbackWrapper, 50);
-                });
-            }
-        }
-        announcementAudio.addEventListener('error', (e) => { if (isPlayingAudio && announcementAudio.src && announcementAudio.networkState === announcementAudio.NETWORK_NO_SOURCE) { console.error("General Audio Element Error (e.g., loading failed, 404?):", e); } });
-
-
-        // --- Initialization ---
-        window.addEventListener('load', () => {
-            setTimeout(() => { calculateMaxHistory(); if (historyRecalcIntervalId) clearInterval(historyRecalcIntervalId); historyRecalcIntervalId = setInterval(calculateMaxHistory, HISTORY_RECALC_INTERVAL_MS); }, 250);
-            connectEventSource(); // <-- Connects and sets initial 'Connecting...' status
-            document.body.addEventListener('click', () => { chimeAudio.load(); announcementAudio.load(); console.log("User interaction detected. Audio elements loaded."); }, { once: true });
-        });
+        window.addEventListener('load', () => { setTimeout(() => { calculateMaxHistory(); if (historyRecalcIntervalId) clearInterval(historyRecalcIntervalId); historyRecalcIntervalId = setInterval(calculateMaxHistory, HISTORY_RECALC_INTERVAL_MS); }, 250); connectEventSource(); document.body.addEventListener('click', () => { chimeAudio.load(); announcementAudio.load(); console.log("Audio elements loaded."); }, { once: true }); });
         window.addEventListener('resize', calculateMaxHistory);
-        window.addEventListener('beforeunload', () => {
-            if (socket) socket.close(); if (reconnectTimeoutId) clearTimeout(reconnectTimeoutId); if (historyRecalcIntervalId) clearInterval(historyRecalcIntervalId);
-            chimeAudio.pause(); announcementAudio.pause(); announcementAudio.src = "";
-            updateServerStatus('disconnected', 'Disconnected'); // <-- NEW: Update status on page unload
-        });
-
+        window.addEventListener('beforeunload', () => { if (socket) socket.close(); if (reconnectTimeoutId) clearTimeout(reconnectTimeoutId); if (historyRecalcIntervalId) clearInterval(historyRecalcIntervalId); chimeAudio.pause(); announcementAudio.pause(); announcementAudio.src = ""; updateServerStatus('disconnected', 'Disconnected'); });
     </script>
 </body>
 
