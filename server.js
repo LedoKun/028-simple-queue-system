@@ -7,10 +7,10 @@ const app = express();
 const port = process.env.PORT || 3000;
 
 // --- Timing Configuration ---
-const debouncingIntervalMs = process.env.DEBOUNCINGINTERVALMS || 3000; // 3 seconds
+const debouncingIntervalMs = parseInt(process.env.DEBOUNCINGINTERVALMS || 3000); // 3 seconds
 // Default interval for the *entire* announcement cycle
-const publicAnnouncementIntervalMs = process.env.PUBLICANNOUNCEMENTINTERVALMS || 30 * 60 * 1000; // 30 minutes (Adjust as needed)
-const startPublicAnnouncementsAfterMs = process.env.STARTPUBLICANNOUNCEMENTSAFTERMS || 5 * 60 * 1000; // 5 minutes
+const publicAnnouncementIntervalMs = parseInt(process.env.PUBLICANNOUNCEMENTINTERVALMS || 30 * 60 * 1000); // 30 minutes (Adjust as needed)
+const startPublicAnnouncementsAfterMs = parseInt(process.env.STARTPUBLICANNOUNCEMENTSAFTERMS || 5 * 60 * 1000); // 5 minutes
 
 // --- Rate Limiting Configuration ---
 // Configure limits via environment variables or use defaults
