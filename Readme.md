@@ -1,162 +1,171 @@
-# Queue Calling System
+# Queue Calling System 🚀🎉📺
 
-A responsive, TV-friendly queue display and calling system. It features real-time updates via Server-Sent Events (SSE), displays current queue numbers and stations, maintains a history of recent calls, and supports multiple languages for both the display (subtitles) and audio announcements (via dynamic generation/TTS and pre-recorded files). Includes a separate interface for calling queues and triggering announcements, along with live server connection status. The system is also Dockerized for easy deployment.
+A responsive, TV-friendly queue display and calling system with real-time updates, multi-language audio announcements, and Docker support. 📡🖥️📣
 
-## Features
+---
 
--   **Real-time TV Display (`tv.html`):**
-    -   Shows currently called queue number and station.
-    -   Displays a configurable history of recently called numbers.
-    -   Updates instantly via Server-Sent Events (SSE).
-    -   Responsive design suitable for large screens/TVs.
-    -   Handles duplicate queue number calls (removes previous instances from history).
-    -   Plays a chime notification sound (`chime.mp3`) upon new queue calls.
--   **Caller Interface (`caller.html`):**
-    -   Simple interface to input Station and Queue numbers.
-    -   "Call Queue" button sends data to the backend (`/call` endpoint).
-    -   "Trigger Announcement" button to initiate a public announcement cycle (with cooldown).
-    -   Keyboard shortcuts for faster input and calling.
--   **Multi-Language Support:**
-    -   Static labels on displays show primary language and translation subtitles.
-    -   Dynamic audio generation (likely Text-to-Speech via `/speak` endpoint) for queue/station calls in multiple languages (`th`, `en`, `my`, `vi`, `fil`, `cn`, `ja`).
-    -   Support for pre-recorded public announcements in multiple languages (via `/media/announcement/`).
--   **Real-time Status:** Live server connection indicator (Connecting/Connected/Disconnected/Retrying) on both TV and Caller pages.
--   **Deployment:** Dockerized for easy containerized deployment.
--   **Favicon Support:** Includes necessary HTML links for standard favicons.
+## Table of Contents 🗂️📑✨
+1. [Features](#features)
+2. [Prerequisites](#prerequisites)
+3. [Installation](#installation)
+4. [Configuration](#configuration)
+5. [Running the Application](#running-the-application)
+   - [Node.js](#using-nodejs)
+   - [Docker](#using-docker)
+6. [Usage](#usage)
+7. [Audio Files](#audio-files)
+8. [License](#license)
+9. [Contributing](#contributing)
 
-## Prerequisites
+---
 
--   **Node.js** (LTS version recommended)
--   **Yarn** package manager (or npm)
--   **Docker** (optional, for containerized deployment)
+## Features 🎯✅📋
 
-## Installation
+- **TV Display (`tv.html`)**
+  - Real-time updates via Server-Sent Events (SSE)
+  - Prominent display of current queue number and station
+  - Configurable history of recent calls, with automatic duplicate removal
+  - Chime notification and multi-language audio announcements
+  - Responsive design optimized for large screens (TVs)
+  - Live server status indicator (Connecting / Connected / Disconnected / Retrying)
 
-1.  Clone the repository:
-    ```bash
-    git clone [https://github.com/LedoKun/028-simple-queue-system.git](https://github.com/LedoKun/028-simple-queue-system.git)
-    cd 028-simple-queue-system
-    ```
+- **Caller Interface (`caller.html`)**
+  - Simple form for station and queue number input
+  - “Call Queue” button to invoke `POST /call`
+  - “Trigger Announcement” button to start public announcement cycle (`POST /trigger-announcement`)
+  - Keyboard shortcuts for quick operation
 
-2.  Install dependencies:
-    ```bash
-    yarn install
-    # OR if using npm:
-    # npm install
-    ```
+- **Multi-Language Audio**
+  - Dynamic Text‑to‑Speech via `GET /speak?queue=&station=&lang=` (`th`, `en`, `my`, etc.)
+  - Pre-recorded public announcements in multiple languages under `public/media/announcement/`
 
-## Configuration
+- **Deployment**
+  - Dockerized for containerized deployment
+  - Ready to run with default or custom environment settings
 
-The application's behavior can be customized using the following environment variables. You can set these directly in your shell, via system environment settings, or using a `.env` file if your setup includes a library like `dotenv`.
+- **Favicon Support**
+  - Includes standard favicon definitions for various devices and browsers
 
--   **`PORT`**: The port the server will listen on.
-    -   *Default:* `3000`
--   **`DEBOUNCINGINTERVALMS`**: The interval (in milliseconds) used for debouncing certain events (e.g., related to SSE or internal processing).
-    -   *Default:* `3000` (3 seconds)
--   **`PUBLICANNOUNCEMENTINTERVALMS`**: The interval (in milliseconds) at which the *automatic* public announcement cycle repeats after it starts.
-    -   *Default:* `1800000` (30 minutes)
--   **`STARTPUBLICANNOUNCEMENTSAFTERMS`**: The delay (in milliseconds) after the server starts before the *first automatic* public announcement cycle begins.
-    -   *Default:* `300000` (5 minutes)
+---
 
-## Running the Application
+## Prerequisites 🛠️📦✅
 
-### Using Node.js and Yarn/npm
+- **Node.js** (LTS recommended)
+- **Yarn** (or npm)
+- **Docker** (optional, for containerized deployment)
 
-1.  **(Optional)** Set any desired environment variables (see Configuration).
-    ```bash
-    # Example setting port in shell (Linux/macOS)
-    export PORT=8080
-    # Example setting port in shell (Windows CMD)
-    set PORT=8080
-    # Example setting port in shell (Windows PowerShell)
-    $env:PORT=8080
-    ```
-2.  Start the server:
-    ```bash
-    yarn start
-    # OR if using npm:
-    # npm start
-    ```
-3.  Access the application:
-    * **TV Display:** [http://localhost:3000/tv.html](http://localhost:3000/tv.html) (or the configured port)
-    * **Caller Interface:** [http://localhost:3000/caller.html](http://localhost:3000/caller.html) (or the configured port)
+---
 
-### Using Docker
+## Installation 🛠️📥📋
 
-You have two primary ways to run the application using Docker: by building the image locally or by pulling a pre-built image from GitHub Container Registry.
+1. **Clone the repository**
+   ```bash
+   git clone https://github.com/LedoKun/028-simple-queue-system.git
+   cd 028-simple-queue-system
+   ```
 
-#### Option 1: Building the Docker Image Locally
+2. **Install dependencies**
+   ```bash
+   yarn install
+   # or
+   npm install
+   ```
 
-1.  Build the Docker image:
-    ```bash
-    docker build -t queue-calling-system .
-    ```
+---
 
-2.  Run the Docker container, optionally passing environment variables with `-e`:
-    ```bash
-    # Simple run with default port 3000:
-    docker run -p 3000:3000 --rm --name queue-app queue-calling-system
+## Configuration ⚙️🌐🔧
 
-    # Example mapping to host port 8080 and setting custom announcement intervals:
-    docker run -p 8080:3000 \
-           -e PORT=3000 \
-           -e PUBLICANNOUNCEMENTINTERVALMS=3600000 \
-           -e STARTPUBLICANNOUNCEMENTSAFTERMS=600000 \
-           --rm --name queue-app queue-calling-system
-    ```
-    *(Note: `PORT` inside the container should match what the app listens to, usually the default unless overridden)*
+Use environment variables to customize behavior. You can export them in your shell or use a `.env` file with `dotenv`. 🔄🛡️🔑
 
-3.  Access the application:
-    * **TV Display:** [http://localhost:3000/tv.html](http://localhost:3000/tv.html) (or your mapped host port, e.g., `http://localhost:8080/tv.html`)
-    * **Caller Interface:** [http://localhost:3000/caller.html](http://localhost:3000/caller.html) (or your mapped host port)
+| Variable                         | Description                                                                     | Default     |
+| -------------------------------- | ------------------------------------------------------------------------------- | ----------- |
+| `PORT`                           | Port for the server to listen on                                                | `3000`      |
+| `DEBOUNCINGINTERVALMS`           | Debounce interval for queue processing (milliseconds)                           | `3000`      |
+| `PUBLICANNOUNCEMENTINTERVALMS`   | Interval for automatic announcement cycle (milliseconds)                        | `1800000`   |
+| `STARTPUBLICANNOUNCEMENTSAFTERMS`| Delay before first announcement cycle after server start (milliseconds)         | `300000`    |
 
-#### Option 2: Pulling the Pre-built Docker Image
+---
 
-1.  Pull the latest pre-built Docker image from GitHub Container Registry:
-    ```bash
-    docker pull ghcr.io/ledokun/028-simple-queue-system:latest
-    ```
+## Running the Application ▶️🚀💻
 
-2.  Run the Docker container, optionally mapping ports and setting environment variables:
-    ```bash
-    # Simple run with default port 3000:
-    docker run -p 3000:3000 --rm --name queue-app ghcr.io/ledokun/028-simple-queue-system:latest
+### Using Node.js 🟢📦⚙️
 
-    # Example mapping to host port 8080 and setting custom announcement intervals:
-    docker run -p 8080:3000 \
-           -e PORT=3000 \
-           -e PUBLICANNOUNCEMENTINTERVALMS=3600000 \
-           -e STARTPUBLICANNOUNCEMENTSAFTERMS=600000 \
-           --rm --name queue-app ghcr.io/ledokun/028-simple-queue-system:latest
-    ```
+1. (Optional) Set environment variables:
+   ```bash
+   export PORT=8080
+   export PUBLICANNOUNCEMENTINTERVALMS=3600000
+   ```
+2. Start the server:
+   ```bash
+   yarn start
+   # or
+   npm start
+   ```
+3. Open in browser:
+   - TV Display: `http://localhost:<PORT>/tv.html`
+   - Caller Interface: `http://localhost:<PORT>/caller.html`
 
-3.  Access the application:
-    * **TV Display:** [http://localhost:3000/tv.html](http://localhost:3000/tv.html) (or your mapped host port, e.g., `http://localhost:8080/tv.html`)
-    * **Caller Interface:** [http://localhost:3000/caller.html](http://localhost:3000/caller.html) (or your mapped host port)
+### Using Docker 🐳📦⚙️
 
-## Usage
+#### Build Locally
 
-1.  Open the **Caller Interface** (`/caller.html`) on a device (PC, tablet).
-2.  Enter the `Station Number` where the staff member is located.
-3.  Enter the `Queue Number` to be called.
-4.  Click the "Call Queue" button or press Enter.
-5.  Open the **TV Display** (`/tv.html`) on a separate, larger screen visible to customers.
-6.  When a queue is called via the caller interface:
-    * The TV display will update in real-time showing the new number and station.
-    * A chime sound will play.
-    * A multi-lingual audio announcement (e.g., "Queue number X, please go to station Y") will play (requires backend TTS or audio lookup).
-    * The called number/station will be added to the history list.
-7.  Use the "Trigger Announcement" button on the caller interface to play pre-recorded public messages (e.g., opening/closing times). This button has a 2-minute cooldown period after use.
+```bash
+# Build image
+docker build -t queue-calling-system .
 
-## Audio Files
+# Run container
+docker run -p 3000:3000 --rm --name queue-app \
+  -e PUBLICANNOUNCEMENTINTERVALMS=3600000 \
+  -e STARTPUBLICANNOUNCEMENTSAFTERMS=600000 \
+  queue-calling-system
+```
 
--   **`public/chime.mp3`**: This sound file is played *every time* a new queue number is called via the caller interface. Ensure this file exists.
--   **`public/media/announcement/`**: This directory must contain pre-recorded audio files for the "Trigger Announcement" feature and the automatic announcement cycles. The system expects files named according to language codes (e.g., `en.mp3`, `th.mp3`). The current languages cycled through by the trigger are: `th`, `en`, `my`, `vi`, `fil`, `cn`, `ja`. Ensure these `.mp3` files are present for the announcement features to work correctly.
+#### Pull Pre-Built Image
 
-## License
+```bash
+docker pull ghcr.io/ledokun/028-simple-queue-system:latest
 
-This project is licensed under the [MIT License](LICENSE).
+docker run -p 8080:3000 --rm --name queue-app \
+  ghcr.io/ledokun/028-simple-queue-system:latest
+```
 
-## Contributing
+Access:
+```text
+TV:     http://localhost:<HOST_PORT>/tv.html
+Caller: http://localhost:<HOST_PORT>/caller.html
+```
 
-Contributions are welcome! Please fork the repository and submit a pull request.
+---
+
+## Usage 📝👥📺
+
+1. Open **Caller Interface** and enter:
+   - **Station Number**
+   - **Queue Number**
+   - Click **Call Queue** or press **Enter**
+2. Open **TV Display** to view:
+   - Current queue/station
+   - History of recent calls (duplicates removed)
+   - Live server status
+3. Click **Trigger Announcement** in Caller Interface to play pre-recorded public announcements (cooldown applies)
+
+---
+
+## Audio Files 🔊🎵📁
+
+- `public/chime.mp3`: Chime for each new queue call
+- `public/media/announcement/{lang}.mp3`: Pre-recorded announcement files for each language code (`th`, `en`, `my`, `vi`, `fil`, `cn`, `ja`)
+
+Ensure all required `.mp3` files exist in their respective directories. 🔍📂🔈
+
+---
+
+## License 📜🆓✔️
+
+This project is licensed under the [MIT License](LICENSE). 📝🔓✅
+
+---
+
+## Contributing 🤝🌟🛠️
+
+Contributions are welcome! Fork the repo and submit a pull request with your changes. 🙌📬💡
