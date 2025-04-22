@@ -4,383 +4,73 @@
 <head>
     <meta charset="UTF-8">
     <title>Call Queue</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="apple-touch-icon" sizes="180x180" href="/media/icons/apple-touch-icon.png">
     <link rel="icon" type="image/png" sizes="32x32" href="/media/icons/favicon-32x32.png">
     <link rel="icon" type="image/png" sizes="16x16" href="/media/icons/favicon-16x16.png">
     <link rel="manifest" href="/site.webmanifest">
-    <link href="https://fonts.googleapis.com/css2?family=Battambang&display=swap" rel="stylesheet">
-    <style>
-        html,
-        body {
-            margin: 0;
-            padding: 0;
-            height: 100%;
-        }
-
-        body {
-            padding: 20px 20px 40px;
-            /* bottom space for status */
-            background-color: #1a1a1a;
-            color: #f0f0f0;
-            font-family: Arial, sans-serif;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            box-sizing: border-box;
-            padding-bottom: 40px;
-            /* Space for bottom status */
-            padding-top: 60px;
-            /* avoid overlap with fixed button */
-        }
-
-        h2 {
-            font-size: 2.5em;
-            margin-bottom: 20px;
-            color: #b19cd9;
-            text-align: center;
-        }
-
-        label {
-            font-size: 1.5em;
-            margin-bottom: 10px;
-            display: block;
-            width: 100%;
-            max-width: 400px;
-            text-align: center;
-        }
-
-        label input[type="text"] {
-            margin: 5px auto 0;
-            display: block;
-        }
-
-        input[type="text"] {
-            padding: 10px;
-            font-size: 1.2em;
-            background-color: #2a2a2a;
-            color: #f0f0f0;
-            border: 1px solid #333;
-            border-radius: 5px;
-            width: calc(100% - 22px);
-            max-width: 300px;
-            margin-top: 5px;
-            box-sizing: border-box;
-            text-align: center;
-        }
-
-        .button-wrapper {
-            width: 100%;
-            max-width: 400px;
-            text-align: center;
-        }
-
-        button {
-            padding: 15px 30px;
-            font-size: 1.2em;
-            background-color: #b19cd9;
-            color: #1a1a1a;
-            border: none;
-            border-radius: 5px;
-            cursor: pointer;
-            transition: background-color 0.3s ease;
-        }
-
-        button:hover {
-            background-color: #9a84c2;
-        }
-
-        button:disabled {
-            background-color: #555;
-            color: #aaa;
-            cursor: not-allowed;
-        }
-
-        button:disabled:hover {
-            background-color: #555;
-        }
-
-        #callButton {
-            display: block;
-            width: fit-content;
-            margin: 15px auto 0 auto;
-            /* Center the call button */
-        }
-
-        /* --- NEW Style for the Trigger Announcement Button --- */
-        #announceButton {
-            position: fixed;
-            top: 15px;
-            right: 15px;
-            z-index: 1001;
-            margin: 0;
-        }
-
-        .status-indicator {
-            position: fixed;
-            bottom: 5px;
-            right: 10px;
-            padding: 4px 12px;
-            border-radius: 5px;
-            font-size: 0.8em;
-            font-weight: bold;
-            z-index: 1000;
-            color: #fff;
-            transition: background-color 0.5s ease;
-            max-width: 90%;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            white-space: nowrap;
-        }
-
-        .status-connected {
-            background-color: #28a745;
-        }
-
-        .status-disconnected {
-            background-color: #dc3545;
-        }
-
-        .status-connecting {
-            background-color: #ffc107;
-            color: #333;
-        }
-
-        @media only screen and (max-width: 600px) {
-            body {
-                padding-bottom: 50px;
-                padding-top: 70px;
-            }
-
-            h2 {
-                font-size: 2em;
-            }
-
-            label {
-                font-size: 1.2em;
-            }
-
-            input[type="text"] {
-                font-size: 1em;
-            }
-
-            button {
-                font-size: 1em;
-                padding: 12px 25px;
-            }
-
-            #announceButton {
-                top: 10px;
-                right: 10px;
-                padding: 8px 15px;
-                font-size: 0.9em;
-            }
-
-            .status-indicator {
-                font-size: 0.7em;
-                padding: 5px 8px;
-                bottom: 8px;
-                right: 8px;
-            }
-        }
-    </style>
+    <link rel="stylesheet" href="/css/bulma.min.css">
+    <link rel="stylesheet" href="/css/font-awesome.all.min.css">
+    <link rel="stylesheet" href="/css/caller.css">
 </head>
 
 <body>
-    <button id="announceButton" onclick="triggerAnnouncement()">Trigger Announcement</button>
+    <div class="main-container">
+        <h1 class="title">Queue Caller Interface</h1>
 
-    <form id="queueForm" onsubmit="callQueue(event)" novalidate>
-        <h2>Queue Caller Interface</h2>
+        <div class="centered-form">
+            <form id="queueForm" novalidate>
+                <div class="field">
+                    <label class="label">Station Number</label>
+                    <div class="control has-icons-left">
+                        <input type="text" id="station" class="input" required pattern="\d+"
+                            title="Station must be numeric, e.g. 5 or 42" inputmode="numeric">
+                        <span class="icon is-left">
+                            <i class="fas fa-desktop"></i>
+                        </span>
+                    </div>
+                </div>
 
-        <label>
-            Station Number:
-            <input type="text" id="station" name="station" required pattern="\d+"
-                title="Station must be numeric, e.g. 5 or 42" inputmode="numeric">
-        </label>
+                <div class="field">
+                    <label class="label">Queue Number</label>
+                    <div class="control has-icons-left">
+                        <input type="text" id="queue" class="input" required pattern="[A-Za-z][0-9]+"
+                            title="1 letter followed by digits, e.g. A123" autofocus autocapitalize="characters">
+                        <span class="icon is-left">
+                            <i class="fas fa-ticket-alt"></i>
+                        </span>
+                    </div>
+                </div>
 
-        <label>
-            Queue Number:
-            <input type="text" id="queue" name="queue" required pattern="[A-Za-z][0-9]+"
-                title="1 letter followed by digits, e.g. A123" autofocus autocapitalize="characters"
-                style="text-transform: uppercase;" oninput="this.value = this.value.toUpperCase()">
-        </label>
+                <div class="field has-text-centered">
+                    <button type="submit" id="callButton" class="button is-primary is-large" disabled>
+                        <span class="icon">
+                            <i class="fas fa-phone-alt"></i>
+                        </span>
+                        <span>Call Queue</span>
+                    </button>
+                </div>
+            </form>
 
-        <div class="button-wrapper">
-            <button type="submit" id="callButton" disabled>Call Queue</button>
+            <div class="field has-text-centered">
+                <button id="announceButton" class="button is-warning announce-button">
+                    <span class="icon">
+                        <i class="fas fa-bullhorn"></i>
+                    </span>
+                    <span>Trigger Announcement</span>
+                </button>
+            </div>
         </div>
-    </form>
-
-    <div id="serverStatus" class="status-indicator status-connecting">
-        Connecting...
     </div>
 
-    <script>
-        // --- Elements ---
-        const form = document.getElementById('queueForm');
-        const stationInput = document.getElementById('station');
-        const queueInput = document.getElementById('queue');
-        const callButton = document.getElementById('callButton');
-        const announceButton = document.getElementById('announceButton');
-        const serverStatusEl = document.getElementById('serverStatus');
+    <div id="serverStatus" class="tag status-tag is-large is-connecting">
+        <span class="icon">
+            <i class="fas fa-sync fa-spin"></i>
+        </span>
+        <span>Connecting...</span>
+    </div>
 
-        // --- State Variables ---
-        let socket = null;
-        let reconnectTimeoutId = null;
-        const RECONNECT_DELAY_MS = 5000;
-
-        // --- Initial Setup ---
-        window.onload = () => {
-            stationInput.focus();
-            stationInput.select();
-            connectEventSource();
-        };
-
-        // --- Enable/Disable Call Button ---
-        form.addEventListener('input', () => {
-            callButton.disabled = !form.checkValidity();
-        });
-
-        // --- Focus Behavior ---
-        stationInput.addEventListener('focus', () => stationInput.select());
-        queueInput.addEventListener('focus', () => queueInput.select());
-
-        document.addEventListener('keydown', event => {
-            if (event.key === 'Enter') {
-                // prevent default to avoid accidental full-page submits
-                event.preventDefault();
-                if (document.activeElement === announceButton) return;
-                if (document.activeElement === stationInput) {
-                    queueInput.focus();
-                } else if (document.activeElement === queueInput) {
-                    callButton.focus();
-                    callQueue();
-                } else {
-                    callQueue();
-                }
-            } else if (
-                document.activeElement !== announceButton &&
-                document.activeElement !== queueInput &&
-                document.activeElement !== stationInput &&
-                stationInput.value &&
-                event.key.length === 1 &&
-                !event.ctrlKey && !event.altKey && !event.metaKey
-            ) {
-                if (/^[a-zA-Z0-9]$/.test(event.key)) {
-                    queueInput.value = event.key.toUpperCase();
-                    queueInput.focus();
-                }
-            }
-        });
-
-        window.addEventListener('beforeunload', () => {
-            console.log("Page unloading. Closing SSE connection.");
-            if (socket) { socket.close(); socket = null; }
-            if (reconnectTimeoutId) { clearTimeout(reconnectTimeoutId); }
-        });
-
-        // --- Call Queue ---
-        function callQueue(event) {
-            if (event) event.preventDefault();
-
-            // trigger browser validation UI
-            if (!form.checkValidity()) {
-                form.reportValidity();
-                return;
-            }
-
-            const station = stationInput.value;
-            const queue = queueInput.value;
-
-            console.log(`Sending call: Queue=${queue}, Station=${station}`);
-            fetch('/call', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ queue, station })
-            })
-                .then(resp => {
-                    if (!resp.ok) {
-                        console.error('Call failed:', resp.status);
-                        alert(`Error calling queue: ${resp.status}`);
-                    } else {
-                        console.log("Call command sent successfully.");
-                        queueInput.value = '';
-                        queueInput.focus();
-                    }
-                })
-                .catch(err => {
-                    console.error('Network error:', err);
-                    alert('Network error. Check your connection.');
-                });
-        }
-
-        // --- Trigger Announcement ---
-        function triggerAnnouncement() {
-            if (announceButton.disabled) return;
-            announceButton.disabled = true;
-            let timeLeft = 120;
-            const originalText = announceButton.textContent;
-
-            const timer = setInterval(() => {
-                timeLeft--;
-                announceButton.textContent = `Wait ${timeLeft}s`;
-                announceButton.title = `Wait ${timeLeft}s before next`;
-                if (timeLeft <= 0) {
-                    clearInterval(timer);
-                    announceButton.disabled = false;
-                    announceButton.textContent = originalText;
-                    announceButton.title = '';
-                }
-            }, 1000);
-
-            fetch('/trigger-announcement', { method: 'POST' })
-                .then(resp => {
-                    if (!resp.ok) {
-                        clearInterval(timer);
-                        announceButton.disabled = false;
-                        announceButton.textContent = originalText;
-                        announceButton.title = '';
-                        alert(`Error triggering announcement: ${resp.status}`);
-                    }
-                })
-                .catch(err => {
-                    clearInterval(timer);
-                    announceButton.disabled = false;
-                    announceButton.textContent = originalText;
-                    announceButton.title = '';
-                    alert('Network error triggering announcement.');
-                });
-        }
-
-        // --- Server Status via SSE ---
-        function updateServerStatus(status, msg) {
-            serverStatusEl.textContent = msg;
-            serverStatusEl.title = msg;
-            serverStatusEl.classList.remove('status-connected', 'status-disconnected', 'status-connecting');
-            serverStatusEl.classList.add(`status-${status}`);
-        }
-
-        function connectEventSource() {
-            if (reconnectTimeoutId) clearTimeout(reconnectTimeoutId);
-            if (socket) socket.close();
-
-            console.log("Attempting to connect to SSE endpoint (/events)...");
-            updateServerStatus('connecting', 'Connecting...');
-            socket = new EventSource('/events');
-
-            socket.onopen = () => updateServerStatus('connected', 'Connected');
-            socket.onmessage = e => {
-                if (!e.data.startsWith(': heartbeat')) {
-                    console.log('SSE:', e.data);
-                }
-            };
-            socket.onerror = _ => {
-                updateServerStatus('disconnected', 'Disconnected');
-                socket.close(); socket = null;
-                reconnectTimeoutId = setTimeout(connectEventSource, RECONNECT_DELAY_MS);
-            };
-        }
-    </script>
+    <script src="/js/caller.js"></script>
 </body>
 
 </html>
