@@ -406,3 +406,27 @@ window.addEventListener('beforeunload', () => {
 
     updateServerStatus('disconnected', 'Disconnected'); // Update status indicator
 });
+
+(function () {
+    const INACTIVITY_DELAY = 2000; // milliseconds
+    let hideTimer;
+
+    function resetCursorTimer() {
+        // 1) Always show cursor when there's activity
+        document.body.classList.remove('hide-cursor');
+
+        // 2) Clear any existing hiding timer…
+        clearTimeout(hideTimer);
+
+        // 3) …and start a new one
+        hideTimer = setTimeout(() => {
+            document.body.classList.add('hide-cursor');
+        }, INACTIVITY_DELAY);
+    }
+
+    // Kick things off
+    document.addEventListener('mousemove', resetCursorTimer);
+    document.addEventListener('mousedown', resetCursorTimer);  // also reset on clicks
+    document.addEventListener('keydown', resetCursorTimer);    // reset on keypresses
+    resetCursorTimer();
+})();

@@ -356,3 +356,7 @@ These center the direct child (the inner div) */
 .fade-in-animated {
     animation: fadeIn 0.5s ease-in-out;
 }
+
+.hide-cursor {
+    cursor: none !important;
+}
