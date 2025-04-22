@@ -134,7 +134,7 @@ These center the direct child (the inner div) */
 .history-table th {
     /* === MODIFIED: Increased padding and font size === */
     padding-top: 1.5em !important;
-    padding: 1.2em 0.75em;
+    /* padding: 1.2em 0.75em; */
     /* Increased vertical padding */
     border-bottom: 1px solid #444;
     font-weight: 600;
