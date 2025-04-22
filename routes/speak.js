@@ -5,12 +5,40 @@ const router = express.Router();
 const { speakLimiter } = require('../rateLimiters');
 const { getTimestamp, getFallbackQueueServerPath } = require('../utils');
 const { handleGttsError, handleServerError } = require('../errorHandlers');
+const { languageCodes } = require('../config')
 
 router.get('/speak', speakLimiter, (req, res) => {
-    const queue = String(req.query.queue || '').replace(/[^a-zA-Z0-9 ]/g, '').toUpperCase();
-    const station = String(req.query.station || '').replace(/[^a-zA-Z0-9 ]/g, '').toUpperCase();
-    const lang = req.query.lang;
-    if (!queue || !station || !lang) return res.status(400).send('Missing parameters');
+    const rawQueue = String(req.body.queue || '').toUpperCase().trim();
+    const rawStation = String(req.body.station || '').trim();
+    const rawLang = String(req.body.lang || '').toLowerCase().trim();
+
+    // validate queue: 1 letter + ≥1 digit
+    if (!/^[A-Z]\d+$/.test(rawQueue)) {
+        console.warn(`⚠️ ${getTimestamp()} - POST /speak invalid data.`);
+        return res.status(400).send({
+            error: 'Queue must be 1 letter followed by digits, e.g. A123'
+        });
+    }
+
+    // validate station: ≥1 digit
+    if (!/^\d+$/.test(rawStation)) {
+        console.warn(`⚠️ ${getTimestamp()} - POST /speak invalid data.`);
+        return res.status(400).send({
+            error: 'Station must be numeric, e.g. 5 or 42'
+        });
+    }
+
+    if (!languageCodes.includes(rawLang)) {
+        console.warn(`⚠️ ${getTimestamp()} - POST /speak invalid data.`);
+        return res.status(400).send({
+            error: 'Language is not supported'
+        });
+    }
+
+    // if we get here, inputs are valid:
+    const queue = rawQueue;
+    const station = rawStation;
+    const lang = rawLang;
 
     const fallbackPath = getFallbackQueueServerPath(lang);
 
