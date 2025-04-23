@@ -9,8 +9,8 @@ const serverStatusEl = document.getElementById("serverStatus");
 let MAX_HISTORY = 5; // Initial conservative value, will be calculated
 let isPlayingAudio = false;
 const announcementQueue = [];
-const languagesToSpeak = ['th', 'en', 'my'];
-const publicAnnouncementLanguages = ['th', 'en', 'my'];
+const languagesToSpeak = ['th', 'en'];
+const publicAnnouncementLanguages = ['th', 'en'];
 const RECONNECT_DELAY_MS = 5000;
 const HISTORY_RECALC_INTERVAL_MS = 30000; // Recalculate every 30s
 let socket, reconnectTimeoutId = null, historyRecalcIntervalId = null;
