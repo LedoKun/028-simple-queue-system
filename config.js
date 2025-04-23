@@ -19,6 +19,6 @@ module.exports = {
     triggerRateLimitMax: parseInt(process.env.TRIGGER_RATE_LIMIT_MAX || '5', 10),
 
     // --- Supported Languages & Paths ---
-    languageCodes: ['th', 'en', 'my'],
+    languageCodes: ['th', 'en'],
     queueFallbackBasePath: path.join(__dirname, 'public', 'media', 'queue-fallback'),
 };

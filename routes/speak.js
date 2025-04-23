@@ -60,12 +60,12 @@ router.get('/speak', speakLimiter, (req, res) => {
     // Use exclamation mark to insert brief pauses into the TTS output, slowing the speech for clarity
     switch (lang) {
         case 'th':
-            text = `เชิญคิว ${queue}! คิว ${queue}! ที่ช่องบริการ ${station} ค่ะ`;
+            text = `หมายเลข ${queue}! ช่อง ${station}!`;
             speakLang = 'th';
             break;
 
         case 'en':
-            text = `Queue ${queue}! queue ${queue}! please proceed to station ${station}.`;
+            text = `Number ${queue}! Station ${station}!`;
             speakLang = 'en-uk';
             break;
         default:
