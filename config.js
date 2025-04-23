@@ -5,8 +5,8 @@ module.exports = {
 
     // --- Timing Configuration ---
     debouncingIntervalMs: parseInt(process.env.DEBOUNCINGINTERVALMS || 3000, 10),
-    publicAnnouncementIntervalMs: parseInt(process.env.PUBLICANNOUNCEMENTINTERVALMS || 30 * 60 * 1000, 10),
-    startPublicAnnouncementsAfterMs: parseInt(process.env.STARTPUBLICANNOUNCEMENTSAFTERMS || 5 * 60 * 1000, 10),
+    publicAnnouncementIntervalMs: parseInt(process.env.PUBLICANNOUNCEMENTINTERVALMS || 60 * 60 * 1000, 10),
+    startPublicAnnouncementsAfterMs: parseInt(process.env.STARTPUBLICANNOUNCEMENTSAFTERMS || 20 * 60 * 1000, 10),
 
     // --- Rate Limiting Configuration ---
     callRateLimitWindowMs: parseInt(process.env.CALL_RATE_LIMIT_WINDOW_MS || '60000', 10),
