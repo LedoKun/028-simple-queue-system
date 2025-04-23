@@ -165,8 +165,8 @@ These center the direct child (the inner div) */
     /* Increased vertical padding */
     border-bottom: 1px solid #333;
     word-break: break-all;
-    /* === MODIFIED: Increased font size (~2x) === */
-    font-size: clamp(28px, 3vw, 44px);
+    /* === MODIFIED: Increased font size (~4x) === */
+    font-size: clamp(56px, 6vw, 88px);
     /* Was 14px, 1.5vw, 22px */
     /* === MODIFIED: Slightly increased line height === */
     line-height: 1.4;
