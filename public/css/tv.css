@@ -166,7 +166,7 @@ body {
     border-bottom: 1px solid #333;
     word-break: break-all;
     /* === MODIFIED: Increased font size (~4x) === */
-    font-size: clamp(65px, 6vw, 92px);
+    font-size: clamp(65px, 6vw, 90px);
     /* Was 14px, 1.5vw, 22px */
     /* === MODIFIED: Slightly increased line height === */
     line-height: 1.4;
