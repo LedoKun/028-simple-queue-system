@@ -1,5 +1,5 @@
 const path = require('path');
-const { toBool } = require('./utils')
+const toBool = (val) => ['true', '1', 'yes'].includes((val || '').toLowerCase());
 
 module.exports = {
     port: process.env.PORT || 3000,

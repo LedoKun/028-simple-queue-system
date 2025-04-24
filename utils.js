@@ -20,6 +20,4 @@ const getFallbackQueueServerPath = (langCode) => {
     return null;
 };
 
-const toBool = (val) => ['true', '1', 'yes'].includes((val || '').toLowerCase());
-
-module.exports = { getTimestamp, getFallbackQueueServerPath, toBool };
+module.exports = { getTimestamp, getFallbackQueueServerPath };
