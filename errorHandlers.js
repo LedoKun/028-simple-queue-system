@@ -1,10 +1,11 @@
 const fsEH = require('fs');
 const { getTimestamp } = require('./utils');
+const { enableQueueFallback } = require('./config')
 
 function handleGttsError(err, res, context, fallbackPath) {
     console.error(`❌ ${getTimestamp()} - ERROR (${context}) - gTTS error:`, err);
     if (!res.headersSent) {
-        if (fallbackPath) {
+        if (fallbackPath && enableQueueFallback) {
             console.log(`✅ ${getTimestamp()} - INFO (${context}) - Using fallback: ${fallbackPath}`);
             res.setHeader('Content-Type', 'audio/mpeg');
             res.setHeader('Cache-Control', '86400');
@@ -16,6 +17,9 @@ function handleGttsError(err, res, context, fallbackPath) {
             });
             readStream.pipe(res);
             console.log(`✅ ${getTimestamp()} - Sent fallback audio.`);
+        } else if (!enableQueueFallback) {
+            console.error(`⚠️ ${getTimestamp()} - WARN (${context}) - Fallback disabled.`);
+            res.status(500).send('Fallback disabled.');
         } else {
             console.error(`❌ ${getTimestamp()} - ERROR (${context}) - No fallback available.`);
             res.status(500).send('No fallback available.');

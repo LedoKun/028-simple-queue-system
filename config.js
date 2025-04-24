@@ -1,4 +1,5 @@
 const path = require('path');
+const { toBool } = require('./utils')
 
 module.exports = {
     port: process.env.PORT || 3000,
@@ -20,5 +21,6 @@ module.exports = {
 
     // --- Supported Languages & Paths ---
     languageCodes: ['th', 'en'],
+    enableQueueFallback: toBool(process.env.ENABLE_QUEUE_FALLBACK),     // default: false
     queueFallbackBasePath: path.join(__dirname, 'public', 'media', 'queue-fallback'),
 };
