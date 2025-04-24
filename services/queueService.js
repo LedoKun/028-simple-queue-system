@@ -53,7 +53,7 @@ function processQueue() {
 }
 
 function startPublicAnnouncements() {
-    console.log(`⏱️ ${getTimestamp()} - Scheduling public announcements every ${configQS.publicAnnouncementIntervalMs / 1000}s`);
+    console.log(`⏱️  ${getTimestamp()} - Scheduling public announcements every ${configQS.publicAnnouncementIntervalMs / 1000}s`);
     const announce = () => {
         console.log(`📢 ${getTimestamp()} - Broadcasting public announcement.`);
         const payload = JSON.stringify({ type: 'public_announcement_cycle_start' });
