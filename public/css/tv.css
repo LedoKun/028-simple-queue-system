@@ -54,9 +54,9 @@ body {
 /* --- Current Queue Section (Larger) --- */
 .current-queue-column {
     /* Bulma classes handle flex, direction, and centering:
-is-flex, is-flex-direction-column,
-is-justify-content-center, is-align-items-center
-These center the direct child (the inner div) */
+    is-flex, is-flex-direction-column,
+    is-justify-content-center, is-align-items-center
+    These center the direct child (the inner div) */
     text-align: center;
     /* Center text within the inner div */
     /* Bulma handles the 2/3 width on desktop */
@@ -85,7 +85,7 @@ These center the direct child (the inner div) */
     font-weight: bold;
     color: #9d86c8;
     /* Primary accent color */
-    margin: 0.1em 0;
+    margin: 0.02em 0;
     line-height: 1.1;
     word-break: break-all;
 }
@@ -133,7 +133,7 @@ These center the direct child (the inner div) */
 
 .history-table th {
     /* === MODIFIED: Increased padding and font size === */
-    padding-top: 1.5em !important;
+    padding-top: 1em !important;
     /* padding: 1.2em 0.75em; */
     /* Increased vertical padding */
     border-bottom: 1px solid #444;
