@@ -20,14 +20,23 @@
 
         <div class="centered-form">
             <form id="queueForm" novalidate>
-                <div class="field">
-                    <label class="label">Station Number</label>
-                    <div class="control has-icons-left">
-                        <input type="text" id="station" class="input" required pattern="\d+"
-                            title="Station must be numeric, e.g. 5 or 42" inputmode="numeric">
-                        <span class="icon is-left">
-                            <i class="fas fa-desktop"></i>
-                        </span>
+                <!-- Station Input with Edit Button -->
+                <div class="field is-grouped is-align-items-flex-end">
+                    <div class="control is-expanded">
+                        <label class="label">Station Number</label>
+                        <div class="control has-icons-left">
+                            <input type="text" id="station" class="input" required pattern="\d+"
+                                title="Station must be numeric, e.g. 5 or 42" inputmode="numeric">
+                            <span class="icon is-left">
+                                <i class="fas fa-desktop"></i>
+                            </span>
+                        </div>
+                    </div>
+                    <div class="control" style="margin-top: 1.8em;">
+                        <button type="button" id="editStationBtn" class="button is-small is-info is-light"
+                            style="display: none;">
+                            <i class="fas fa-edit"></i>&nbsp;Edit
+                        </button>
                     </div>
                 </div>
 

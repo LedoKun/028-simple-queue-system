@@ -5,6 +5,7 @@ const queueInput = document.getElementById('queue');
 const callButton = document.getElementById('callButton');
 const announceButton = document.getElementById('announceButton');
 const serverStatusEl = document.getElementById('serverStatus');
+const editBtn = document.getElementById('editStationBtn');
 
 // --- State Variables ---
 let socket = null;
@@ -223,3 +224,17 @@ function showNotification(message, type) {
         }
     }, 3000);
 }
+
+// --- Station edit button ---
+stationInput.addEventListener('blur', () => {
+    if (/^\d+$/.test(stationInput.value.trim())) {
+        stationInput.disabled = true;
+        editBtn.style.display = 'inline-flex';
+    }
+});
+
+editBtn.addEventListener('click', () => {
+    stationInput.disabled = false;
+    stationInput.focus();
+    editBtn.style.display = 'none';
+});
