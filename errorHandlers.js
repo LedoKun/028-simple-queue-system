@@ -8,7 +8,7 @@ function handleGttsError(err, res, context, fallbackPath) {
         if (fallbackPath && enableQueueFallback) {
             console.log(`✅ ${getTimestamp()} - INFO (${context}) - Using fallback: ${fallbackPath}`);
             res.setHeader('Content-Type', 'audio/mpeg');
-            res.setHeader('Cache-Control', '86400');
+            res.setHeader('Cache-Control', 'public, max-age=86400');
             const readStream = fsEH.createReadStream(fallbackPath);
             readStream.on('error', (fileErr) => {
                 console.error(`❌ ${getTimestamp()} - ERROR (${context}) - Reading fallback failed:`, fileErr);

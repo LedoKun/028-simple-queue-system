@@ -46,7 +46,7 @@ router.get('/speak', speakLimiter, (req, res) => {
         console.log(`✅ ${getTimestamp()} - Serving fallback for ${lang}`);
         if (fallbackPath) {
             res.setHeader('Content-Type', 'audio/mpeg');
-            res.setHeader('Cache-Control', '86400');
+            res.setHeader('Cache-Control', 'public, max-age=86400');
             fs.createReadStream(fallbackPath).pipe(res);
         } else {
             console.error(`❌ ${getTimestamp()} - Fallback not found for ${lang}`);
@@ -76,7 +76,7 @@ router.get('/speak', speakLimiter, (req, res) => {
     console.log(`✅ ${getTimestamp()} - TTS generation for ${lang}`);
     try {
         res.setHeader('Content-Type', 'audio/mpeg');
-        res.setHeader('Cache-Control', '86400');
+        res.setHeader('Cache-Control', 'public, max-age=86400');
         const stream = gtts(speakLang).stream(text);
         stream.on('error', (err) => handleGttsError(err, res, 'speak', fallbackPath));
         stream.pipe(res);
