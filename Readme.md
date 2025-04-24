@@ -1,6 +1,8 @@
 # Queue Calling System 🚀🎉📺
 
-A responsive, TV-friendly queue display and calling system with real-time updates, multi-language audio announcements, and Docker support. 📡🖥️📣
+A responsive, TV-friendly queue display and calling system featuring real-time updates, multilingual audio announcements, and Dockerized deployment. 📡🖥️📣
+
+Actively developed and continuously improved based on feedback!
 
 ---
 
