@@ -81,7 +81,7 @@ These center the direct child (the inner div) */
 }
 
 .is-queue-number-large {
-    font-size: clamp(80px, 15vw, 250px);
+    font-size: clamp(120px, 22.5vw, 375px);
     font-weight: bold;
     color: #9d86c8;
     /* Primary accent color */
@@ -166,7 +166,7 @@ These center the direct child (the inner div) */
     border-bottom: 1px solid #333;
     word-break: break-all;
     /* === MODIFIED: Increased font size (~4x) === */
-    font-size: clamp(56px, 6vw, 88px);
+    font-size: clamp(65px, 6vw, 95px);
     /* Was 14px, 1.5vw, 22px */
     /* === MODIFIED: Slightly increased line height === */
     line-height: 1.4;
