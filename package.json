@@ -2,12 +2,12 @@
     "name": "queue-calling-system",
     "version": "1.0.0",
     "description": "A browser-based queue calling system with notifications.",
-    "main": "server.js",
+    "main": "src/server.js",
     "scripts": {
-        "start": "node server.js",
-        "dev": "nodemon server.js"
+        "start": "node src/server.js",
+        "dev": "nodemon src/server.js"
     },
-    "author": "Your Name",
+    "author": "LedoKun",
     "license": "MIT",
     "dependencies": {
         "console-log-level": "^1.4.1",
