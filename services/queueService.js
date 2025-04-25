@@ -33,7 +33,7 @@ function enqueueCall(queue, station) {
     const callKey = `${queue}:${station}`;
 
     if (lastProcessedTime[callKey] &&
-        now - lastProcessedTime[callKey] < config.debouncingIntervalMs) {
+        now - lastProcessedTime[callKey] < config.debounceIntervalMs) {
         logger.warn('Debounced call (within debounce interval):', callKey);
         return;
     }
@@ -86,7 +86,7 @@ function processQueue() {
     });
 
     // Schedule next processing after debounce interval
-    setTimeout(processQueue, config.debouncingIntervalMs);
+    setTimeout(processQueue, config.debounceIntervalMs);
 }
 
 /**
@@ -94,8 +94,8 @@ function processQueue() {
  */
 function startPublicAnnouncements() {
     logger.info(
-        `Scheduling public announcements every ${config.publicAnnouncementIntervalMs}ms ` +
-        `(starting after ${config.startPublicAnnouncementsAfterMs}ms)`
+        `Scheduling public announcements every ${config.announcementIntervalMs}ms ` +
+        `(starting after ${config.announcementStartDelayMs}ms)`
     );
 
     const announce = () => {
@@ -118,8 +118,8 @@ function startPublicAnnouncements() {
     // Delay initial start, then repeat at interval
     setTimeout(() => {
         announce();
-        setInterval(announce, config.publicAnnouncementIntervalMs);
-    }, config.startPublicAnnouncementsAfterMs);
+        setInterval(announce, config.announcementIntervalMs);
+    }, config.announcementStartDelayMs);
 }
 
 /**

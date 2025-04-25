@@ -28,7 +28,7 @@ const getFallbackQueueServerPath = (langCode) => {
     }
 
     const filePath = path.join(
-        config.queueFallbackBasePath,
+        config.fallbackMediaPath,
         `queue-${fileLangCode}.mp3`
     );
 

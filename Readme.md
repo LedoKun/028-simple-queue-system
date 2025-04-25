@@ -82,9 +82,9 @@ Use environment variables to customize behavior. You can export them in your she
 | Variable                         | Description                                                                     | Default     |
 | -------------------------------- | ------------------------------------------------------------------------------- | ----------- |
 | `PORT`                           | Port for the server to listen on                                                | `3000`      |
-| `DEBOUNCINGINTERVALMS`           | Debounce interval for queue processing (milliseconds)                           | `3000`      |
-| `PUBLICANNOUNCEMENTINTERVALMS`   | Interval for automatic announcement cycle (milliseconds)                        | `1800000`   |
-| `STARTPUBLICANNOUNCEMENTSAFTERMS`| Delay before first announcement cycle after server start (milliseconds)         | `300000`    |
+| `debounceIntervalMs`           | Debounce interval for queue processing (milliseconds)                           | `3000`      |
+| `announcementIntervalMs`   | Interval for automatic announcement cycle (milliseconds)                        | `1800000`   |
+| `announcementStartDelayMs`| Delay before first announcement cycle after server start (milliseconds)         | `300000`    |
 
 ---
 
@@ -95,7 +95,7 @@ Use environment variables to customize behavior. You can export them in your she
 1. (Optional) Set environment variables:
    ```bash
    export PORT=8080
-   export PUBLICANNOUNCEMENTINTERVALMS=3600000
+   export announcementIntervalMs=3600000
    ```
 2. Start the server:
    ```bash
@@ -117,8 +117,8 @@ docker build -t queue-calling-system .
 
 # Run container
 docker run -p 3000:3000 --rm --name queue-app \
-  -e PUBLICANNOUNCEMENTINTERVALMS=3600000 \
-  -e STARTPUBLICANNOUNCEMENTSAFTERMS=600000 \
+  -e announcementIntervalMs=3600000 \
+  -e announcementStartDelayMs=600000 \
   queue-calling-system
 ```
 

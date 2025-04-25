@@ -1,7 +1,7 @@
 // ./errorHandlers.js
 
 const fs = require('fs');
-const { enableQueueFallback } = require('./config');
+const { enableFallback } = require('./config');
 const logger = require('./logger');
 
 /**
@@ -16,7 +16,7 @@ function handleGttsError(err, res, context, fallbackPath) {
         return res.end();
     }
 
-    if (enableQueueFallback && fallbackPath) {
+    if (enableFallback && fallbackPath) {
         logger.info(`INFO (${context}) - Using fallback: ${fallbackPath}`);
         res.set({
             'Content-Type': 'audio/mpeg',
@@ -38,7 +38,7 @@ function handleGttsError(err, res, context, fallbackPath) {
                 logger.info(`INFO (${context}) - Sent fallback audio.`)
             );
 
-    } else if (!enableQueueFallback) {
+    } else if (!enableFallback) {
         logger.warn(`WARN (${context}) - Fallback disabled.`);
         res.status(500).send('Fallback disabled.');
     } else {

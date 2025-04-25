@@ -8,9 +8,10 @@ const gtts = require('node-gtts');
 const router = express.Router();
 
 const {
-    cacheDir: CACHE_DIR,
+    ttsCacheDir: CACHE_DIR,
     languageCodes
 } = require('../config');
+
 const { speakLimiter } = require('../rateLimiters');
 const { getFallbackQueueServerPath } = require('../utils');
 const { handleGttsError, handleServerError } = require('../errorHandlers');

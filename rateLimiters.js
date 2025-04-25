@@ -28,22 +28,22 @@ function createLimiter({ windowMs, max, message, key }) {
 }
 
 const callLimiter = createLimiter({
-    windowMs: config.callRateLimitWindowMs,
-    max: config.callRateLimitMax,
+    windowMs: config.callRateLimit.windowMs,
+    max: config.callRateLimit.max,
     message: 'Too many /call requests, try later.',
     key: '/call',
 });
 
 const speakLimiter = createLimiter({
-    windowMs: config.speakRateLimitWindowMs,
-    max: config.speakRateLimitMax,
+    windowMs: config.speakRateLimit.windowMs,
+    max: config.speakRateLimit.max,
     message: 'Too many /speak requests, try later.',
     key: '/speak',
 });
 
 const triggerLimiter = createLimiter({
-    windowMs: config.triggerRateLimitWindowMs,
-    max: config.triggerRateLimitMax,
+    windowMs: config.triggerRateLimit.windowMs,
+    max: config.triggerRateLimit.max,
     message: 'Too many /trigger-announcement requests, try later.',
     key: '/trigger-announcement',
 });
