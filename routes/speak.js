@@ -21,6 +21,39 @@ const logger = require('../logger');
 fs.mkdirSync(CACHE_DIR, { recursive: true });
 
 /**
+ * Prune cache directory to keep only the latest N files.
+ */
+function pruneCache(maxFiles = 20) {
+    try {
+        const files = fs.readdirSync(CACHE_DIR)
+            .filter(f => f.endsWith('.mp3'));
+        if (files.length <= maxFiles) return;
+
+        const fileStats = files.map(filename => {
+            const filePath = path.join(CACHE_DIR, filename);
+            const stat = fs.statSync(filePath);
+            return { filePath, mtime: stat.mtimeMs };
+        });
+
+        // Sort by modification time ascending (oldest first)
+        fileStats.sort((a, b) => a.mtime - b.mtime);
+
+        // Delete oldest files beyond maxFiles
+        const toDelete = fileStats.slice(0, fileStats.length - maxFiles);
+        toDelete.forEach(({ filePath }) => {
+            try {
+                fs.unlinkSync(filePath);
+                logger.info('Pruned old TTS cache file:', filePath);
+            } catch (err) {
+                logger.error('Failed to delete cache file:', filePath, err);
+            }
+        });
+    } catch (err) {
+        logger.error('Error pruning TTS cache:', err);
+    }
+}
+
+/**
  * Construct a safe filesystem path for cached TTS files.
  */
 function getCachedFilePath(lang, queue, station) {
@@ -33,7 +66,7 @@ function getCachedFilePath(lang, queue, station) {
 /**
  * GET /speak
  * Query params: queue (e.g. A123), station (e.g. 5), lang ("th" or "en")
- * Serves TTS audio, caching results on disk.
+ * Serves TTS audio, caching results on disk and pruning old cache.
  */
 router.get('/speak', speakLimiter, (req, res) => {
     try {
@@ -79,11 +112,11 @@ router.get('/speak', speakLimiter, (req, res) => {
         let text, speakLang;
         switch (lang) {
             case 'th':
-                text = `หมายเลข ${queue}! ช่อง ${station}!`;
+                text = `หมายเลข ${queue}, ช่อง ${station}`;
                 speakLang = 'th';
                 break;
             case 'en':
-                text = `Number ${queue}! Station ${station}!`;
+                text = `Queue ${queue}, station ${station}`;
                 speakLang = 'en-uk';
                 break;
             default:
@@ -116,8 +149,11 @@ router.get('/speak', speakLimiter, (req, res) => {
         ttsStream.pipe(passThrough);
 
         passThrough.pipe(res);
-        passThrough.pipe(fs.createWriteStream(cachePath))
-            .on('error', err => logger.error('Error writing TTS cache file:', err));
+
+        const writeStream = fs.createWriteStream(cachePath);
+        passThrough.pipe(writeStream)
+            .on('error', err => logger.error('Error writing TTS cache file:', err))
+            .on('finish', () => pruneCache());
 
     } catch (err) {
         handleServerError(err, res, 'speak');
