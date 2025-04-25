@@ -23,4 +23,5 @@ module.exports = {
     languageCodes: ['th', 'en'],
     enableQueueFallback: toBool(process.env.ENABLE_QUEUE_FALLBACK),     // default: false
     queueFallbackBasePath: path.join(__dirname, 'public', 'media', 'queue-fallback'),
+    cacheDir: '/tmp/cache-queue/tts'
 };
