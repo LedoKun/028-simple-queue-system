@@ -7,6 +7,7 @@ ENV TZ=Asia/Bangkok
 ENV DEBOUNCINGINTERVALMS=3000
 ENV PUBLICANNOUNCEMENTINTERVALMS=1800000
 ENV STARTPUBLICANNOUNCEMENTSAFTERMS=300000
+ENV CACHE_DIR=/tmp/cache-queue/tts
 
 # Install Tini for proper process management
 RUN apk add --no-cache tini
