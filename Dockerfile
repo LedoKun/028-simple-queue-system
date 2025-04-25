@@ -14,7 +14,7 @@ ENV ANNOUNCEMENT_START_DELAY_MS=300000
 ENV TTS_CACHE_DIR=/tmp/cache-queue/tts
 
 # Logging
-ENV LOG_LEVEL=warn
+ENV LOG_LEVEL=info
 
 # Install Tini for proper process management
 RUN apk add --no-cache tini
@@ -29,7 +29,7 @@ COPY package.json yarn.lock ./
 RUN yarn install --production
 
 # Copy the rest of your application code
-COPY . .
+COPY src ./src
 
 # Expose the port your app listens on (assuming 3000)
 EXPOSE 3000
