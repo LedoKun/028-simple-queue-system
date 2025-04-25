@@ -1,28 +1,55 @@
+// ./rateLimiters.js
+
 const rateLimit = require('express-rate-limit');
-const configRL = require('./config');
+const config = require('./config');
+const logger = require('./logger');
 
-const callLimiter = rateLimit({
-    windowMs: configRL.callRateLimitWindowMs,
-    max: configRL.callRateLimitMax,
+/**
+ * Factory to create a rate limiter that logs when the limit is exceeded.
+ *
+ * @param {object} options
+ * @param {number} options.windowMs  – Time frame for which requests are checked (in ms)
+ * @param {number} options.max       – Max number of requests in window
+ * @param {string} options.message   – Error message to send when rate limit is hit
+ * @param {string} options.key       – Identifier for logging (e.g. the route path)
+ */
+function createLimiter({ windowMs, max, message, key }) {
+    return rateLimit({
+        windowMs,
+        max,
+        message,
+        standardHeaders: true,
+        legacyHeaders: false,
+        handler: (req, res, next, options) => {
+            logger.warn(`Rate limit exceeded [${key}]: IP=${req.ip}`);
+            res.status(options.statusCode).send(options.message);
+        },
+    });
+}
+
+const callLimiter = createLimiter({
+    windowMs: config.callRateLimitWindowMs,
+    max: config.callRateLimitMax,
     message: 'Too many /call requests, try later.',
-    standardHeaders: true,
-    legacyHeaders: false,
+    key: '/call',
 });
 
-const speakLimiter = rateLimit({
-    windowMs: configRL.speakRateLimitWindowMs,
-    max: configRL.speakRateLimitMax,
+const speakLimiter = createLimiter({
+    windowMs: config.speakRateLimitWindowMs,
+    max: config.speakRateLimitMax,
     message: 'Too many /speak requests, try later.',
-    standardHeaders: true,
-    legacyHeaders: false,
+    key: '/speak',
 });
 
-const triggerLimiter = rateLimit({
-    windowMs: configRL.triggerRateLimitWindowMs,
-    max: configRL.triggerRateLimitMax,
+const triggerLimiter = createLimiter({
+    windowMs: config.triggerRateLimitWindowMs,
+    max: config.triggerRateLimitMax,
     message: 'Too many /trigger-announcement requests, try later.',
-    standardHeaders: true,
-    legacyHeaders: false,
+    key: '/trigger-announcement',
 });
 
-module.exports = { callLimiter, speakLimiter, triggerLimiter };
+module.exports = {
+    callLimiter,
+    speakLimiter,
+    triggerLimiter,
+};

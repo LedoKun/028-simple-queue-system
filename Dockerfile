@@ -2,12 +2,19 @@
 FROM node:22-alpine3.21
 
 ENV NODE_ENV=production
-ENV PORT=3000
+ENV QUEUE_SERVER_PORT=3000
 ENV TZ=Asia/Bangkok
-ENV DEBOUNCINGINTERVALMS=3000
-ENV PUBLICANNOUNCEMENTINTERVALMS=1800000
-ENV STARTPUBLICANNOUNCEMENTSAFTERMS=300000
-ENV CACHE_DIR=/tmp/cache-queue/tts
+
+# Timing
+ENV QUEUE_DEBOUNCE_INTERVAL_MS=3000
+ENV PUBLIC_ANNOUNCEMENT_INTERVAL_MS=1800000
+ENV ANNOUNCEMENT_START_DELAY_MS=300000
+
+# Cache
+ENV TTS_CACHE_DIR=/tmp/cache-queue/tts
+
+# Logging
+ENV LOG_LEVEL=warn
 
 # Install Tini for proper process management
 RUN apk add --no-cache tini
@@ -23,10 +30,6 @@ RUN yarn install --production
 
 # Copy the rest of your application code
 COPY . .
-
-# Ensure /tmp is a clean directory with appropriate permissions
-# Raspberry Pi OS bug?
-RUN rm -rf /tmp && mkdir -p /tmp && chmod 1777 /tmp
 
 # Expose the port your app listens on (assuming 3000)
 EXPOSE 3000
