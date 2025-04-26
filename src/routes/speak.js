@@ -116,7 +116,7 @@ router.get('/speak', speakLimiter, (req, res) => {
                 speakLang = 'th';
                 break;
             case 'en':
-                text = `Queue ${queue}, station ${station}`;
+                text = `Number ${queue}, station ${station}`;
                 speakLang = 'en-uk';
                 break;
             default:
