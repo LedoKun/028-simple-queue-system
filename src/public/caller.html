@@ -19,11 +19,10 @@
         <h1 class="title">Queue Caller Interface</h1>
 
         <div class="centered-form">
-            <form id="queueForm" novalidate>
-                <!-- Station Input with Edit Button -->
+            <form id="queueForm" class="box" novalidate>
                 <div class="field is-grouped is-align-items-flex-end">
                     <div class="control is-expanded">
-                        <label class="label">Station Number</label>
+                        <label class="label" for="station">Station Number</label>
                         <div class="control has-icons-left">
                             <input type="text" id="station" class="input" required pattern="\d+"
                                 title="Station must be numeric, e.g. 5 or 42" inputmode="numeric">
@@ -32,7 +31,7 @@
                             </span>
                         </div>
                     </div>
-                    <div class="control" style="margin-top: 1.8em;">
+                    <div class="control">
                         <button type="button" id="editStationBtn" class="button is-small is-info is-light"
                             style="display: none;">
                             <i class="fas fa-edit"></i>&nbsp;Edit
@@ -41,7 +40,7 @@
                 </div>
 
                 <div class="field">
-                    <label class="label">Queue Number</label>
+                    <label class="label" for="queue">Queue Number</label>
                     <div class="control has-icons-left">
                         <input type="text" id="queue" class="input" required pattern="[A-Za-z][0-9]+"
                             title="1 letter followed by digits, e.g. A123" autofocus autocapitalize="characters">
