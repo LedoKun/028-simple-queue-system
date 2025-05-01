@@ -1,0 +1,16 @@
+[Unit]
+Description=Unmute PCM & Set HDMI Volume to 90% after LXDE start
+After=lightdm.service
+Requires=lightdm.service
+
+[Service]
+Type=oneshot
+User=tb01
+Environment=TZ=Asia/Bangkok
+Environment=USER=tb01
+Environment=XDG_RUNTIME_DIR=/run/user/1000
+ExecStartPre=/bin/sleep 5
+ExecStart=/usr/bin/env bash /srv/volume-setup.sh
+
+[Install]
+WantedBy=multi-user.target

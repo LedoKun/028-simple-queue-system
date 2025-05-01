@@ -1,0 +1,33 @@
+# /etc/containers/systemd/queue-app.container
+
+[Unit]
+Description=Queue App Container
+After=network-online.target
+Wants=network-online.target
+
+[Container]
+ContainerName=queue-app
+Image=ghcr.io/ledokun/028-simple-queue-system:latest
+PublishPort=3000:3000
+
+# Environment Variables
+Environment=NODE_ENV=production
+Environment=QUEUE_SERVER_PORT=3000
+Environment=TZ=Asia/Bangkok
+
+# Timing
+Environment=QUEUE_DEBOUNCE_INTERVAL_MS=3000
+Environment=PUBLIC_ANNOUNCEMENT_INTERVAL_MS=1800000
+Environment=ANNOUNCEMENT_START_DELAY_MS=300000
+
+# Cache
+Environment=TTS_CACHE_DIR=/tmp/cache-queue/tts
+
+# Logging
+Environment=LOG_LEVEL=info
+
+[Service]
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
