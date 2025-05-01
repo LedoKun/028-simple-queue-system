@@ -26,7 +26,6 @@
         // console.log(`UI: Server status updated to: ${status} - ${message}`);
     }
 
-    // --- History Management ---
     function calculateMaxHistory() {
         let rowHeight = 0; // Initialize rowHeight
         try {
@@ -55,7 +54,10 @@
                 const tempRow = document.createElement('tr');
                 // IMPORTANT: These inline styles MUST match the CSS for `history-table td`
                 // to get an accurate height measurement.
-                tempRow.innerHTML = `<td style="padding: 1em 0.75em; font-size: clamp(28px, 3vw, 44px); line-height: 1.4; vertical-align: middle; border: none;">&nbsp;</td><td style="padding: 1em 0.75em; font-size: clamp(28px, 3vw, 44px); line-height: 1.4; vertical-align: middle; border: none;">&nbsp;</td>`;
+                tempRow.innerHTML = `
+                <td style="padding: 1em 0.75em; font-size: clamp(70px, 6vw, 91px); line-height: 1.4; vertical-align: middle; border: none;">&nbsp;</td>
+                <td style="padding: 1em 0.75em; font-size: clamp(70px, 6vw, 91px); line-height: 1.4; vertical-align: middle; border: none;">&nbsp;</td>
+            `;
                 // Hide it visually but allow layout calculation
                 tempRow.style.visibility = 'hidden';
                 tempRow.style.position = 'absolute'; // Take out of flow
@@ -83,7 +85,6 @@
             trimHistory();
         }
     }
-
 
     function trimHistory() {
         if (!historyTableBody) return;
