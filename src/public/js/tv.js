@@ -186,7 +186,7 @@
         for (let i = startIndex; i < historyTableBody.children.length; i++) {
             const row = historyTableBody.children[i];
             const cells = row.getElementsByTagName('td');
-            if (cells.length >= 2 && cells[1].textContent === queueStr) {
+            if (cells.length >= 2 && cells[0].textContent === queueStr) {
                 // console.log(`Marking older history entry for removal: queue ${queueStr}`);
                 rowsToRemove.push(row);
             }
