@@ -380,15 +380,15 @@ window.addEventListener('load', () => {
     }, { once: true }); // Listener removed after first click
 });
 
-let resizeTimeout;
-window.addEventListener('resize', () => {
-    // Debounce resize event
-    clearTimeout(resizeTimeout);
-    resizeTimeout = setTimeout(() => {
-        console.log("Window resized, recalculating history.");
-        calculateMaxHistory();
-    }, 250); // Recalculate 250ms after resize stops
-});
+// let resizeTimeout;
+// window.addEventListener('resize', () => {
+//     // Debounce resize event
+//     clearTimeout(resizeTimeout);
+//     resizeTimeout = setTimeout(() => {
+//         console.log("Window resized, recalculating history.");
+//         calculateMaxHistory();
+//     }, 250); // Recalculate 250ms after resize stops
+// });
 
 window.addEventListener('beforeunload', () => {
     console.log("Page unloading. Cleaning up resources.");
