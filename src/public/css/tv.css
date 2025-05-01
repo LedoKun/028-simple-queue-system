@@ -63,7 +63,7 @@ body {
 }
 
 .is-queue-label {
-    font-size: clamp(20px, 3vw, 40px);
+    font-size: clamp(32px, 3vw, 58px);
     text-transform: uppercase;
     letter-spacing: 1px;
     margin-bottom: 0.1em;
@@ -71,7 +71,7 @@ body {
 }
 
 .is-queue-subtitle {
-    font-size: clamp(14px, 1.8vw, 24px);
+    font-size: clamp(14px, 1.8vw, 20px);
     font-weight: normal;
     margin-bottom: 0.5em;
     color: #bbb;
@@ -149,7 +149,7 @@ body {
 
 .history-table th .is-queue-subtitle {
     /* === MODIFIED: Increased font size (~2x) === */
-    font-size: clamp(20px, 1.8vw, 28px);
+    font-size: clamp(20px, 1.8vw, 24px);
     /* Was 10px, 0.9vw, 14px */
     color: #bbb;
     /* Subtitle color - good contrast */
@@ -246,11 +246,11 @@ body {
 
     /* Adjust primary font sizes for mobile/tablet */
     .is-queue-label {
-        font-size: clamp(24px, 5vw, 45px);
+        font-size: clamp(30px, 5vw, 58px);
     }
 
     .is-queue-subtitle {
-        font-size: clamp(16px, 3vw, 28px);
+        font-size: clamp(16px, 3vw, 24px);
     }
 
     .is-queue-number-large {
@@ -266,7 +266,7 @@ body {
     }
 
     .history-table th .is-queue-subtitle {
-        font-size: clamp(22px, 3.6vw, 32px);
+        font-size: clamp(22px, 3.6vw, 28px);
         /* Was 11px, 1.8vw, 16px */
     }
 
