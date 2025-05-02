@@ -14,12 +14,12 @@
         "console-log-level": "^1.4.1",
         "express": "^5.1.0",
         "express-rate-limit": "^7.5.0",
-        "node-gtts": "^2.0.2"
-    },
-    "devDependencies": {
-        "nodemon": "^3.1.10",
+        "node-gtts": "^2.0.2",
         "patch-package": "^8.0.0",
         "postinstall-postinstall": "^2.1.0"
+    },
+    "devDependencies": {
+        "nodemon": "^3.1.10"
     },
     "resolutions": {
         "tough-cookie": "^4.1.3"
