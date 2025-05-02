@@ -13,7 +13,6 @@ const {
 } = require('../config');
 
 const { speakLimiter } = require('../rateLimiters');
-const { getFallbackQueueServerPath } = require('../utils');
 const { handleGttsError, handleServerError } = require('../errorHandlers');
 const logger = require('../logger');
 
@@ -23,7 +22,7 @@ fs.mkdirSync(CACHE_DIR, { recursive: true });
 /**
  * Prune cache directory to keep only the latest N files.
  */
-function pruneCache(maxFiles = 20) {
+function pruneCache(maxFiles = 200) {
     try {
         const files = fs.readdirSync(CACHE_DIR)
             .filter(f => f.endsWith('.mp3'));
@@ -91,22 +90,6 @@ router.get('/speak', speakLimiter, (req, res) => {
         const queue = rawQueue;
         const station = rawStation;
         const lang = rawLang;
-        const fallback = getFallbackQueueServerPath(lang);
-
-        // Handle pre-recorded fallback languages
-        if (['my', 'fil'].includes(lang)) {
-            if (fallback && fs.existsSync(fallback)) {
-                logger.info('Serving pre-recorded fallback for language:', lang);
-                res.set({
-                    'Content-Type': 'audio/mpeg',
-                    'Cache-Control': 'public, max-age=86400'
-                });
-                return fs.createReadStream(fallback).pipe(res);
-            }
-
-            logger.error('Fallback not found or not enabled for language:', lang);
-            return res.status(404).send('Fallback not found');
-        }
 
         // Prepare TTS text and language code
         let text, speakLang;
