@@ -10,8 +10,8 @@ let isPlayingAudio = false;
 const announcementQueue = [];
 const languagesToSpeak = ['th', 'en'];
 const publicAnnouncementLanguages = ['th', 'en'];
-const RECONNECT_DELAY_MS = 5000;
-const HISTORY_RECALC_INTERVAL_MS = 30000; // Recalculate every 30s
+const RECONNECT_DELAY_MS = 1000;
+// const HISTORY_RECALC_INTERVAL_MS = 30000; // Recalculate every 30s
 let socket, reconnectTimeoutId = null, historyRecalcIntervalId = null;
 let previousQueue = null, previousStation = null;
 
