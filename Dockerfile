@@ -24,10 +24,10 @@ WORKDIR /app
 
 # Copy the package manifest files
 COPY package.json yarn.lock ./
+COPY patches ./patches
 
 # Install dependencies (production-only; remove '--production' if needed)
-RUN yarn install --production && \
-    yarn postinstall
+RUN yarn install --production
 
 # Copy the rest of your application code
 COPY src ./src
