@@ -26,7 +26,8 @@ WORKDIR /app
 COPY package.json yarn.lock ./
 
 # Install dependencies (production-only; remove '--production' if needed)
-RUN yarn install --production
+RUN yarn install --production && \
+    yarn postinstall
 
 # Copy the rest of your application code
 COPY src ./src

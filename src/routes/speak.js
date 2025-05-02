@@ -103,6 +103,10 @@ router.get('/speak', speakLimiter, (req, res) => {
                 text = `Number ${queue}, station ${station}`;
                 speakLang = 'en-uk';
                 break;
+            case 'my':
+                text = `အမှတ် ${queue}, ကောင်တာ ${station}`;
+                speakLang = 'my';
+                break;
             default:
                 logger.warn('No TTS configuration for language:', lang);
                 return res.status(400).send(`Unsupported lang ${lang}`);

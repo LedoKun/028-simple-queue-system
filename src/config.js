@@ -44,7 +44,7 @@ module.exports = {
     // Comma-separated list in ENV or defaults to ['th','en']
     languageCodes: process.env.LANGUAGE_CODES
         ? process.env.LANGUAGE_CODES.split(',').map(s => s.trim().toLowerCase())
-        : ['th', 'en'],
+        : ['th', 'en', 'my'],
 
     // --- Cache Directory ---
     ttsCacheDir: process.env.TTS_CACHE_DIR
