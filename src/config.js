@@ -50,4 +50,6 @@ module.exports = {
     ttsCacheDir: process.env.TTS_CACHE_DIR
         ? path.resolve(process.env.TTS_CACHE_DIR)
         : path.resolve('/tmp', 'cache-queue', 'tts'),
+
+    maxTTSCacheFiles: toInt(process.env.MAX_TTS_CACHE_FILES, 200),
 };

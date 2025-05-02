@@ -9,7 +9,8 @@ const router = express.Router();
 
 const {
     ttsCacheDir: CACHE_DIR,
-    languageCodes
+    languageCodes,
+    maxTTSCacheFiles,
 } = require('../config');
 
 const { speakLimiter } = require('../rateLimiters');
@@ -136,7 +137,7 @@ router.get('/speak', speakLimiter, (req, res) => {
         const writeStream = fs.createWriteStream(cachePath);
         passThrough.pipe(writeStream)
             .on('error', err => logger.error('Error writing TTS cache file:', err))
-            .on('finish', () => pruneCache());
+            .on('finish', () => pruneCache(maxFiles = maxTTSCacheFiles));
 
     } catch (err) {
         handleServerError(err, res, 'speak');
