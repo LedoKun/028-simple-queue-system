@@ -24,8 +24,8 @@ app.use(speakRoute);
 app.use(triggerRoute);
 
 // ensure media directories exist
-['announcement', 'queue-fallback'].forEach(folder => {
-    const dir = path.join(__dirname, 'public', 'media', folder);
+announcementDir = path.join(__dirname, 'public', 'media', 'announcement');
+[announcementDir, config.ttsCacheDir].forEach(dir => {
     try {
         fs.mkdirSync(dir, { recursive: true });
         logger.info('Ensured media directory:', dir);

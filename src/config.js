@@ -45,8 +45,6 @@ module.exports = {
     languageCodes: process.env.LANGUAGE_CODES
         ? process.env.LANGUAGE_CODES.split(',').map(s => s.trim().toLowerCase())
         : ['th', 'en'],
-    enableFallback: toBool(process.env.ENABLE_FALLBACK),
-    fallbackMediaPath: path.resolve(__dirname, 'public', 'media', 'queue-fallback'),
 
     // --- Cache Directory ---
     ttsCacheDir: process.env.TTS_CACHE_DIR

@@ -1,50 +1,20 @@
 // ./errorHandlers.js
 
 const fs = require('fs');
-const { enableFallback } = require('./config');
 const logger = require('./logger');
 
 /**
  * Handle errors from node-gtts streams.
- * Attempts to serve a fallback file if configured and enabled.
  */
-function handleGttsError(err, res, context, fallbackPath) {
+function handleGttsError(err, res, context) {
     logger.error(`ERROR (${context}) - gTTS error:`, err);
 
     if (res.headersSent) {
-        logger.warn(`WARN (${context}) - Headers already sent; cannot fallback`);
+        logger.warn(`WARN (${context}) - Headers already sent`);
         return res.end();
     }
 
-    if (enableFallback && fallbackPath) {
-        logger.info(`INFO (${context}) - Using fallback: ${fallbackPath}`);
-        res.set({
-            'Content-Type': 'audio/mpeg',
-            'Cache-Control': 'public, max-age=86400',
-        });
-
-        const readStream = fs.createReadStream(fallbackPath);
-        readStream.on('error', fileErr => {
-            logger.error(`ERROR (${context}) - Reading fallback failed:`, fileErr);
-            if (!res.headersSent) {
-                res.status(500).send('Error with fallback.');
-            } else {
-                res.end();
-            }
-        });
-
-        readStream.pipe(res)
-            .on('finish', () =>
-                logger.info(`INFO (${context}) - Sent fallback audio.`)
-            );
-
-    } else if (!enableFallback) {
-        logger.warn(`WARN (${context}) - Fallback disabled.`);
-        res.status(500).send('Fallback disabled.');
-    } else {
-        logger.error(`ERROR (${context}) - No fallback available.`);
-        res.status(500).send('No fallback available.');
-    }
+    res.status(500).send('Text-to-Speech service is currently unavailable. Please try again later.');
 }
 
 /**
