@@ -10,6 +10,7 @@ let isPlayingAudio = false;
 const announcementQueue = [];
 const languagesToSpeak = ['th', 'en', 'my'];
 const publicAnnouncementLanguages = ['th', 'en'];
+const ANNOUNCEMENT_PLAYBACK_RATE = 1.25;
 const RECONNECT_DELAY_MS = 1000;
 // const HISTORY_RECALC_INTERVAL_MS = 30000; // Recalculate every 30s
 let socket, reconnectTimeoutId = null, historyRecalcIntervalId = null;
@@ -323,6 +324,8 @@ function playAudioSegment(url, onSuccess, onError) {
     // Clear previous listeners immediately
     announcementAudio.onended = null;
     announcementAudio.onerror = null;
+
+    announcementAudio.playbackRate = ANNOUNCEMENT_PLAYBACK_RATE;
 
     const playPromise = announcementAudio.play();
 
