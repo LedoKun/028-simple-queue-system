@@ -1,7 +1,6 @@
 // ./services/queueService.js
 
 const config = require('../config');
-const { getTimestamp } = require('../utils');
 const logger = require('../logger');
 
 let clients = [];
