@@ -17,7 +17,7 @@ router.get('/events', (req, res) => {
     addClient(res);
 
     // Heartbeat interval to prevent timeouts
-    const HEARTBEAT_INTERVAL = 15000;
+    const HEARTBEAT_INTERVAL = 1000;
     const heartbeat = setInterval(() => {
         if (res.writableEnded || res.writableFinished) {
             clearInterval(heartbeat);

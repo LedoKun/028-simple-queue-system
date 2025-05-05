@@ -1,5 +1,7 @@
 // ./services/queueService.js
 
+const fs = require('fs');
+
 const config = require('../config');
 const logger = require('../logger');
 
@@ -7,6 +9,12 @@ let clients = [];
 const pendingCalls = [];
 let isProcessingQueue = false;
 const lastProcessedTime = {};
+
+const {
+    prepareTTS,
+    generateTtsStream,
+    getCachedFilePath,
+} = require('./ttsService');
 
 /**
  * Add a new SSE client connection.
@@ -44,6 +52,23 @@ function enqueueCall(queue, station) {
 
     pendingCalls.push({ queue, station, callKey });
     logger.info('Enqueued call:', callKey, 'Pending calls:', pendingCalls.length);
+
+    // Generate TTS audio and cache it
+    config.languageCodes.forEach((lang, i) => {
+        const cachePath = getCachedFilePath(lang, queue, station);
+        if (!fs.existsSync(cachePath)) {
+            setTimeout(() => {
+                let { text, speakLang } = prepareTTS(lang, queue, station);
+                let ttsPassThrough = generateTtsStream(text, speakLang, cachePath);
+
+                ttsPassThrough.on('error', err => {
+                    logger.error('Error generating TTS stream:', err);
+                });
+
+                logger.info('Generated and cached TTS audio:', cachePath);
+            }, i * 500); // stagger TTS generation
+        }
+    });
 
     if (!isProcessingQueue) {
         processQueue();
