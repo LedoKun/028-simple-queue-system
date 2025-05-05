@@ -70,8 +70,11 @@ function enqueueCall(queue, station) {
         }
     });
 
+    // Start processing the queue if not already processing
     if (!isProcessingQueue) {
-        processQueue();
+        setTimeout(() => {
+            processQueue();
+        }, (config.languageCodes.length + 1) * 500);
     }
 }
 
