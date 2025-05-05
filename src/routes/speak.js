@@ -27,7 +27,7 @@ fs.mkdirSync(CACHE_DIR, { recursive: true });
  * Query params: queue (e.g. A123), station (e.g. 5), lang ("th" or "en")
  * Serves TTS audio, caching results on disk and pruning old cache.
  */
-router.get('/speak', speakLimiter, (req, res) => {
+router.get('/speak', speakLimiter, async (req, res) => {
     try {
         const rawQueue = String(req.query.queue || '').toUpperCase().trim();
         const rawStation = String(req.query.station || '').trim();
@@ -68,7 +68,7 @@ router.get('/speak', speakLimiter, (req, res) => {
         let { text, speakLang } = prepareTTS(lang, queue, station);
 
         // Generate new TTS stream, cache to disk, and pipe to client
-        const ttsPassThrough = generateTtsStream(text, speakLang, cachePath);
+        const ttsPassThrough = await generateTtsStream(text, speakLang, cachePath);
 
         res.set({
             'Content-Type': 'audio/mpeg',

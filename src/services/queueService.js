@@ -56,13 +56,19 @@ async function enqueueCall(queue, station) {
     // Delay helper
     const delay = ms => new Promise(res => setTimeout(res, ms));
 
-    for (const lang of config.languageCodes) {
+    for (const [i, lang] of config.languageCodes.entries()) {
         const cachePath = getCachedFilePath(lang, queue, station);
         if (!fs.existsSync(cachePath)) {
-            await delay(500); // stagger each generation
+            if (i > 0) await delay(500); // skip delay for first
+
             try {
-                let { text, speakLang } = prepareTTS(lang, queue, station);
-                let _ttsPassThrough = generateTtsStream(text, speakLang, cachePath);
+                const { text, speakLang } = prepareTTS(lang, queue, station);
+                const ttsPassThrough = await generateTtsStream(text, speakLang, cachePath);
+
+                ttsPassThrough.once('end', () => {
+                    logger.info('TTS stream completed for:', lang);
+                });
+
                 logger.info('Generated and cached TTS audio:', cachePath);
             } catch (err) {
                 logger.error('TTS generation failed for:', lang, err);

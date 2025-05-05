@@ -84,37 +84,30 @@ function prepareTTS(lang, queue, station) {
 }
 
 /**
- * Generate a TTS stream, cache the audio file, and return a readable stream.
- * @param {string} text - Text to convert to speech
- * @param {string} lang - Language code
- * @param {string} cachePath - Path to save the cached audio file
- * @returns {Stream} - Readable stream of the TTS audio
+ * Generates a text-to-speech (TTS) audio stream and caches the result to a specified file path.
+ *
+ * @param {string} text - The text to be converted into speech.
+ * @param {string} lang - The language code for the TTS conversion (e.g., 'en', 'es').
+ * @param {string} cachePath - The file path where the generated TTS audio will be cached.
+ * @returns {Promise<PassThrough>} A promise that resolves to a PassThrough stream containing the TTS audio.
+ * @throws {Error} If an error occurs during the TTS generation or file writing process.
  */
 function generateTtsStream(text, lang, cachePath) {
-    const ttsStream = gtts(lang).stream(text);
-    const passThrough = new PassThrough();
+    return new Promise((resolve, reject) => {
+        const ttsStream = gtts(lang).stream(text);
+        const passThrough = new PassThrough();
+        const writeStream = fs.createWriteStream(cachePath);
 
-    // Handle errors during TTS stream generation
-    ttsStream.on('error', err => {
-        logger.error('Error generating TTS stream:', err);
-    });
-
-    // Pipe TTS stream to a PassThrough stream
-    ttsStream.pipe(passThrough);
-
-    // Write the TTS audio to the cache file
-    const writeStream = fs.createWriteStream(cachePath);
-    passThrough.pipe(writeStream)
-        .on('error', err => {
-            logger.error('Error writing TTS cache file:', err);
-        })
-        .on('finish', () => {
-            // Prune the cache directory after writing the file
+        ttsStream.on('error', reject);
+        writeStream.on('error', reject);
+        writeStream.on('finish', () => {
             pruneCache(maxTTSCacheFiles);
+            resolve(passThrough); // Ready to use
         });
 
-    // Return the PassThrough stream for client consumption
-    return passThrough;
+        ttsStream.pipe(passThrough);
+        passThrough.pipe(writeStream);
+    });
 }
 
 module.exports = {
