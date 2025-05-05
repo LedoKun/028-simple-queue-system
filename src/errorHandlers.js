@@ -1,6 +1,5 @@
 // ./errorHandlers.js
 
-const fs = require('fs');
 const logger = require('./logger');
 
 /**

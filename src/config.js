@@ -2,14 +2,6 @@
 const path = require('path');
 
 /**
- * Convert environment variable strings to boolean.
- * Accepts 'true', '1', or 'yes' (case-insensitive) as truthy values.
- */
-function toBool(val) {
-    return ['true', '1', 'yes'].includes(String(val || '').toLowerCase());
-}
-
-/**
  * Parse an environment variable as integer with a fallback default.
  */
 function toInt(val, defaultVal) {
