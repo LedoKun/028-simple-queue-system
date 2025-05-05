@@ -35,7 +35,7 @@ function removeClient(res) {
 /**
  * Enqueue a queue call if not debounced or duplicated.
  */
-function enqueueCall(queue, station) {
+async function enqueueCall(queue, station) {
     const now = Date.now();
     const callKey = `${queue}:${station}`;
 
@@ -53,28 +53,26 @@ function enqueueCall(queue, station) {
     pendingCalls.push({ queue, station, callKey });
     logger.info('Enqueued call:', callKey, 'Pending calls:', pendingCalls.length);
 
-    // Generate TTS audio and cache it
-    config.languageCodes.forEach((lang, i) => {
+    // Delay helper
+    const delay = ms => new Promise(res => setTimeout(res, ms));
+
+    for (const lang of config.languageCodes) {
         const cachePath = getCachedFilePath(lang, queue, station);
         if (!fs.existsSync(cachePath)) {
-            setTimeout(() => {
+            await delay(500); // stagger each generation
+            try {
                 let { text, speakLang } = prepareTTS(lang, queue, station);
-                let ttsPassThrough = generateTtsStream(text, speakLang, cachePath);
-
-                ttsPassThrough.on('error', err => {
-                    logger.error('Error generating TTS stream:', err);
-                });
-
+                let _ttsPassThrough = generateTtsStream(text, speakLang, cachePath);
                 logger.info('Generated and cached TTS audio:', cachePath);
-            }, i * 500); // stagger TTS generation
+            } catch (err) {
+                logger.error('TTS generation failed for:', lang, err);
+            }
         }
-    });
+    }
 
-    // Start processing the queue if not already processing
+    // Start processing the queue
     if (!isProcessingQueue) {
-        setTimeout(() => {
-            processQueue();
-        }, (config.languageCodes.length + 1) * 500);
+        processQueue();
     }
 }
 
