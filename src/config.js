@@ -26,17 +26,19 @@ module.exports = {
     },
 
     // --- Supported Languages & Fallbacks ---
-    // Comma-separated list in ENV or defaults to ['th','en', 'my']
     languageCodes: process.env.LANGUAGE_CODES
         ? process.env.LANGUAGE_CODES.split(',').map(s => s.trim().toLowerCase())
         : ['th', 'en'],
 
-    // --- Cache Directory ---
+    // --- TTS Configuration ---
     ttsCacheDir: process.env.TTS_CACHE_DIR
         ? path.resolve(process.env.TTS_CACHE_DIR)
         : path.resolve('/tmp', 'cache-queue', 'tts'),
 
-    maxTTSCacheFiles: toInt(process.env.MAX_TTS_CACHE_FILES, 200),
+    maxTTSCacheFiles: toInt(process.env.MAX_TTS_CACHE_FILES, 500),
+
+    // Timeout for Google TTS requests in milliseconds
+    gttsTimeoutMs: toInt(process.env.GTTS_TIMEOUT_MS, 5000), // 5 seconds default
 
     // --- Atomic Offline TTS Configuration ---
     useAtomicOfflineTts: toBool(process.env.USE_ATOMIC_OFFLINE_TTS ?? 'true'),

@@ -5,7 +5,7 @@ const config = require('../config');
 const logger = require('../logger');
 const {
     prepareTTSForOnlineMode, // Use the corrected function name
-    generateTtsStream,
+    generateOnlineTtsStream,
     getCachedFilePath,
 } = require('./ttsService');
 
@@ -61,7 +61,7 @@ async function enqueueCall(queue, station) {
             try {
                 // Use the corrected function name here
                 const { text, speakLang } = prepareTTSForOnlineMode(lang, queue, station);
-                const ttsPassThrough = await generateTtsStream(text, speakLang, cachePath);
+                const ttsPassThrough = await generateOnlineTtsStream(text, speakLang, cachePath);
 
                 ttsPassThrough.once('end', () => {
                     logger.info('TTS stream completed for:', lang);
