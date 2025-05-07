@@ -2,20 +2,20 @@
 
 const fs = require('fs');
 const path = require('path');
-const { PassThrough } = require('stream');
+// PassThrough is no longer needed here as we wait for the file
+// const { PassThrough } = require('stream');
 const gtts = require('node-gtts');
 const ffmpeg = require('fluent-ffmpeg');
 
 const config = require('../config');
 const logger = require('../logger');
 
-// --- Concurrency Locks ---
-// For preventing multiple ffmpeg processes stitching the same file
+// Lock only needed for stitching now
 const currentlyStitching = new Set();
 // For preventing reads while online generation writes (managed by speak.js)
 // Using global as a temporary workaround for shared state. Refactor recommended.
 global.ttsGeneratingLocks = global.ttsGeneratingLocks || new Set();
-// --- End Locks ---
+
 
 // Ensure the unified cache directory exists
 try {
@@ -100,51 +100,43 @@ function prepareTTSForOnlineMode(lang, queue, station) {
 
 
 /**
- * Generates a text-to-speech (TTS) audio stream using GTTS online
- * and caches the result atomically (write to .tmp then rename).
+ * Generates a text-to-speech (TTS) audio file using GTTS online and caches it atomically.
  * Implements a timeout for the GTTS request.
- * Returns a PassThrough stream for immediate piping.
- * NOTE: Lock management (checking if generation is already in progress)
- * should be handled by the caller (e.g., speak.js). This function
- * ensures the lock is *released* upon completion or error.
+ * Returns a Promise that resolves only when the file is successfully created and cached,
+ * or rejects on any error (timeout, stream error, write error, rename error).
  * @param {string} text - The text to convert to speech.
  * @param {string} gttsLangCode - The language code for the TTS conversion.
  * @param {string} cachePath - The final target cache file path.
- * @returns {Promise<PassThrough>} A promise resolving to a PassThrough stream.
- * @throws {Error} If stream creation fails synchronously. Other errors (network, write)
- * are emitted on the PassThrough stream or logged.
+ * @returns {Promise<void>} Resolves on success, rejects on error.
  */
 function generateOnlineTtsStream(text, gttsLangCode, cachePath) {
-    // Use the global lock for this workaround
+    // Use the global lock (workaround)
     const currentlyGeneratingOnline = global.ttsGeneratingLocks;
 
     return new Promise((resolve, reject) => {
-        const tempCachePath = cachePath + '.tmp'; // Write to temporary file first
+        const tempCachePath = cachePath + '.tmp';
         logger.info(`Generating ONLINE TTS for "${text}" (lang: ${gttsLangCode}) -> ${tempCachePath} (Timeout: ${config.gttsTimeoutMs}ms)`);
 
         let ttsStream;
         let writeStream;
-        let passThrough = new PassThrough();
         let timeoutId = null;
-        let setupFinished = false; // Flag for initial promise resolution/rejection
+        let finished = false; // Prevent multiple rejects/resolves
 
-        const cleanupAndHandleError = (err, type = 'Generic') => {
-            if (passThrough.destroyed && writeStream && writeStream.destroyed) return; // Already handled
-
+        const cleanupAndReject = (err, type = 'Generic') => {
+            if (finished) return;
+            finished = true;
             clearTimeout(timeoutId);
-            logger.error(`TTS ${type} Error for "${text}" (lang: ${gttsLangCode}):`, err.message);
+            logger.error(`TTS ${type} Error for "${text}" (lang: ${gttsLangCode}, path: ${cachePath}):`, err.message);
 
             // --- Release Lock ---
-            if (currentlyGeneratingOnline.has(cachePath)) {
+            if (currentlyGeneratingOnline && currentlyGeneratingOnline.has(cachePath)) {
                 currentlyGeneratingOnline.delete(cachePath);
                 logger.debug(`Released online generation lock for ${cachePath} due to ${type} error.`);
             }
             // --- End Release Lock ---
 
-            // Destroy streams
             if (ttsStream && !ttsStream.destroyed) ttsStream.destroy(err);
-            if (passThrough && !passThrough.destroyed) passThrough.destroy(err); // Critical: ensure client stream stops
-            if (writeStream && !writeStream.destroyed) writeStream.destroy(); // Destroy write stream
+            if (writeStream && !writeStream.destroyed) writeStream.destroy();
 
             // Attempt cleanup of temporary file
             fs.unlink(tempCachePath, (unlinkErr) => {
@@ -152,83 +144,51 @@ function generateOnlineTtsStream(text, gttsLangCode, cachePath) {
                     logger.error(`Error deleting temporary file ${tempCachePath} after ${type} error: ${unlinkErr.message}`);
                 }
             });
-
-            // Only reject if the promise hasn't resolved yet (for setup errors/timeout before resolve)
-            if (!setupFinished) {
-                reject(err); // Reject the main promise only if setup failed
-            } else {
-                // If setup was done, the error should have propagated via the PassThrough stream 'error' event
-                logger.debug("Error occurred after PassThrough stream was returned.");
-            }
-            setupFinished = true; // Prevent further rejection attempts
+            reject(err); // Reject the main promise
         };
 
-
-        // Start the timeout timer
         timeoutId = setTimeout(() => {
-            cleanupAndHandleError(new Error(`GTTS request timed out after ${config.gttsTimeoutMs}ms`), 'Timeout');
+            cleanupAndReject(new Error(`GTTS request timed out after ${config.gttsTimeoutMs}ms`), 'Timeout');
         }, config.gttsTimeoutMs);
 
         try {
             ttsStream = gtts(gttsLangCode).stream(text);
-            writeStream = fs.createWriteStream(tempCachePath); // Write to temp path
+            writeStream = fs.createWriteStream(tempCachePath);
 
-            ttsStream.once('error', (err) => cleanupAndHandleError(err, 'GTTS Stream')); // Error from Google
+            ttsStream.once('error', (err) => cleanupAndReject(err, 'GTTS Stream'));
 
-            // Monitor the PassThrough stream for errors after it's been returned
-            passThrough.once('error', (err) => {
-                logger.debug("PassThrough stream error detected:", err.message);
-                // This usually means the source (ttsStream) errored. cleanupAndHandleError should handle it.
-                // No need to call cleanup here again, as ttsStream error handler does it.
-            });
+            writeStream.once('error', (err) => cleanupAndReject(err, 'File Write Stream'));
 
-            writeStream.once('error', (err) => { // Error writing to temp file
-                logger.error(`File write stream error for temp file "${tempCachePath}":`, err.message);
-                clearTimeout(timeoutId);
-                // --- Release Lock on Write Error ---
-                if (currentlyGeneratingOnline.has(cachePath)) {
-                    currentlyGeneratingOnline.delete(cachePath);
-                    logger.debug(`Released online generation lock for ${cachePath} due to write stream error.`);
-                }
-                // --- End Release Lock ---
-                fs.unlink(tempCachePath, () => { });
-                // Don't necessarily reject the main promise here if PassThrough might still work
-            });
-
-            writeStream.once('finish', () => { // Successfully wrote temp file
-                clearTimeout(timeoutId);
+            writeStream.once('finish', () => {
+                if (finished) return; // Already errored/timed out
+                clearTimeout(timeoutId); // Clear timeout on successful write *before* rename
                 logger.debug(`Finished writing temporary TTS file: ${tempCachePath}`);
                 // Rename temp file to final cache path
                 fs.rename(tempCachePath, cachePath, (renameErr) => {
                     // --- Release Lock After Rename Attempt ---
-                    if (currentlyGeneratingOnline.has(cachePath)) {
+                    if (currentlyGeneratingOnline && currentlyGeneratingOnline.has(cachePath)) {
                         currentlyGeneratingOnline.delete(cachePath);
                         logger.debug(`Released online generation lock for ${cachePath} after rename attempt.`);
                     }
                     // --- End Release Lock ---
+
                     if (renameErr) {
-                        logger.error(`Failed to rename temp TTS file ${tempCachePath} to ${cachePath}:`, renameErr);
-                        fs.unlink(tempCachePath, () => { });
+                        // Pass the rename error to the main rejection handler
+                        cleanupAndReject(renameErr, 'File Rename');
                     } else {
+                        if (finished) return; // Avoid resolving if already errored
+                        finished = true;
                         logger.info(`Finished caching ONLINE TTS: ${cachePath}`);
-                        pruneCache(config.maxTTSCacheFiles); // Prune only after successful rename
+                        pruneCache(config.maxTTSCacheFiles);
+                        resolve(); // Resolve the main promise successfully
                     }
                 });
             });
 
-            // Pipe the TTS audio to both the client (via PassThrough) and the temp cache file
-            ttsStream.pipe(passThrough);
             ttsStream.pipe(writeStream);
 
-            // Resolve immediately with the PassThrough stream
-            if (!setupFinished) {
-                resolve(passThrough);
-                setupFinished = true; // Mark setup as complete
-            }
-
         } catch (initialError) {
-            // Catch sync errors like invalid lang during stream creation
-            cleanupAndHandleError(initialError, 'Initial Setup');
+            cleanupAndReject(initialError, 'Initial Setup');
         }
     });
 }
@@ -255,52 +215,33 @@ function getAtomicPhraseKeys(lang, queue, station) {
             logger.warn(`Offline TTS keywords not defined for lang "${lang}". Cannot form phrase.`);
             return null;
     }
-
     const phraseKeys = [numberKeyword];
-    for (const char of String(queue)) {
-        phraseKeys.push(sanitizeFilenameKey(char));
-    }
+    for (const char of String(queue)) { phraseKeys.push(sanitizeFilenameKey(char)); }
     phraseKeys.push(stationKeyword);
-    for (const digit of String(station)) {
-        phraseKeys.push(sanitizeFilenameKey(digit));
-    }
+    for (const digit of String(station)) { phraseKeys.push(sanitizeFilenameKey(digit)); }
     return phraseKeys;
 }
 
 /**
  * Stitches atomic audio files together and saves the result to outputPath.
  * Forces MP3 output codec for better compatibility.
- * @param {string[]} atomicFilePaths - Array of full paths to the source MP3 files.
- * @param {string} outputPath - Full path to save the stitched MP3 file.
- * @returns {Promise<void>} Resolves on success, rejects on error.
  */
 function stitchAndCacheFiles(atomicFilePaths, outputPath) {
     return new Promise((resolve, reject) => {
         if (!atomicFilePaths || atomicFilePaths.length === 0) {
             return reject(new Error('No atomic files provided for stitching.'));
         }
-
         const command = ffmpeg();
         atomicFilePaths.forEach(p => command.input(p));
-
         command
-            .outputOptions('-acodec libmp3lame') // Force MP3 codec
-            .on('start', (commandLine) => {
-                logger.info('ffmpeg start stitching -> ' + outputPath);
-                logger.debug('ffmpeg command: ' + commandLine);
-            })
-            .on('stderr', (stderrLine) => { // Log stderr lines
-                logger.debug(`ffmpeg stderr line: ${stderrLine}`);
-            })
+            .outputOptions('-acodec libmp3lame')
+            .on('start', (commandLine) => { logger.info('ffmpeg start stitching -> ' + outputPath); logger.debug('ffmpeg command: ' + commandLine); })
+            .on('stderr', (stderrLine) => { logger.debug(`ffmpeg stderr line: ${stderrLine}`); })
             .on('error', (err, stdout, stderr) => {
                 logger.error(`ffmpeg stitching error for "${outputPath}":`, err.message);
                 if (stdout) logger.error('ffmpeg stdout on error:', stdout);
                 if (stderr) logger.error('ffmpeg stderr on error:', stderr);
-                fs.unlink(outputPath, (unlinkErr) => {
-                    if (unlinkErr && unlinkErr.code !== 'ENOENT') {
-                        logger.warn(`Could not delete failed stitch file ${outputPath}: ${unlinkErr.message}`);
-                    }
-                });
+                fs.unlink(outputPath, (unlinkErr) => { if (unlinkErr && unlinkErr.code !== 'ENOENT') { logger.warn(`Could not delete failed stitch file ${outputPath}: ${unlinkErr.message}`); } });
                 reject(err);
             })
             .on('end', (stdout, stderr) => {
@@ -312,16 +253,10 @@ function stitchAndCacheFiles(atomicFilePaths, outputPath) {
     });
 }
 
-
 /**
- * Gets a readable stream for the requested TTS phrase, using offline stitching if enabled.
- * Checks cache first, generates/stitches and caches if needed, then returns stream.
+ * Gets a readable stream for the requested TTS phrase using offline stitching.
+ * Checks cache first, stitches/caches if needed, then returns stream.
  * Includes locking to prevent concurrent stitching of the same file.
- * @param {string} lang - Language code.
- * @param {string} queue - Queue number.
- * @param {string} station - Station number.
- * @returns {Promise<fs.ReadStream>} A promise resolving to a readable file stream.
- * @throws {Error} If required atomic files are missing or stitching fails.
  */
 async function getStitchedAudioStream(lang, queue, station) {
     const cachePath = getCachedFilePath(lang, queue, station);
@@ -347,36 +282,21 @@ async function getStitchedAudioStream(lang, queue, station) {
 
     try {
         logger.info(`Offline TTS: Cache miss for ${cachePath}. Stitching required.`);
-
         const phraseFileKeys = getAtomicPhraseKeys(lang, queue, station);
-        if (!phraseFileKeys) {
-            throw new Error(`Offline TTS keywords not configured for language: ${lang}`);
-        }
-
-        const atomicFilePaths = phraseFileKeys.map(key =>
-            path.join(config.ttsQueueOfflineBaseDir, lang, `${key}.mp3`)
-        );
-
+        if (!phraseFileKeys) throw new Error(`Offline TTS keywords not configured for language: ${lang}`);
+        const atomicFilePaths = phraseFileKeys.map(key => path.join(config.ttsQueueOfflineBaseDir, lang, `${key}.mp3`));
         const missingFiles = atomicFilePaths.filter(filePath => !fs.existsSync(filePath));
-        if (missingFiles.length > 0) {
-            logger.error('Offline TTS: Cannot stitch phrase because atomic files are missing:', missingFiles);
-            throw new Error(`Required audio components not found for offline playback. Missing: ${missingFiles.join(', ')}`);
-        }
-
-        if (atomicFilePaths.length === 0) {
-            logger.warn('Offline TTS: No atomic files determined for stitching.');
-            throw new Error('No audio components determined for phrase.');
-        }
+        if (missingFiles.length > 0) throw new Error(`Required audio components not found for offline playback. Missing: ${missingFiles.join(', ')}`);
+        if (atomicFilePaths.length === 0) throw new Error('No audio components determined for phrase.');
 
         await stitchAndCacheFiles(atomicFilePaths, cachePath);
         pruneCache(config.maxTTSCacheFiles);
-
         logger.info(`Offline TTS: Serving newly stitched and cached audio: ${cachePath}`);
+        // Now that the file is definitely created, return the stream
         return fs.createReadStream(cachePath);
-
     } catch (error) {
         logger.error(`Error during stitching process for ${cachePath}: ${error.message}`);
-        throw error;
+        throw error; // Re-throw to be caught by the caller (speak.js)
     } finally {
         // --- Release Stitching Lock ---
         currentlyStitching.delete(cachePath);
@@ -385,13 +305,11 @@ async function getStitchedAudioStream(lang, queue, station) {
     }
 }
 
+
 module.exports = {
     prepareTTSForOnlineMode,
-    generateOnlineTtsStream,
+    generateOnlineTtsStream, // Returns promise that resolves on successful cache write
     getCachedFilePath,
-    getStitchedAudioStream,
+    getStitchedAudioStream, // Returns promise resolving to a readable stream
     pruneCache,
-    // Exporting locks if needed elsewhere (use cautiously - consider dedicated state module)
-    // currentlyStitching,
-    // currentlyGeneratingOnline: global.ttsGeneratingLocks
 };

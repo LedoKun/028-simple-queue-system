@@ -41,7 +41,7 @@ module.exports = {
     gttsTimeoutMs: toInt(process.env.GTTS_TIMEOUT_MS, 10000), // 10 seconds default
 
     // --- Atomic Offline TTS Configuration ---
-    useAtomicOfflineTts: toBool(process.env.USE_ATOMIC_OFFLINE_TTS ?? 'true'),
+    useAtomicOfflineTts: toBool(process.env.USE_ATOMIC_OFFLINE_TTS ?? 'false'), // Set default to false
     ttsQueueOfflineBaseDir: process.env.TTS_QUEUE_OFFLINE_BASE_DIR
         ? path.resolve(process.env.TTS_QUEUE_OFFLINE_BASE_DIR)
         : path.resolve(__dirname, 'public', 'media', 'queue_calling'),
