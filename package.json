@@ -7,7 +7,8 @@
         "start": "node src/server.js",
         "dev": "nodemon src/server.js",
         "postinstall": "patch-package",
-        "lint": "yarn eslint src/"
+        "lint": "yarn eslint src/",
+        "generatetts": "node src/generateTts.js"
     },
     "author": "LedoKun",
     "license": "MIT",
