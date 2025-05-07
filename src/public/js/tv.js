@@ -96,8 +96,18 @@ function trimHistory() {
 
 // --- Server-Sent Events (SSE) Connection ---
 function connectEventSource() {
-    if (reconnectTimeoutId) clearTimeout(reconnectTimeoutId);
-    if (socket) socket.close(); // Close existing socket if any
+    if (reconnectTimeoutId) {
+        clearTimeout(reconnectTimeoutId);
+        reconnectTimeoutId = null; // <-- ADD THIS LINE
+    }
+    if (socket) {
+        // It's good practice to also nullify handlers of the old socket
+        // before closing, to prevent any lingering calls.
+        socket.onopen = null;
+        socket.onmessage = null;
+        socket.onerror = null;
+        socket.close();
+    }
 
     console.log("Attempting to connect to SSE (/events)...");
     updateServerStatus('connecting', 'Connecting...');
@@ -106,7 +116,10 @@ function connectEventSource() {
     socket.onopen = () => {
         updateServerStatus('connected', 'Connected');
         console.log("SSE connection opened.");
-        if (reconnectTimeoutId) { clearTimeout(reconnectTimeoutId); reconnectTimeoutId = null; }
+        if (reconnectTimeoutId) { // Good: clear any pending reconnect if we successfully open
+            clearTimeout(reconnectTimeoutId);
+            reconnectTimeoutId = null;
+        }
     };
 
     socket.onmessage = event => {
@@ -138,13 +151,28 @@ function connectEventSource() {
 
     socket.onerror = err => {
         console.error("SSE error:", err);
-        updateServerStatus('disconnected', 'Disconnected');
-        socket.close(); // Close the broken connection
-        // Attempt to reconnect after a delay
+        // Update status before attempting to close and reconnect
+        updateServerStatus('disconnected', 'Disconnected - Retrying...');
+
+        if (socket) { // Ensure we operate on the current socket
+            socket.onopen = null;
+            socket.onmessage = null;
+            socket.onerror = null; // Stop further errors from this instance
+            socket.close();
+            // Consider setting global `socket = null;` here if you want to be very explicit
+            // that the current global socket is no longer valid, until reassigned in connectEventSource.
+        }
+
+        // This `if` condition prevents multiple timeouts from being stacked if onerror
+        // were to fire multiple times in rapid succession for the same failed connection object
+        // (though closing it and nullifying its handlers should prevent that).
         if (!reconnectTimeoutId) {
-            console.log(`Attempting reconnect in ${RECONNECT_DELAY_MS / 1000} seconds...`);
-            updateServerStatus('disconnected', 'Retrying...');
+            console.log(`Scheduling reconnect in ${RECONNECT_DELAY_MS / 1000} seconds...`);
+            // The status is already "Retrying..." from a few lines above.
             reconnectTimeoutId = setTimeout(connectEventSource, RECONNECT_DELAY_MS);
+        } else {
+            // This case means a reconnect is already scheduled.
+            console.log("Reconnect already scheduled. No new timeout set.");
         }
     };
 }
