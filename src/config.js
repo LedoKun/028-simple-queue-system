@@ -38,7 +38,7 @@ module.exports = {
     maxTTSCacheFiles: toInt(process.env.MAX_TTS_CACHE_FILES, 500),
 
     // Timeout for Google TTS requests in milliseconds
-    gttsTimeoutMs: toInt(process.env.GTTS_TIMEOUT_MS, 5000), // 5 seconds default
+    gttsTimeoutMs: toInt(process.env.GTTS_TIMEOUT_MS, 10000), // 10 seconds default
 
     // --- Atomic Offline TTS Configuration ---
     useAtomicOfflineTts: toBool(process.env.USE_ATOMIC_OFFLINE_TTS ?? 'true'),
