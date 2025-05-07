@@ -1,20 +1,18 @@
 // ./services/queueService.js
 
 const fs = require('fs');
-
 const config = require('../config');
 const logger = require('../logger');
+const {
+    prepareTTSForOnlineMode, // Use the corrected function name
+    generateTtsStream,
+    getCachedFilePath,
+} = require('./ttsService');
 
 let clients = [];
 const pendingCalls = [];
 let isProcessingQueue = false;
 const lastProcessedTime = {};
-
-const {
-    prepareTTS,
-    generateTtsStream,
-    getCachedFilePath,
-} = require('./ttsService');
 
 /**
  * Add a new SSE client connection.
@@ -53,16 +51,16 @@ async function enqueueCall(queue, station) {
     pendingCalls.push({ queue, station, callKey });
     logger.info('Enqueued call:', callKey, 'Pending calls:', pendingCalls.length);
 
-    // Delay helper
     const delay = ms => new Promise(res => setTimeout(res, ms));
 
     for (const [i, lang] of config.languageCodes.entries()) {
         const cachePath = getCachedFilePath(lang, queue, station);
         if (!fs.existsSync(cachePath)) {
-            if (i > 0) await delay(500); // skip delay for first
+            if (i > 0) await delay(500);
 
             try {
-                const { text, speakLang } = prepareTTS(lang, queue, station);
+                // Use the corrected function name here
+                const { text, speakLang } = prepareTTSForOnlineMode(lang, queue, station);
                 const ttsPassThrough = await generateTtsStream(text, speakLang, cachePath);
 
                 ttsPassThrough.once('end', () => {
@@ -76,7 +74,6 @@ async function enqueueCall(queue, station) {
         }
     }
 
-    // Start processing the queue
     if (!isProcessingQueue) {
         processQueue();
     }
@@ -103,7 +100,6 @@ function processQueue() {
         data: { queue: callObj.queue, station: callObj.station }
     });
 
-    // Broadcast to all connected clients
     clients = clients.filter(res => {
         const closed = res.writableEnded || res.writableFinished;
         if (closed) return false;
@@ -116,7 +112,6 @@ function processQueue() {
         }
     });
 
-    // Schedule next processing after debounce interval
     setTimeout(processQueue, config.debounceIntervalMs);
 }
 
@@ -146,7 +141,6 @@ function startPublicAnnouncements() {
         });
     };
 
-    // Delay initial start, then repeat at interval
     setTimeout(() => {
         announce();
         setInterval(announce, config.announcementIntervalMs);

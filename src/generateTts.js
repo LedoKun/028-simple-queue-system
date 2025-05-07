@@ -6,10 +6,8 @@ const gtts = require('node-gtts');
 
 // Assuming config.js and logger.js are in the same directory or accessible via this path.
 // Adjust if your project structure is different (e.g., '../config')
-const { languageCodes } = require('./config');
+const { languageCodes, ttsQueueOfflineBaseDir } = require('./config');
 const logger = require('./logger');
-
-const TTS_QUEUE_BASE_DIR = "src/public/media/queue_calling";
 
 // Pre-generate digits and English characters as they are constant
 const DIGITS = Object.freeze(Array.from({ length: 10 }, (_, i) => String(i)));
@@ -154,7 +152,7 @@ async function pregenerateTTSFiles() {
                 continue;
             }
 
-            const langDir = path.join(TTS_QUEUE_BASE_DIR, lang);
+            const langDir = path.join(ttsQueueOfflineBaseDir, lang);
             if (!fs.existsSync(langDir)) {
                 fs.mkdirSync(langDir, { recursive: true });
                 logger.info(`Created base language directory: ${langDir}`);

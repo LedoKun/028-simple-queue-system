@@ -1,13 +1,6 @@
 // ./config.js
 const path = require('path');
-
-/**
- * Parse an environment variable as integer with a fallback default.
- */
-function toInt(val, defaultVal) {
-    const n = parseInt(val, 10);
-    return Number.isNaN(n) ? defaultVal : n;
-}
+const { toBool, toInt } = require('./utils')
 
 module.exports = {
     // --- Server Configuration ---
@@ -44,4 +37,10 @@ module.exports = {
         : path.resolve('/tmp', 'cache-queue', 'tts'),
 
     maxTTSCacheFiles: toInt(process.env.MAX_TTS_CACHE_FILES, 200),
+
+    // --- Atomic Offline TTS Configuration ---
+    useAtomicOfflineTts: toBool(process.env.USE_ATOMIC_OFFLINE_TTS ?? 'true'),
+    ttsQueueOfflineBaseDir: process.env.TTS_QUEUE_OFFLINE_BASE_DIR
+        ? path.resolve(process.env.TTS_QUEUE_OFFLINE_BASE_DIR)
+        : path.resolve(__dirname, 'public', 'media', 'queue_calling'),
 };

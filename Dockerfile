@@ -17,7 +17,7 @@ ENV TTS_CACHE_DIR=/tmp/cache-queue/tts
 ENV LOG_LEVEL=info
 
 # Install Tini for proper process management
-RUN apk add --no-cache tini
+RUN apk add --no-cache tini ffmpeg
 
 # Set the working directory
 WORKDIR /app
