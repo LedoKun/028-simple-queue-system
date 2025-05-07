@@ -33,10 +33,10 @@ module.exports = {
     },
 
     // --- Supported Languages & Fallbacks ---
-    // Comma-separated list in ENV or defaults to ['th','en']
+    // Comma-separated list in ENV or defaults to ['th','en', 'my']
     languageCodes: process.env.LANGUAGE_CODES
         ? process.env.LANGUAGE_CODES.split(',').map(s => s.trim().toLowerCase())
-        : ['th', 'en', 'my'],
+        : ['th', 'en'],
 
     // --- Cache Directory ---
     ttsCacheDir: process.env.TTS_CACHE_DIR
