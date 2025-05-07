@@ -11,6 +11,7 @@ const callRoute = require('./routes/call');
 const eventsRoute = require('./routes/events');
 const speakRoute = require('./routes/speak');
 const triggerRoute = require('./routes/triggerAnnouncement');
+const supportedLangs = require('./routes/supportedLangs');
 
 const app = express();
 
@@ -22,6 +23,7 @@ app.use(callRoute);
 app.use(eventsRoute);
 app.use(speakRoute);
 app.use(triggerRoute);
+app.use(supportedLangs);
 
 // ensure media directories exist
 const announcementDir = path.join(__dirname, 'public', 'media', 'announcement');

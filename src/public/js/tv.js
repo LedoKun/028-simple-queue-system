@@ -8,8 +8,8 @@ const serverStatusEl = document.getElementById("serverStatus");
 let MAX_HISTORY = 5; // Initial conservative value, will be calculated
 let isPlayingAudio = false;
 const announcementQueue = [];
-const languagesToSpeak = ['th', 'en'];
-const publicAnnouncementLanguages = ['th', 'en'];
+let languagesToSpeak = ['th', 'en'];
+let publicAnnouncementLanguages = ['th', 'en'];
 const ANNOUNCEMENT_PLAYBACK_RATE = 1.25;
 const RECONNECT_DELAY_MS = 1000;
 // const HISTORY_RECALC_INTERVAL_MS = 30000; // Recalculate every 30s
@@ -92,6 +92,39 @@ function trimHistory() {
         historyTableBody.removeChild(historyTableBody.lastChild); // Remove oldest (bottom)
     }
     // console.log(`History trimmed to ${historyTableBody.children.length} rows (Max: ${MAX_HISTORY})`);
+}
+
+async function fetchLanguageConfig() {
+    console.log("Fetching language configuration from /supported_langs...");
+    try {
+        const response = await fetch('/supported_langs'); // Fetch from the new endpoint
+        if (!response.ok) {
+            // Throw an error if response status is not OK (e.g., 404, 500)
+            throw new Error(`HTTP error! status: ${response.status} ${response.statusText}`);
+        }
+        const data = await response.json();
+
+        // Validate received data and update variables
+        if (Array.isArray(data.languagesToSpeak) && data.languagesToSpeak.length > 0) {
+            languagesToSpeak = data.languagesToSpeak;
+        } else {
+            console.warn("Received invalid or empty 'languagesToSpeak' from server, using default:", languagesToSpeak);
+        }
+
+        if (Array.isArray(data.publicAnnouncementLanguages) && data.publicAnnouncementLanguages.length > 0) {
+            publicAnnouncementLanguages = data.publicAnnouncementLanguages;
+        } else {
+            console.warn("Received invalid or empty 'publicAnnouncementLanguages' from server, using default:", publicAnnouncementLanguages);
+        }
+
+        console.log("Language configuration updated:", { languagesToSpeak, publicAnnouncementLanguages });
+
+    } catch (error) {
+        console.error("Failed to fetch language configuration, using default values:", error);
+        // Fallback: The default values set with 'let' will be used.
+        // You could add specific UI feedback here if needed.
+        // showNotification('Could not load language settings.', 'is-warning'); // Example using your notification function
+    }
 }
 
 // --- Server-Sent Events (SSE) Connection ---
@@ -420,6 +453,23 @@ window.addEventListener('load', () => {
 //         calculateMaxHistory();
 //     }, 250); // Recalculate 250ms after resize stops
 // });
+
+window.addEventListener('load', async () => {
+    console.log("Window loaded.");
+
+    // Fetch language config *before* starting SSE connection
+    await fetchLanguageConfig();
+
+    // Now it's safe to connect EventSource
+    connectEventSource(); // Start connection to server
+
+    // Attempt to unlock audio context on first user interaction
+    document.body.addEventListener('click', () => {
+        console.log("User interaction detected, pre-loading audio elements.");
+        if (chimeAudio) chimeAudio.load();
+        if (announcementAudio) announcementAudio.load();
+    }, { once: true });
+});
 
 window.addEventListener('beforeunload', () => {
     console.log("Page unloading. Cleaning up resources.");
