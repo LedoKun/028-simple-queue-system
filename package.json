@@ -25,7 +25,7 @@
         "@eslint/create-config": "^1.8.1",
         "@eslint/js": "^9.26.0",
         "eslint": "^9.26.0",
-        "globals": "^16.0.0",
+        "globals": "^16.1.0",
         "nodemon": "^3.1.10"
     },
     "resolutions": {
