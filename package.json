@@ -22,7 +22,7 @@
         "postinstall-postinstall": "^2.1.0"
     },
     "devDependencies": {
-        "@eslint/create-config": "^1.8.1",
+        "@eslint/create-config": "^1.8.2",
         "@eslint/js": "^9.26.0",
         "eslint": "^9.26.0",
         "globals": "^16.0.0",
