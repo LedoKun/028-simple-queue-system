@@ -1,7 +1,8 @@
 # Simple Queue System
 
-[![MIT License](https://img.shields.io/badge/License-MIT-green.svg)](https://www.google.com/url?sa=E&source=gmail&q=https://github.com/LedoKun/028-simple-queue-system/blob/main/License.md)
-[![Docker Image](https://img.shields.io/docker/image/ghcr.io/ledokun/028-simple-queue-system?label=latest)](https://github.com/LedoKun/028-simple-queue-system/pkgs/container/028-simple-queue-system)
+[![MIT License](https://img.shields.io/badge/License-MIT-green.svg)](https://github.com/LedoKun/028-simple-queue-system/blob/main/LICENSE.md)
+[![Docker Image](https://img.shields.io/github/actions/workflow/status/ledokun/028-simple-queue-system/docker-build-push.yml)](https://github.com/LedoKun/028-simple-queue-system/pkgs/container/028-simple-queue-system)
+
 
 This is a simple queue system built with Rust, providing both an operator interface and a signage display. It supports managing a queue of calls, announcing call numbers, and text-to-speech (TTS) functionality.
 
@@ -61,7 +62,7 @@ podman run -d \
 | `SSE_EVENT_BUFFER_SIZE`                       | `200`                           | Size of the buffer for SSE events.                                                                    |
 | `TTS_CACHE_WEB_PATH`                          | `/tts_cache`                    | Web path where the TTS cache is accessible.                                                            |
 
-### The Docker image is built and pushed automatically via a GitHub Actions workflow:
+## Automated Docker Image Builds
 
 https://github.com/LedoKun/028-simple-queue-system/actions/workflows/docker-build-push.yml
 
