@@ -1,0 +1,16 @@
+/* public/css/tailwind.css */
+@import "tailwindcss";
+
+/* Your Custom Components/Utilities below */
+.history-item {
+    @apply p-2 border-b border-gray-700 text-xl md:text-2xl lg:text-5xl;
+    transition: background-color 0.2s ease-in-out;
+}
+
+.history-item:last-child {
+    @apply border-b-0;
+}
+
+.history-item:hover {
+    @apply bg-gray-700;
+}

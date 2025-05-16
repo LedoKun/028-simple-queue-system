@@ -1,0 +1,61 @@
+[package]
+name = "queue-calling-system"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+# Rocket framework for building the web backend
+rocket = { version = "0.5", features = ["json"] }
+
+# Asynchronous runtime - Rocket uses Tokio by default
+tokio = { version = "1", features = [
+    "full",
+] } # "full" includes most features, can be trimmed later
+
+# Deserialize and Serialize for working with JSON data
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Load environment variables from a .env file (for configuration)
+dotenv = "0.15"
+
+# Logging framework
+tracing = "0.1" # A modern logging framework
+tracing-subscriber = { version = "0.3", features = [
+    "env-filter",
+] } # For configuring tracing based on env vars
+
+# For making HTTP requests (e.g., to the external TTS service)
+reqwest = { version = "0.12", features = [
+    "json",
+], default-features = false }
+
+# For file system operations (especially async ones) and utility functions
+walkdir = "2" # For traversing directories (announcement scanning)
+chrono = { version = "0.4", features = [
+    "serde",
+] } # For timestamps (queue history)
+
+envconfig = "0.10"
+envconfig_derive = "0.10"
+
+url = "2.5"
+
+fake_user_agent = "0.2"
+urlencoding = "2.1"
+regex = "1" 
+
+[dependencies.rocket_cors]
+version = "0.6"
+
+[dev-dependencies]
+pretty_assertions = "1.4"
+
+[profile.release]
+opt-level = 3       # Default for release, explicitly stated for clarity
+lto = "fat"         # Maximize Link-Time Optimization
+codegen-units = 1   # Maximize optimizations within a crate (slowest compile, best runtime)
+panic = "abort"     # Abort on panic for smaller/faster binary (consider trade-offs)
+strip = true        # Strip symbols for smaller binary size

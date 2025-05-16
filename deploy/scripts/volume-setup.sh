@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+
 # /srv/volume-setup.sh
 set -euo pipefail
 

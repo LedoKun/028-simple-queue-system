@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Operator Control Panel - Queue System</title>
+    <link rel="apple-touch-icon" sizes="180x180" href="/media/favicon/apple-touch-icon.png">
+    <link rel="icon" type="image/png" sizes="32x32" href="/media/favicon/favicon-32x32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="/media/favicon/favicon-16x16.png">
+    <link rel="manifest" href="/site.webmanifest">
+    <link href="css/styles.css" rel="stylesheet">
+    <style>
+        body {
+            min-height: 100vh;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+        }
+
+        /* .history-list-item class will be defined in tailwind.css via @apply */
+    </style>
+</head>
+
+<body class="bg-gray-800 text-gray-200 font-sans flex flex-col">
+
+    <header class="bg-gray-900 shadow-md p-4">
+        <div class="container mx-auto flex justify-between items-center">
+            <h1 class="text-xl md:text-2xl font-semibold text-white">Operator Control Panel</h1>
+            <div id="sse-status-indicator" class="p-2 text-xs rounded-full text-white opacity-75"
+                title="SSE Connection Status">
+                Loading...
+            </div>
+        </div>
+    </header>
+
+    <main class="container mx-auto p-4 md:p-6 flex-grow">
+        <div id="feedback-area"
+            class="mb-4 p-3 rounded-md text-sm hidden transition-all duration-300 ease-in-out opacity-0"></div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            <section id="call-management" class="bg-gray-700 p-6 rounded-lg shadow-lg">
+                <h2 class="text-xl font-semibold mb-4 text-white border-b border-gray-600 pb-2">Call Management</h2>
+                <form id="call-form" class="space-y-4">
+                    <div>
+                        <label for="call-original-id" class="block text-sm font-medium text-gray-300">Identifier (e.g.,
+                            A1, B12)</label>
+                        <input type="text" id="call-original-id" name="original_id" required
+                            class="mt-1 block w-full bg-gray-600 border-gray-500 text-white rounded-md shadow-sm p-2 focus:ring-indigo-500 focus:border-indigo-500 uppercase"
+                            autofocus autocapitalize="characters" autocomplete="off" pattern="^[A-Za-z][A-Za-z0-9]*$"
+                            title="Start with a letter, followed by letters or numbers. Will be auto-uppercased.">
+                    </div>
+                    <div>
+                        <label for="call-location" class="block text-sm font-medium text-gray-300">Counter (e.g., 5, 10
+                            - digits only)</label>
+                        <input type="text" id="call-location" name="location" inputmode="numeric" pattern="[0-9]+"
+                            required
+                            class="mt-1 block w-full bg-gray-600 border-gray-500 text-white rounded-md shadow-sm p-2 focus:ring-indigo-500 focus:border-indigo-500"
+                            autocomplete="off" title="Digits only for location.">
+                    </div>
+                    <button type="submit" id="btn-call"
+                        class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded-md shadow focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50 transition duration-150">
+                        Call Number
+                    </button>
+                </form>
+                <button id="btn-skip"
+                    class="mt-4 w-full bg-yellow-500 hover:bg-yellow-600 text-black font-semibold py-2 px-4 rounded-md shadow focus:outline-none focus:ring-2 focus:ring-yellow-400 focus:ring-opacity-50 transition duration-150">
+                    Skip Queue
+                </button>
+                <!-- <button id="btn-skip-current"
+                    class="mt-4 w-full bg-yellow-500 hover:bg-yellow-600 text-black font-semibold py-2 px-4 rounded-md shadow focus:outline-none focus:ring-2 focus:ring-yellow-400 focus:ring-opacity-50 transition duration-150">
+                    Skip Current Call
+                </button> -->
+            </section>
+
+            <section id="queue-status" class="bg-gray-700 p-6 rounded-lg shadow-lg">
+                <h2 class="text-xl font-semibold mb-4 text-white border-b border-gray-600 pb-2">Current Queue Status
+                </h2>
+                <div class="mb-6 p-4 bg-gray-600 rounded">
+                    <h3 class="text-lg font-medium text-gray-100">Currently Serving:</h3>
+                    <p class="text-2xl font-bold text-green-400">
+                        Identifier: <span id="status-current-call-id">----</span>
+                    </p>
+                    <p class="text-2xl font-bold text-green-400">
+                        Counter: <span id="status-current-call-location">----</span>
+                    </p>
+                </div>
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                        <h3 class="text-md font-medium text-gray-100 mb-2">Recently Called:</h3>
+                        <ul id="list-history-calls" class="bg-gray-600 rounded p-2 max-h-48 overflow-y-auto">
+                            <li class="history-list-item italic">No history yet...</li>
+                        </ul>
+                    </div>
+                    <div>
+                        <h3 class="text-md font-medium text-gray-100 mb-2">Recently Skipped:</h3>
+                        <ul id="list-skipped-calls" class="bg-gray-600 rounded p-2 max-h-48 overflow-y-auto">
+                            <li class="history-list-item italic">No skipped calls yet...</li>
+                        </ul>
+                    </div>
+                </div>
+            </section>
+
+            <section id="announcement-control" class="bg-gray-700 p-6 rounded-lg shadow-lg">
+                <h2 class="text-xl font-semibold mb-4 text-white border-b border-gray-600 pb-2">Announcements</h2>
+                <div class="mb-4">
+                    <p class="text-sm text-gray-300">Current Slot:
+                        <span id="status-announcement-slot" class="font-semibold text-lg text-purple-400">N/A</span>
+                    </p>
+                    <p class="text-sm text-gray-300">Cooldown:
+                        <span id="status-announcement-cooldown" class="font-semibold text-orange-400">Ready</span>
+                        <span id="status-announcement-cooldown-timer" class="text-xs"></span>
+                    </p>
+                </div>
+                <button id="btn-next-announcement"
+                    class="w-full bg-purple-600 hover:bg-purple-700 text-white font-semibold py-2 px-4 rounded-md shadow focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-opacity-50 transition duration-150">
+                    Trigger Next Announcement
+                </button>
+            </section>
+        </div>
+    </main>
+
+    <footer class="bg-gray-900 text-center p-4 mt-auto">
+        <p class="text-xs text-gray-500">&copy; <span id="current-year"></span> Queue Calling System by Rommy~*. All
+            rights
+            reserved.</p>
+    </footer>
+
+    <script src="js/common.js"></script>
+    <script src="js/api_client.js"></script>
+    <script src="js/sse_handler.js"></script>
+    <script src="js/operator_ui.js"></script>
+    <script>
+        document.getElementById('current-year').textContent = new Date().getFullYear();
+    </script>
+</body>
+
+</html>
