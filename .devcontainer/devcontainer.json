@@ -24,7 +24,7 @@
 
 	// Use 'postCreateCommand' to run commands after the container is created.
 	// "postCreateCommand": "rustc --version",
-	"postCreateCommand": "sudo apt-get update && sudo apt-get dist-upgrade -y && npm install tailwindcss @tailwindcss/cli && cargo clean && cargo build"
+	"postCreateCommand": "sudo apt-get update && sudo apt-get dist-upgrade -y && npm install && cargo clean && cargo build"
 
 	// Configure tool-specific properties.
 	// "customizations": {},
