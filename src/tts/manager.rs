@@ -430,14 +430,14 @@ impl TTSManager {
 
     fn build_speak_text(id: &str, location: &str, lang: &str) -> String {
         match lang.to_lowercase().as_str() {
-            "th" => format!("หมายเลข {}, ช่อง {}", id, location),
-            "en-uk" | "en-us" | "en" => format!("Number {}, station {}", id, location),
+            "th" => format!("หมายเลข {}, เชิญช่อง {}", id, location),
+            "en-uk" | "en-us" | "en" => format!("Number {}, to counter {}", id, location),
             _ => {
                 tracing::warn!(
                     "Using default/English speak text phrasing for lang code: {}",
                     lang
                 );
-                format!("Number {}, station {}", id, location)
+                format!("Number {}, to counter {}", id, location)
             }
         }
     }
