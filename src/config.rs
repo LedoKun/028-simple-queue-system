@@ -35,7 +35,7 @@ pub struct AppConfig {
     #[envconfig(from = "TTS_CACHE_MAXIMUM_FILES", default = "500")]
     pub tts_cache_maximum_files: usize,
 
-    #[envconfig(from = "TTS_EXTERNAL_SERVICE_TIMEOUT_SECONDS", default = "15")]
+    #[envconfig(from = "TTS_EXTERNAL_SERVICE_TIMEOUT_SECONDS", default = "5")]
     pub tts_external_service_timeout_seconds: u64,
 
     #[envconfig(
