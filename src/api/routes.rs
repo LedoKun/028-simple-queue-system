@@ -1,4 +1,5 @@
 // src/api/routes.rs
+use regex; // Added this import
 use rocket::{
     get, post, response::status, response::stream::EventStream, serde::json::Json, State,
 };
@@ -118,7 +119,6 @@ pub async fn queue_call(
     state: &State<AppState>,
     call_request_data: Json<AddCallRequest>,
 ) -> Result<status::Accepted<String>, status::BadRequest<String>> {
-    let mut queue_manager = state.queue_manager.lock().await;
     let call_info = call_request_data.into_inner();
     tracing::info!(
         "/api/queue/add: Received call data: original_id='{}', location='{}'",
@@ -126,6 +126,22 @@ pub async fn queue_call(
         call_info.location
     );
 
+    // Stricter Validation: Identifier (e.g., A1, Z99)
+    let identifier_pattern = regex::Regex::new(r"^[A-Z][0-9]+$").unwrap();
+    if !identifier_pattern.is_match(&call_info.original_id) {
+        return Err(status::BadRequest(format!("Invalid Identifier format. Must be an uppercase letter followed by digits (e.g., A1, Z99). Received: {}", call_info.original_id)));
+    }
+
+    // Stricter Validation: Location (e.g., 5, 10)
+    let location_pattern = regex::Regex::new(r"^[0-9]+$").unwrap();
+    if !location_pattern.is_match(&call_info.location) {
+        return Err(status::BadRequest(format!(
+            "Invalid Location format. Must be digits only (e.g., 5, 10). Received: {}",
+            call_info.location
+        )));
+    }
+
+    let mut queue_manager = state.queue_manager.lock().await;
     if let Some(current_call_ref) =
         queue_manager.add_call(call_info.original_id.clone(), call_info.location.clone())
     {
@@ -181,14 +197,12 @@ pub async fn queue_call(
         drop(tts_manager_guard);
 
         Ok(status::Accepted(format!(
-            // Directly pass String
             "Call {} with location {} is now current. TTS initiated.",
             current_call_owned.original_id, current_call_owned.location
         )))
     } else {
         tracing::error!("/api/queue/add: queue_manager.add_call unexpectedly returned None for original_id '{}'. This indicates an issue.", call_info.original_id);
         Err(status::BadRequest(
-            // Directly pass String
             "Failed to process the call. Please check server logs.".to_string(),
         ))
     }
@@ -272,9 +286,8 @@ pub async fn complete_call(state: &State<AppState>) -> status::Accepted<String> 
 pub async fn force_skip_new_call(
     state: &State<AppState>,
     request_data: Json<ForceSkipRequest>,
-) -> Result<status::Accepted<String>, status::NotFound<String>> {
-    // Changed Result type for clarity
-    let mut queue_manager = state.queue_manager.lock().await;
+) -> Result<status::Accepted<String>, status::BadRequest<String>> {
+    // Changed return type to BadRequest
     let call_info = request_data.into_inner();
     tracing::info!(
         "/api/queue/force_skip: Received data: original_id='{}', location='{}'",
@@ -282,6 +295,22 @@ pub async fn force_skip_new_call(
         call_info.location
     );
 
+    // Stricter Validation: Identifier (e.g., A1, Z99)
+    let identifier_pattern = regex::Regex::new(r"^[A-Z][0-9]+$").unwrap();
+    if !identifier_pattern.is_match(&call_info.original_id) {
+        return Err(status::BadRequest(format!("Invalid Identifier format. Must be an uppercase letter followed by digits (e.g., A1, Z99). Received: {}", call_info.original_id)));
+    }
+
+    // Stricter Validation: Location (e.g., 5, 10)
+    let location_pattern = regex::Regex::new(r"^[0-9]+$").unwrap();
+    if !location_pattern.is_match(&call_info.location) {
+        return Err(status::BadRequest(format!(
+            "Invalid Location format. Must be digits only (e.g., 5, 10). Received: {}",
+            call_info.location
+        )));
+    }
+
+    let mut queue_manager = state.queue_manager.lock().await;
     // add_to_skipped_directly now returns Option<Call>
     if let Some(skipped_call_data) = queue_manager
         .add_to_skipped_directly(call_info.original_id.clone(), call_info.location.clone())
@@ -302,18 +331,16 @@ pub async fn force_skip_new_call(
             tracing::debug!("Could not broadcast QueueUpdate after force_skip: {}", e);
         }
         Ok(status::Accepted(format!(
-            // Directly pass String
             "Call {} with location {} added directly to skipped list.",
             skipped_call_data.original_id,
             skipped_call_data.location // Use data from returned call
         )))
     } else {
-        // This else might be hit if add_to_skipped_directly was modified to return None on some failure
         tracing::error!(
             "/api/queue/force_skip: add_to_skipped_directly failed for original_id '{}'.",
             call_info.original_id
         );
-        Err(status::NotFound(format!("Failed to add call {} to skipped list, it might already exist or another issue occurred.", call_info.original_id)))
+        Err(status::BadRequest(format!("Failed to add call {} to skipped list, it might already exist or another issue occurred.", call_info.original_id)))
     }
 }
 

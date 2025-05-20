@@ -5,10 +5,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const callForm = document.getElementById('call-form');
     const originalIdInput = document.getElementById('call-original-id');
     const locationInput = document.getElementById('call-location');
-    // TTS Language Select related elements are removed from HTML and JS
     const btnCall = document.getElementById('btn-call');
     const btnSkip = document.getElementById('btn-skip');
-    // const btnSkipCurrent = document.getElementById('btn-skip-current');
 
     const statusCurrentCallId = document.getElementById('status-current-call-id');
     const statusCurrentCallLocation = document.getElementById('status-current-call-location');
@@ -21,31 +19,44 @@ document.addEventListener('DOMContentLoaded', () => {
     const btnNextAnnouncement = document.getElementById('btn-next-announcement');
 
     const sseStatusIndicator = document.getElementById('sse-status-indicator');
-    // feedbackArea is used by showFeedback/clearFeedback from common.js
 
     let cooldownIntervalId = null;
-    const MAX_LIST_ITEMS_OPERATOR = 7; // Max items for history/skipped lists in operator UI
+    const MAX_LIST_ITEMS_OPERATOR = 7;
 
     // --- Ensure common.js and api_client.js are loaded ---
     if (typeof apiClient === 'undefined' || typeof showFeedback === 'undefined' || typeof UI_TEXT === 'undefined' || typeof sanitizeText === 'undefined' || typeof formatDisplayTime === 'undefined') {
         console.error("OperatorUI: CRITICAL - common.js or api_client.js might not be loaded correctly or before operator_ui.js. Some utilities are missing.");
         alert("Operator UI cannot initialize fully. Please check browser console for errors related to common.js or api_client.js loading.");
-        // Gracefully degrade or stop further execution if critical parts are missing
         if (btnCall) btnCall.disabled = true;
-        if (btnSkip) btnSkipCurrent.disabled = true;
-        // if (btnSkipCurrent) btnSkipCurrent.disabled = true;
+        if (btnSkip) btnSkip.disabled = true;
         if (btnNextAnnouncement) btnNextAnnouncement.disabled = true;
-        return; // Stop initialization if common utilities are missing
+        return;
     }
 
-    // Operator UI is English, set global hint for sse_handler status messages.
     window.currentGlobalLanguage = 'en';
 
+    // --- Validation Function ---
+    function validateInputs() {
+        const originalId = originalIdInput.value.trim();
+        const location = locationInput.value.trim();
+
+        // Regex for Identifier: Starts with one uppercase letter, followed by one or more digits.
+        const idPattern = /^[A-Z]\d+$/;
+        // Regex for Location: One or more digits.
+        const locationPattern = /^\d+$/;
+
+        const isIdValid = idPattern.test(originalId);
+        const isLocationValid = locationPattern.test(location);
+
+        // Enable or disable buttons based on validation
+        btnCall.disabled = !(isIdValid && isLocationValid);
+        btnSkip.disabled = !(isIdValid && isLocationValid);
+    }
 
     // --- Update UI Functions ---
     function updateQueueStatusDisplay(queueState) {
         console.log("OperatorUI: updateQueueStatusDisplay called with state:", queueState);
-        const labels = UI_TEXT.en; // Operator UI is English
+        const labels = UI_TEXT.en;
 
         if (!queueState) {
             console.warn("OperatorUI: queueState is null or undefined in updateQueueStatusDisplay.");
@@ -121,7 +132,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (btnNextAnnouncement) {
                 btnNextAnnouncement.disabled = true;
                 btnNextAnnouncement.classList.add('opacity-50', 'cursor-not-allowed');
-                btnNextAnnouncement.textContent = 'Trigger Next Announcement'; // Reset text
+                btnNextAnnouncement.textContent = 'Trigger Next Announcement';
             }
 
             let remaining = announcementStatus.cooldown_remaining_seconds;
@@ -155,17 +166,17 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function updateSSEIndicator(statusData) {
         if (!sseStatusIndicator) return;
-        console.log("OperatorUI: Updating SSE Indicator with data:", statusData); // O6 DEBUG
+        console.log("OperatorUI: Updating SSE Indicator with data:", statusData);
         sseStatusIndicator.textContent = statusData.message || statusData.status;
 
-        let bgColor = sseStatusIndicator.dataset.lastBgColor || 'bg-gray-700'; // Use a slightly different default from gray-500 for visibility
+        let bgColor = sseStatusIndicator.dataset.lastBgColor || 'bg-gray-700';
         switch (statusData.status) {
             case 'connecting': bgColor = 'bg-yellow-500'; break;
             case 'connected': bgColor = 'bg-green-500'; break;
             case 'disconnected': bgColor = 'bg-red-500'; break;
-            default: bgColor = 'bg-gray-600'; // Fallback for unknown status
+            default: bgColor = 'bg-gray-600';
         }
-        sseStatusIndicator.className = `p-2 text-xs rounded-full text-white opacity-80 ${bgColor}`; // Increased opacity
+        sseStatusIndicator.className = `p-2 text-xs rounded-full text-white opacity-80 ${bgColor}`;
         sseStatusIndicator.dataset.lastBgColor = bgColor;
     }
 
@@ -173,13 +184,16 @@ document.addEventListener('DOMContentLoaded', () => {
     async function handleCallFormSubmit(event) {
         event.preventDefault();
         clearFeedback();
-        const originalId = originalIdInput.value;
+        const originalId = originalIdInput.value.trim();
         const location = locationInput.value.trim();
 
-        if (!originalId) { showFeedback('Identifier cannot be empty.', 'error'); originalIdInput.focus(); return; }
-        if (!/^[A-Z][A-Z0-9]*$/.test(originalId)) { showFeedback('Identifier must start with a letter (auto-uppercased), followed by letters or numbers.', 'error'); originalIdInput.focus(); return; }
-        if (!location) { showFeedback('Location cannot be empty.', 'error'); locationInput.focus(); return; }
-        if (!/^\d+$/.test(location)) { showFeedback('Location must be a number.', 'error'); locationInput.focus(); return; }
+        // Re-validate just in case buttons were manually enabled or script bypassed
+        const idPattern = /^[A-Z]\d+$/;
+        const locationPattern = /^\d+$/;
+
+        if (!idPattern.test(originalId)) { showFeedback('Identifier must start with an uppercase letter, followed by digits (e.g., A1, Z99).', 'error'); originalIdInput.focus(); return; }
+        if (!locationPattern.test(location)) { showFeedback('Location must be digits only (e.g., 5, 10).', 'error'); locationInput.focus(); return; }
+
 
         btnCall.disabled = true;
         btnCall.textContent = 'Calling...';
@@ -200,10 +214,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 : `Call request for ${sanitizeText(originalId)} processed.`;
             showFeedback(message, 'success');
             originalIdInput.value = '';
+            // locationInput.value = ''; // Clear location input as well
             originalIdInput.focus();
         } else {
-            // Feedback for error is usually handled by apiClient's showFeedback call
-            // If it returns null and didn't show feedback, add a generic one.
             if (!document.getElementById('feedback-area')?.textContent?.includes('Error:')) {
                 showFeedback(`Failed to process call for ${sanitizeText(originalId)}.`, 'error');
             }
@@ -211,18 +224,21 @@ document.addEventListener('DOMContentLoaded', () => {
 
         btnCall.disabled = false;
         btnCall.textContent = 'Call Number';
+        validateInputs(); // Re-validate after submission to update button states
     }
 
     async function handleForceSkipCall(event) {
         event.preventDefault();
         clearFeedback();
-        const originalId = originalIdInput.value;
+        const originalId = originalIdInput.value.trim();
         const location = locationInput.value.trim();
 
-        if (!originalId) { showFeedback('Identifier cannot be empty.', 'error'); originalIdInput.focus(); return; }
-        if (!/^[A-Z][A-Z0-9]*$/.test(originalId)) { showFeedback('Identifier must start with a letter (auto-uppercased), followed by letters or numbers.', 'error'); originalIdInput.focus(); return; }
-        if (!location) { showFeedback('Location cannot be empty.', 'error'); locationInput.focus(); return; }
-        if (!/^\d+$/.test(location)) { showFeedback('Location must be a number.', 'error'); locationInput.focus(); return; }
+        // Re-validate just in case buttons were manually enabled or script bypassed
+        const idPattern = /^[A-Z]\d+$/;
+        const locationPattern = /^\d+$/;
+
+        if (!idPattern.test(originalId)) { showFeedback('Identifier must start with an uppercase letter, followed by digits (e.g., A1, Z99).', 'error'); originalIdInput.focus(); return; }
+        if (!locationPattern.test(location)) { showFeedback('Location must be digits only (e.g., 5, 10).', 'error'); locationInput.focus(); return; }
 
         btnSkip.disabled = true;
         btnSkip.textContent = 'Skipping...';
@@ -243,10 +259,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 : `Call request for ${sanitizeText(originalId)} processed.`;
             showFeedback(message, 'success');
             originalIdInput.value = '';
+            locationInput.value = ''; // Clear location input as well
             originalIdInput.focus();
         } else {
-            // Feedback for error is usually handled by apiClient's showFeedback call
-            // If it returns null and didn't show feedback, add a generic one.
             if (!document.getElementById('feedback-area')?.textContent?.includes('Error:')) {
                 showFeedback(`Failed to process skip queue for ${sanitizeText(originalId)}.`, 'error');
             }
@@ -254,19 +269,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
         btnSkip.disabled = false;
         btnSkip.textContent = 'Skip Queue';
+        validateInputs(); // Re-validate after submission to update button states
     }
-
-    // async function handleSkipCall() {
-    //     clearFeedback();
-    //     btnSkipCurrent.disabled = true;
-    //     btnSkipCurrent.textContent = 'Skipping...';
-    //     const response = await apiClient.skipCall();
-    //     if (response) {
-    //         showFeedback((response.message && typeof response.message === 'string') ? response.message : 'Skip request processed.', 'info');
-    //     }
-    //     btnSkipCurrent.disabled = false;
-    //     btnSkipCurrent.textContent = 'Skip Current Call';
-    // }
 
     async function handleNextAnnouncement() {
         clearFeedback();
@@ -276,19 +280,14 @@ document.addEventListener('DOMContentLoaded', () => {
         if (response) {
             showFeedback((response.message && typeof response.message === 'string') ? response.message : 'Next announcement triggered.', 'info');
         }
-        // Do not re-enable button here manually if it's not an error case.
-        // updateAnnouncementStatusDisplay driven by SSE should handle re-enabling after cooldown.
-        // Add a timeout only as a fallback for truly stuck state (e.g., if SSE somehow misses update).
         setTimeout(() => {
             if (btnNextAnnouncement && btnNextAnnouncement.disabled &&
                 !(statusAnnouncementCooldown && statusAnnouncementCooldown.textContent === 'On Cooldown')) {
-                // Only re-enable if it seems it *should* be enabled and isn't
-                // This is a safety net, ideally SSE handles this.
                 btnNextAnnouncement.disabled = false;
                 btnNextAnnouncement.textContent = 'Trigger Next Announcement';
                 console.warn("OperatorUI: Re-enabled 'Next Announcement' button via timeout; SSE might be delayed or an issue occurred.");
             } else if (btnNextAnnouncement && !btnNextAnnouncement.disabled) {
-                btnNextAnnouncement.textContent = 'Trigger Next Announcement'; // Ensure text reset
+                btnNextAnnouncement.textContent = 'Trigger Next Announcement';
             }
         }, 7000);
     }
@@ -298,29 +297,43 @@ document.addEventListener('DOMContentLoaded', () => {
             const selectionStart = this.selectionStart;
             const selectionEnd = this.selectionEnd;
             let value = e.target.value;
+
             if (value.length > 0) {
-                // Auto-uppercase and allow only letters (first char) and alphanumeric (subsequent chars)
-                let firstChar = value.charAt(0).toUpperCase();
-                if (!/^[A-Z]$/.test(firstChar)) { // Ensure first char is a letter
-                    firstChar = ''; // Or some other handling if first char is not a letter
+                let cleanedValue = '';
+                // First character must be a letter, auto-uppercase
+                if (value.length > 0) {
+                    let firstChar = value.charAt(0).toUpperCase();
+                    if (/[A-Z]/.test(firstChar)) {
+                        cleanedValue += firstChar;
+                    }
                 }
-                let restChars = '';
+                // Subsequent characters must be digits
                 if (value.length > 1) {
-                    restChars = value.substring(1).toUpperCase().replace(/[^A-Z0-9]/g, '');
+                    cleanedValue += value.substring(1).replace(/[^0-9]/g, '');
                 }
-                this.value = firstChar + restChars;
+                this.value = cleanedValue;
             } else {
                 this.value = '';
             }
             this.setSelectionRange(selectionStart, selectionEnd);
+            validateInputs(); // Validate on every input change
         });
     }
+
+    if (locationInput) {
+        locationInput.addEventListener('input', function (e) {
+            const selectionStart = this.selectionStart;
+            const selectionEnd = this.selectionEnd;
+            this.value = e.target.value.replace(/[^0-9]/g, ''); // Allow only digits
+            this.setSelectionRange(selectionStart, selectionEnd);
+            validateInputs(); // Validate on every input change
+        });
+    }
+
 
     async function initOperatorPage() {
         console.log("OperatorUI: Initializing page...");
         if (typeof showFeedback === 'function') showFeedback(UI_TEXT.en.loading, 'info', 0);
-
-        // O1: TTS Language Select related fetching is removed.
 
         const [queueStateResult, announcementStatusResult] = await Promise.allSettled([
             apiClient.getQueueState(),
@@ -348,7 +361,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (callForm) callForm.addEventListener('submit', handleCallFormSubmit);
         if (btnSkip) btnSkip.addEventListener('click', handleForceSkipCall);
-        // if (btnSkipCurrent) btnSkipCurrent.addEventListener('click', handleSkipCall);
         if (btnNextAnnouncement) btnNextAnnouncement.addEventListener('click', handleNextAnnouncement);
 
         document.addEventListener('sse_queueupdate', (event) => {
@@ -366,6 +378,9 @@ document.addEventListener('DOMContentLoaded', () => {
         document.addEventListener('sse_ttscomplete', (event) => {
             console.log('OperatorUI: Notified of TTS Complete event (for logging only):', event.detail);
         });
+
+        // Initial validation call to set button states on page load
+        validateInputs();
 
         console.log("OperatorUI: Initialization complete. Event listeners attached.");
         if (originalIdInput) originalIdInput.focus();

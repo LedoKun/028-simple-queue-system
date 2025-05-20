@@ -33,22 +33,23 @@ impl QueueManager {
         if original_id.is_empty() {
             return String::new();
         }
+        
         let mut chars = original_id.chars();
-        let first_char = chars.next().unwrap().to_ascii_uppercase();
-        let digit_part_str: String = chars.collect();
-        if !digit_part_str.is_empty() && digit_part_str.chars().all(|c| c.is_ascii_digit()) {
-            if digit_part_str.len() == 1 {
-                match digit_part_str.parse::<u32>() {
-                    Ok(num) => format!("{}{:02}", first_char, num),
-                    Err(_) => {
-                        tracing::warn!("Could not parse supposed single digit '{}' from id '{}', using as string.", digit_part_str, original_id);
-                        format!("{}{}", first_char, digit_part_str)
-                    }
+        let first_char = chars.next().unwrap().to_ascii_uppercase(); // Assumed to be a letter by route validation
+        let digit_part_str: String = chars.collect(); // Assumed to be only digits by route validation
+
+        // This logic remains to pad single-digit numbers if necessary (e.g., A1 -> A01)
+        if digit_part_str.len() == 1 {
+            match digit_part_str.parse::<u32>() {
+                Ok(num) => format!("{}{:02}", first_char, num),
+                Err(_) => {
+                    // This case should ideally not be hit if route validation passes digits strictly
+                    tracing::warn!("Could not parse supposed single digit '{}' from id '{}', using as string.", digit_part_str, original_id);
+                    format!("{}{}", first_char, digit_part_str)
                 }
-            } else {
-                format!("{}{}", first_char, digit_part_str)
             }
         } else {
+            // For multi-digit numbers or other cases (which should be handled by route validation now)
             format!("{}{}", first_char, digit_part_str)
         }
     }
