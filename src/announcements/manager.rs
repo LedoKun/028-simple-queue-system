@@ -173,6 +173,9 @@ impl AnnouncementManager {
                             }
                         }
                         if !audio_files.is_empty() || !banner_files.is_empty() {
+                            audio_files.sort();
+                            banner_files.sort();
+
                             slots.push(AnnouncementSlot {
                                 id: slot_id,
                                 audio_files,
