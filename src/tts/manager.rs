@@ -3,13 +3,12 @@ use regex::Regex;
 use reqwest::header::USER_AGENT;
 use reqwest::Client as ReqwestClient;
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet}, // Added HashSet
     path::{Path, PathBuf},
     sync::Arc,
     time::SystemTime,
-    // fmt, // No longer needed
 };
-use tokio::sync::broadcast;
+use tokio::sync::{broadcast, Mutex}; // Added tokio::sync::Mutex
 use tokio::{fs as tokio_fs, io::AsyncWriteExt, task};
 use urlencoding::encode as url_encode;
 
@@ -17,6 +16,7 @@ use crate::{config::AppConfig, AppEvent};
 
 const GOOGLE_TTS_URL_BASE: &str = "http://translate.google.com/translate_tts";
 const MAX_CHARS_PER_CHUNK: usize = 100;
+const MAX_UA_GENERATION_ATTEMPTS: u8 = 10; // To prevent infinite loops if UA pool is too small
 
 #[derive(Debug)]
 pub struct TTSManager {
@@ -25,13 +25,10 @@ pub struct TTSManager {
     event_bus_sender: broadcast::Sender<AppEvent>,
     supported_languages_map: HashMap<String, String>,
     tokenizer_regex: Regex,
+    last_call_uas: Arc<Mutex<HashSet<String>>>, // Stores UAs from the previous task call
 }
 
-// Ensure the rest of the TTSManager impl (new, tokenize, trigger_tts_generation, etc.)
-// is as per the last working version. The change is specifically within perform_google_tts_task.
-
 impl TTSManager {
-    // ... (new, tokenize, trigger_tts_generation, get_cache_file_path, static_build_google_tts_url, build_speak_text, write_cache_file, prune_cache, get_web_accessible_audio_url, get_supported_languages - assume these are as per last correct version) ...
     pub fn new(config: Arc<AppConfig>, event_bus_sender: broadcast::Sender<AppEvent>) -> Self {
         tracing::info!("Initializing TTSManager for Google TTS...");
 
@@ -59,7 +56,7 @@ impl TTSManager {
             supported_languages_map
         );
 
-        tracing::info!("User agents will be fetched using fake_user_agent::get_rua().");
+        tracing::info!("User agents will be fetched using fake_user_agent::get_rua() with non-repetition logic.");
 
         let audio_cache_base_path = config.gtts_cache_base_path.clone();
         tokio::spawn(async move {
@@ -86,6 +83,7 @@ impl TTSManager {
             event_bus_sender,
             supported_languages_map,
             tokenizer_regex,
+            last_call_uas: Arc::new(Mutex::new(HashSet::new())), // Initialize the new field
         }
     }
 
@@ -147,6 +145,7 @@ impl TTSManager {
         let config_clone = Arc::clone(&self.config);
         let http_client_clone = self.http_client.clone();
         let sender_clone = self.event_bus_sender.clone();
+        let last_call_uas_clone = Arc::clone(&self.last_call_uas); // Clone Arc for the task
 
         let text_for_this_lang = Self::build_speak_text(&id, &location, &lang);
         let tokenized_parts = self.tokenize(&text_for_this_lang);
@@ -160,6 +159,7 @@ impl TTSManager {
                 config_clone,
                 http_client_clone,
                 sender_clone,
+                last_call_uas_clone, // Pass the Arc to the task
                 task_id,
                 task_location,
                 task_lang,
@@ -201,24 +201,21 @@ impl TTSManager {
         config: Arc<AppConfig>,
         http_client: ReqwestClient,
         sender: broadcast::Sender<AppEvent>,
-        id: String,       // Consumed if not cloned for event
-        location: String, // Consumed if not cloned for event
-        lang: String,     // Consumed if not cloned for event
+        last_call_uas_lock: Arc<Mutex<HashSet<String>>>, // Receive the Arc<Mutex<...>>
+        id: String,
+        location: String,
+        lang: String,
         text_parts: Vec<String>,
     ) {
-        let cache_file_path = Self::get_cache_file_path(
-            &config.gtts_cache_base_path,
-            &lang,     // Use &lang (ref) for path generation
-            &id,       // Use &id (ref)
-            &location, // Use &location (ref)
-        );
+        let cache_file_path =
+            Self::get_cache_file_path(&config.gtts_cache_base_path, &lang, &id, &location);
 
         tracing::debug!(
             "Google TTS task: for call_id='{}', location='{}', lang='{}', target cache_path='{:?}'",
             id,
             location,
             lang,
-            cache_file_path // id, location, lang are still valid here before potential move
+            cache_file_path
         );
 
         if tokio_fs::metadata(&cache_file_path).await.is_ok() {
@@ -234,13 +231,12 @@ impl TTSManager {
                 &config.tts_cache_web_path,
             ) {
                 let event = AppEvent::TTSComplete {
-                    id: id.clone(),             // Clone here for the event
-                    location: location.clone(), // Clone here for the event
-                    lang: lang.clone(),         // Clone here for the event
+                    id: id.clone(),
+                    location: location.clone(),
+                    lang: lang.clone(),
                     audio_url,
                 };
                 if let Err(e) = sender.send(event) {
-                    // Original id, location, lang are still valid for this log message due to cloning above
                     tracing::debug!("Failed to broadcast TTSComplete for cached Google TTS audio (id: {}, lang: {}): {}", id, lang, e);
                 }
             } else {
@@ -273,10 +269,49 @@ impl TTSManager {
 
         let mut all_audio_bytes: Vec<u8> = Vec::new();
         let total_parts = text_parts.len();
+        // uas_this_task will store owned Strings, as these are the UAs "chosen" for this task.
+        let mut uas_this_task: HashSet<String> = HashSet::new();
 
         for (idx, part_text) in text_parts.iter().enumerate() {
             let tts_url = Self::static_build_google_tts_url(part_text, &lang, idx, total_parts);
-            let user_agent_str = get_rua();
+
+            let user_agent_str: String; // This will be an owned String
+            let mut attempts = 0;
+
+            loop {
+                let candidate_ua_slice: &str = get_rua(); // Assuming get_rua() returns &str
+
+                let last_call_uas_guard = last_call_uas_lock.lock().await;
+
+                // HashSet<String> can check .contains() using an &str
+                if !uas_this_task.contains(candidate_ua_slice)
+                    && !last_call_uas_guard.contains(candidate_ua_slice)
+                {
+                    user_agent_str = candidate_ua_slice.to_string(); // Convert to owned String
+                    uas_this_task.insert(user_agent_str.clone()); // Insert the owned String
+                    drop(last_call_uas_guard); // Release lock
+                    break;
+                }
+                drop(last_call_uas_guard); // Release lock if condition was false
+
+                attempts += 1;
+                if attempts >= MAX_UA_GENERATION_ATTEMPTS {
+                    tracing::warn!(
+                        "Max UA generation attempts reached for part {}/{}. Using last generated UA ('{}'), which might be a repeat.",
+                        idx + 1, total_parts, candidate_ua_slice
+                    );
+                    user_agent_str = candidate_ua_slice.to_string(); // Convert to owned String
+                                                                     // Attempt to insert if not already in this task's set (it might be if only prev_call_uas caused conflict)
+                    if !uas_this_task.contains(candidate_ua_slice) {
+                        uas_this_task.insert(user_agent_str.clone());
+                    }
+                    break;
+                }
+                tracing::trace!(
+                    "UA '{}' was recently used, retrying generation...",
+                    candidate_ua_slice
+                );
+            }
 
             tracing::debug!(
                 "Fetching Google TTS part {}/{} (lang {}): URL: {}, User-Agent: {}",
@@ -284,12 +319,12 @@ impl TTSManager {
                 total_parts,
                 lang,
                 tts_url,
-                user_agent_str
+                user_agent_str // user_agent_str is now an owned String
             );
 
             match http_client
                 .get(&tts_url)
-                .header(USER_AGENT, user_agent_str)
+                .header(USER_AGENT, &user_agent_str) // Pass reference to the owned String
                 .send()
                 .await
             {
@@ -339,6 +374,10 @@ impl TTSManager {
         }
 
         if !all_audio_bytes.is_empty() {
+            let mut last_call_uas_guard = last_call_uas_lock.lock().await;
+            *last_call_uas_guard = uas_this_task;
+            drop(last_call_uas_guard);
+
             if let Some(parent_dir) = cache_file_path.parent() {
                 if !parent_dir.exists() {
                     if let Err(e) = tokio_fs::create_dir_all(parent_dir).await {
@@ -385,20 +424,16 @@ impl TTSManager {
                 &config.gtts_cache_base_path,
                 &config.tts_cache_web_path,
             ) {
-                // IMPORTANT: Clone id, location, lang for the event because they are moved into it.
-                // The original id, location, lang parameters will be consumed by this move if not cloned.
                 let event = AppEvent::TTSComplete {
-                    id: id.clone(),             // Clone for the event
-                    location: location.clone(), // Clone for the event
-                    lang: lang.clone(),         // Clone for the event
+                    id: id.clone(),
+                    location: location.clone(),
+                    lang: lang.clone(),
                     audio_url,
                 };
                 if let Err(e) = sender.send(event) {
-                    // Now, using id, location, lang here for logging is fine as we cloned them for the event.
                     tracing::debug!("Failed to broadcast TTSComplete for Google TTS audio (id: {}, lang: {}): {}", id, lang, e);
                 }
             } else {
-                // id, location, lang are still valid here for logging.
                 tracing::error!("Failed to get web-accessible URL for Google TTS audio (id: {}, lang: {}): {:?}", id, lang, cache_file_path);
             }
         } else {
