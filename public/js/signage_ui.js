@@ -625,15 +625,30 @@ document.addEventListener('DOMContentLoaded', () => {
                     });
 
                     if (ttsAudioItemsToAdd.length > 0) {
-                        audioPlaybackQueue.push(...ttsAudioItemsToAdd);
+                        // Insert TTS audio after the chime (if present) or at the beginning if no chime for some reason.
+                        // Find the index of the chime, if it exists.
+                        const chimeIndex = audioPlaybackQueue.findIndex(item => item.playerType === 'chime');
+                        if (chimeIndex !== -1) {
+                            audioPlaybackQueue.splice(chimeIndex + 1, 0, ...ttsAudioItemsToAdd);
+                        } else {
+                            audioPlaybackQueue.unshift(...ttsAudioItemsToAdd);
+                        }
+
                         console.log("SignageUI: Appended TTS items to live audio items queue:", ttsAudioItemsToAdd);
 
-                        // If no audio is currently playing, and the chime has finished,
-                        // restart playback to play the newly available TTS.
-                        if (!isAudioFilePlaying && audioPlaybackQueue.length > 0 && currentProcessingEvent.chimeFinished) {
+                        // If the chime has finished and audio is not currently playing (meaning the queue might be stuck
+                        // because TTS wasn't available before), restart playback.
+                        // We check for `!isAudioFilePlaying` to ensure we don't interrupt ongoing playback,
+                        // but if the chime has finished and we've added TTS, we want to play it.
+                        if (currentProcessingEvent.chimeFinished && !isAudioFilePlaying) {
                             console.log("SignageUI: Chime finished and new TTS added. Restarting playback for TTS.");
                             playNextAudioFileInSequence();
+                        } else if (currentProcessingEvent.chimeFinished && isAudioFilePlaying) {
+                            console.log("SignageUI: Chime finished and new TTS added, but audio is currently playing. TTS will play next in sequence.");
+                        } else {
+                            console.log("SignageUI: New TTS added, but chime not yet finished. Waiting for chime to complete.");
                         }
+
                     } else if (!isAudioFilePlaying && audioPlaybackQueue.length === 0 && targetEventForTTS.ttsReady && currentProcessingEvent.chimeFinished) {
                         // Edge case: All TTS is ready, but somehow no audio files were actually added
                         // (e.g., if `receivedTts` was empty despite `ttsReady` being true).
