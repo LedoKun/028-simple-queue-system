@@ -1,9 +1,13 @@
 // src/api/mod.rs
 
-pub mod routes;
+//! This module defines the public-facing HTTP API for the Queue Calling System.
+//!
+//! It serves as the entry point for all API routes, encapsulating them within
+//! the `routes` submodule. This structure promotes a clean separation of concerns,
+//! keeping API endpoint definitions distinct from the core business logic.
 
-// You can re-export specific items from routes if desired, for example:
-// pub use routes::sse_events;
-// pub use routes::trigger_tts;
-// etc.
-// Or, as in your main.rs, access them via `routes::function_name`.
+// Declare the `routes` submodule.
+// This line makes the code within `src/api/routes.rs` available
+// as the `routes` submodule of the `api` module. It's where all
+// your Rocket route handlers are defined.
+pub mod routes;

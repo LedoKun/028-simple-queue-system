@@ -1,61 +1,69 @@
-[package]
-name = "queue-calling-system"
-version = "0.1.0"
-edition = "2021"
+# Cargo.toml
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[package]
+name = "queue-calling-system"  # The name of your crate.
+version = "0.1.0"             # The current version of your crate.
+edition = "2021"              # The Rust edition to compile against.
 
 [dependencies]
-# Rocket framework for building the web backend
+# Rocket web framework. The "json" feature is needed for API JSON handling.
 rocket = { version = "0.5", features = ["json"] }
 
-# Asynchronous runtime - Rocket uses Tokio by default
-tokio = { version = "1", features = [
-    "full",
-] } # "full" includes most features, can be trimmed later
+# Tokio asynchronous runtime.
+tokio = { version = "1", features = ["full"] }
 
-# Deserialize and Serialize for working with JSON data
+# Serde for serialization/deserialization. "derive" enables macros.
 serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
+serde_json = "1.0" # For JSON-specific operations.
 
-# Load environment variables from a .env file (for configuration)
+# For loading environment variables from a .env file during development.
 dotenv = "0.15"
 
-# Logging framework
-tracing = "0.1" # A modern logging framework
-tracing-subscriber = { version = "0.3", features = [
-    "env-filter",
-] } # For configuring tracing based on env vars
+# Tracing for structured logging and observability.
+tracing = "0.1"
+# Configures tracing. "env-filter" allows controlling log levels via the RUST_LOG environment variable.
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
-# For making HTTP requests (e.g., to the external TTS service)
-reqwest = { version = "0.12", features = [
-    "json",
-], default-features = false }
+# Reqwest: HTTP client. "json" feature for JSON support.
+# `default-features = false` is used to explicitly manage features and reduce dependencies.
+reqwest = { version = "0.12", features = ["json"], default-features = false }
 
-# For file system operations (especially async ones) and utility functions
-walkdir = "2" # For traversing directories (announcement scanning)
-chrono = { version = "0.4", features = [
-    "serde",
-] } # For timestamps (queue history)
+# For recursive directory traversal, used in announcement scanning.
+walkdir = "2"
 
+# For handling dates and times. "serde" feature enables serialization.
+chrono = { version = "0.4", features = ["serde"] }
+
+# For loading structured configuration from environment variables.
 envconfig = "0.10"
 envconfig_derive = "0.10"
 
+# Utilities for URL manipulation.
 url = "2.5"
-
-fake_user_agent = "0.2"
 urlencoding = "2.1"
-regex = "1" 
 
+# For generating realistic user agents to avoid bot detection by external services.
+fake_user_agent = "0.2"
+
+# For regular expressions, used in input validation and text processing.
+regex = "1"
+
+# Rocket_CORS: A Rocket fairing to handle Cross-Origin Resource Sharing.
+# Essential for allowing frontend applications from different origins to connect.
 [dependencies.rocket_cors]
 version = "0.6"
 
+# Defines dependencies that are only used for testing, examples, and benchmarks.
 [dev-dependencies]
+# Enhances `assert_eq!` messages for clearer test failures.
 pretty_assertions = "1.4"
+# Provides utilities for testing with `tracing` enabled.
+tracing-test = "0.2"
 
+# Defines custom build profiles. The `release` profile is for optimized production builds.
 [profile.release]
-opt-level = 3       # Default for release, explicitly stated for clarity
-lto = "fat"         # Maximize Link-Time Optimization
-codegen-units = 1   # Maximize optimizations within a crate (slowest compile, best runtime)
-panic = "abort"     # Abort on panic for smaller/faster binary (consider trade-offs)
-strip = true        # Strip symbols for smaller binary size
+opt-level = 3       # Optimization level: 0-3. 3 is the default for release.
+lto = "fat"         # Link-Time Optimization: "fat" provides the most aggressive whole-program optimization.
+codegen-units = 1   # Number of code generation units. 1 maximizes optimization but increases compile time.
+panic = "abort"     # What to do on panic. "abort" results in smaller binaries as it avoids unwind tables.
+strip = true        # Strips debug symbols, significantly reducing the binary size.
