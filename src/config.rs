@@ -103,7 +103,7 @@ pub struct AppConfig {
     ///
     /// Corresponds to the `TTS_EXTERNAL_SERVICE_TIMEOUT_SECONDS` environment variable.
     /// Default: `5`.
-    #[envconfig(from = "TTS_EXTERNAL_SERVICE_TIMEOUT_SECONDS", default = "15")]
+    #[envconfig(from = "TTS_EXTERNAL_SERVICE_TIMEOUT_SECONDS", default = "30")]
     pub tts_external_service_timeout_seconds: u64,
 
     /// A comma-separated string of supported TTS languages, optionally with a display name.
