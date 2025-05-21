@@ -100,17 +100,33 @@ document.addEventListener('DOMContentLoaded', () => {
      * @private
      */
     function playNextAudioFileInSequence() {
-        // If the queue is empty, all audio for the current event has finished.
+        // If the queue is empty, all audio for the current event has finished or is pending.
         if (audioPlaybackQueue.length === 0) {
-            isAudioFilePlaying = false;
-            console.log("SignageUI: Audio playback queue for current event is empty. All audio finished.");
+            isAudioFilePlaying = false; // Mark that no audio is actively playing from the queue.
+            console.log("SignageUI: Audio playback queue for current event is empty.");
 
-            // Special handling for call events: ensure chime has finished before marking event complete.
-            if (currentProcessingEvent && currentProcessingEvent.type === 'call' && !currentProcessingEvent.chimeFinished) {
-                console.log(`SignageUI: Call event ${currentProcessingEvent.id}-${currentProcessingEvent.location} chime not yet finished, awaiting its completion.`);
-                return; // Wait for chime to signal its completion.
+            if (currentProcessingEvent && currentProcessingEvent.type === 'call') {
+                // If chime hasn't finished, wait for it.
+                if (!currentProcessingEvent.chimeFinished) {
+                    console.log(`SignageUI: Call event ${currentProcessingEvent.id}-${currentProcessingEvent.location} chime not yet finished, awaiting its completion.`);
+                    return; // Wait for chime to signal its completion via its 'ended' event.
+                }
+                // Chime IS finished. Now check if we were waiting for TTS that hasn't arrived.
+                // If TTS is required but not yet ready, don't terminate the event.
+                // handleTTSCompleteSSE will eventually call playNextAudioFileInSequence again.
+                if (currentProcessingEvent.requiredTts && currentProcessingEvent.requiredTts.length > 0 && !currentProcessingEvent.ttsReady) {
+                    console.log(`SignageUI: Call event ${currentProcessingEvent.id}-${currentProcessingEvent.location} chime finished, but TTS is not ready. Waiting for TTS data to arrive.`);
+                    // Do NOT nullify currentProcessingEvent or call processNextEventFromQueue here.
+                    // Rely on handleTTSCompleteSSE to push TTS to the queue and then call playNextAudioFileInSequence.
+                    return;
+                }
+                console.log(`SignageUI: Call event ${currentProcessingEvent.id}-${currentProcessingEvent.location} all audio (chime and TTS if applicable) finished or TTS not required.`);
+            } else if (currentProcessingEvent) {
+                // For non-call events, or if it's a call event where TTS was ready or not required.
+                console.log(`SignageUI: All audio finished for event type: ${currentProcessingEvent.type}.`);
             }
 
+            // If we reach here, it means all audio for the current event has truly completed.
             // Remove event listeners to prevent memory leaks and unintended behavior.
             removeAudioEventListeners(chimeAudio);
             removeAudioEventListeners(announcementAudioPlayer);
@@ -128,7 +144,7 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        // Prevent multiple audio files from playing simultaneously.
+        // Prevent multiple audio files from playing simultaneously if this function is called unexpectedly.
         if (isAudioFilePlaying) {
             console.log("SignageUI: 'playNextAudioFileInSequence' called, but an audio file is already playing. Waiting for current track to finish.");
             return;
@@ -146,7 +162,7 @@ document.addEventListener('DOMContentLoaded', () => {
             default:
                 console.error("SignageUI: Unknown player type encountered in audio queue:", nextAudio.playerType);
                 isAudioFilePlaying = false; // Reset flag and try the next audio.
-                playNextAudioFileInSequence();
+                playNextAudioFileInSequence(); // Skip this unknown item
                 return;
         }
 
@@ -170,7 +186,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 // Catch errors that might occur if play() is interrupted or fails.
                 console.error(`SignageUI: Error calling play() for ${nextAudio.src} (${nextAudio.playerType}):`, e);
                 isAudioFilePlaying = false; // Reset flag.
-                handleAudioFileError({ target: player }); // Manually trigger error handler.
+                handleAudioFileError({ target: player }); // Manually trigger error handler to ensure queue progresses.
             });
     }
 
@@ -186,11 +202,9 @@ document.addEventListener('DOMContentLoaded', () => {
         isAudioFilePlaying = false; // Reset playback flag.
 
         // Special case: If the chime audio for a call event finishes, mark it as done.
-        if (currentProcessingEvent && event.target === chimeAudio) {
+        if (currentProcessingEvent && event.target === chimeAudio && currentProcessingEvent.type === 'call') {
             currentProcessingEvent.chimeFinished = true;
-            let eventDescription = currentProcessingEvent.type === 'call'
-                ? `call ${currentProcessingEvent.id}-${currentProcessingEvent.location}`
-                : currentProcessingEvent.type;
+            let eventDescription = `call ${currentProcessingEvent.id}-${currentProcessingEvent.location}`;
             console.log(`SignageUI: Chime finished for event ${eventDescription}.`);
         }
 
@@ -208,6 +222,14 @@ document.addEventListener('DOMContentLoaded', () => {
         console.error(`SignageUI: Audio file error encountered for: ${src}. Error details:`, event.target.error);
         removeAudioEventListeners(event.target); // Clean up listeners.
         isAudioFilePlaying = false; // Reset playback flag.
+
+        // Special case: If the chime audio for a call event errors, still mark it as "finished" to allow TTS to proceed if available.
+        if (currentProcessingEvent && event.target === chimeAudio && currentProcessingEvent.type === 'call' && !currentProcessingEvent.chimeFinished) {
+            currentProcessingEvent.chimeFinished = true; // Treat error as completion for sequencing.
+            let eventDescription = `call ${currentProcessingEvent.id}-${currentProcessingEvent.location}`;
+            console.warn(`SignageUI: Chime errored for event ${eventDescription}, marking as finished to attempt TTS.`);
+        }
+
         playNextAudioFileInSequence(); // Attempt to play the next audio, skipping the problematic one.
     }
 
@@ -230,7 +252,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function processNextEventFromQueue() {
         // Prevent processing if an event is already active or audio is playing.
         if (currentProcessingEvent || isAudioFilePlaying) {
-            console.log("SignageUI: 'processNextEventFromQueue' called, but system is busy or audio is playing. Skipping.",
+            console.log("SignageUI: 'processNextEventFromQueue' called, but system is busy (event active or audio playing). Skipping.",
                 { currentProcessingEvent: !!currentProcessingEvent, isAudioFilePlaying });
             return;
         }
@@ -261,6 +283,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // Reset audio playback queue for the new event.
         audioPlaybackQueue = [];
+        // isAudioFilePlaying should be false here due to the guard at the start of this function,
+        // but explicitly setting it ensures a clean state if logic changes.
         isAudioFilePlaying = false;
 
         // Handle 'call' type events.
@@ -411,7 +435,9 @@ document.addEventListener('DOMContentLoaded', () => {
             updateAnnouncementDisplay(null);
         } finally {
             // Update SSE indicator to 'connected' after initial data is loaded.
-            dispatchSseStatusToIndicator('connected', UI_TEXT[window.currentGlobalLanguage].connected);
+            // This might be premature if SSE connection itself hasn't confirmed via sse_handler.js
+            // dispatchSseStatusToIndicator('connected', UI_TEXT[window.currentGlobalLanguage].connected);
+
             // After initial states are loaded, if no events are queued and no current call was fetched,
             // the idle logic in `processNextEventFromQueue` will ensure the display is "----".
             processNextEventFromQueue();
@@ -491,7 +517,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     callData: { ...newCall }, // Store a copy of the full call data.
                     requiredTts: [...orderedTtsLangCodes], // Which languages TTS is needed for.
                     receivedTts: {}, // Store received TTS audio URLs by language.
-                    audioSequence: [{ src: chimeAudio.src, playerType: 'chime' }], // Chime always plays first.
+                    // audioSequence: [{ src: chimeAudio.src, playerType: 'chime' }], // Chime is added in processNextEventFromQueue
                     chimeFinished: false, // Flag to ensure chime completes before TTS.
                     ttsReady: false, // Flag indicating if all required TTS audio is received.
                     timestamp: new Date().toISOString() // Timestamp of when event was queued locally.
@@ -504,6 +530,11 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         } else {
             console.log("SignageUI: Queue update received with no current_call. No new call event created.");
+            // If queue becomes empty (no current_call), and no events are processing,
+            // ensure the display might clear or show last call based on logic in processNextEventFromQueue.
+            if (!currentProcessingEvent && eventQueue.length === 0) {
+                processNextEventFromQueue(); // Check if display needs clearing.
+            }
         }
     }
 
@@ -544,7 +575,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 // Build the audio sequence for the announcement: chime followed by announcement audio.
                 const audioItemsForSequence = [
-                    { src: chimeAudio.src, playerType: 'chime' }
+                    { src: chimeAudio.src, playerType: 'chime' } // Chime for announcement
                 ];
                 announcementAudioFiles.forEach(audioSrc => {
                     audioItemsForSequence.push({ src: audioSrc, playerType: 'announcement' });
@@ -593,19 +624,20 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (targetEventForTTS) {
             // If TTS for this event is already marked as ready, ignore new TTS files.
-            if (targetEventForTTS.ttsReady) {
-                console.log(`SignageUI: TTS data (${ttsData.lang}) received for call ${targetEventForTTS.id}-${targetEventForTTS.location}, but its TTS was already marked fully ready. Ignoring this specific TTS file.`);
+            // This could happen if an SSE event is re-sent or processed multiple times.
+            if (targetEventForTTS.ttsReady && targetEventForTTS.receivedTts[ttsData.lang] === ttsData.audio_url) {
+                console.log(`SignageUI: TTS data (${ttsData.lang}) for call ${targetEventForTTS.id}-${targetEventForTTS.location} already processed and marked ready. Ignoring duplicate.`);
                 return;
             }
 
             // Store the received TTS audio URL by its language code.
             targetEventForTTS.receivedTts[ttsData.lang] = ttsData.audio_url;
-            console.log(`SignageUI: Stored TTS (${ttsData.lang}) for call event ${targetEventForTTS.id}-${targetEventForTTS.location}.`);
+            console.log(`SignageUI: Stored TTS (${ttsData.lang}) for call event ${targetEventForTTS.id}-${targetEventForTTS.location}. Received:`, targetEventForTTS.receivedTts);
 
             // Check if all required TTS audio files for this event have now been received.
             const allRequiredTTSForEventReceived = targetEventForTTS.requiredTts.every(lang => !!targetEventForTTS.receivedTts[lang]);
 
-            if (allRequiredTTSForEventReceived) {
+            if (allRequiredTTSForEventReceived && !targetEventForTTS.ttsReady) { // Check !targetEventForTTS.ttsReady to avoid re-processing
                 targetEventForTTS.ttsReady = true; // Mark the event's TTS as fully ready.
                 console.log(`SignageUI: All TTS now ready for call event ${targetEventForTTS.id}-${targetEventForTTS.location}.`);
 
@@ -625,41 +657,38 @@ document.addEventListener('DOMContentLoaded', () => {
                     });
 
                     if (ttsAudioItemsToAdd.length > 0) {
-                        // Insert TTS audio after the chime (if present) or at the beginning if no chime for some reason.
-                        // Find the index of the chime, if it exists.
+                        // Insert TTS audio after the chime (if present and not yet played)
+                        // or at the appropriate place in the queue.
                         const chimeIndex = audioPlaybackQueue.findIndex(item => item.playerType === 'chime');
-                        if (chimeIndex !== -1) {
+                        if (chimeIndex !== -1 && !targetEventForTTS.chimeFinished) { // Chime exists and hasn't finished
                             audioPlaybackQueue.splice(chimeIndex + 1, 0, ...ttsAudioItemsToAdd);
-                        } else {
-                            audioPlaybackQueue.unshift(...ttsAudioItemsToAdd);
+                        } else { // Chime finished, or no chime, or add to end if other items exist
+                            audioPlaybackQueue.push(...ttsAudioItemsToAdd);
                         }
+                        console.log("SignageUI: Appended/inserted TTS items to live audio items queue:", ttsAudioItemsToAdd, "New queue:", audioPlaybackQueue);
 
-                        console.log("SignageUI: Appended TTS items to live audio items queue:", ttsAudioItemsToAdd);
-
-                        // If the chime has finished and audio is not currently playing (meaning the queue might be stuck
-                        // because TTS wasn't available before), restart playback.
-                        // We check for `!isAudioFilePlaying` to ensure we don't interrupt ongoing playback,
-                        // but if the chime has finished and we've added TTS, we want to play it.
-                        if (currentProcessingEvent.chimeFinished && !isAudioFilePlaying) {
-                            console.log("SignageUI: Chime finished and new TTS added. Restarting playback for TTS.");
+                        // If the chime has finished and audio is not currently playing
+                        // (meaning the queue might be "stuck" waiting for this TTS), restart playback.
+                        if (targetEventForTTS.chimeFinished && !isAudioFilePlaying) {
+                            console.log("SignageUI: Chime finished for current event, new TTS added, and no audio playing. Restarting playback for TTS.");
                             playNextAudioFileInSequence();
-                        } else if (currentProcessingEvent.chimeFinished && isAudioFilePlaying) {
-                            console.log("SignageUI: Chime finished and new TTS added, but audio is currently playing. TTS will play next in sequence.");
-                        } else {
-                            console.log("SignageUI: New TTS added, but chime not yet finished. Waiting for chime to complete.");
+                        } else if (targetEventForTTS.chimeFinished && isAudioFilePlaying) {
+                            console.log("SignageUI: Chime finished, new TTS added, but other audio is currently playing. TTS will play next in sequence.");
+                        } else if (!targetEventForTTS.chimeFinished) {
+                            console.log("SignageUI: New TTS added to queue, but chime not yet finished. Waiting for chime to complete.");
                         }
-
-                    } else if (!isAudioFilePlaying && audioPlaybackQueue.length === 0 && targetEventForTTS.ttsReady && currentProcessingEvent.chimeFinished) {
-                        // Edge case: All TTS is ready, but somehow no audio files were actually added
-                        // (e.g., if `receivedTts` was empty despite `ttsReady` being true).
-                        // If audio queue is empty, and chime is done, proceed to finish event.
-                        console.log("SignageUI: All TTS marked ready for current event, and its audio queue is empty. Proceeding to finish event.");
-                        playNextAudioFileInSequence();
+                    } else if (!isAudioFilePlaying && audioPlaybackQueue.length === 0 && targetEventForTTS.ttsReady && targetEventForTTS.chimeFinished) {
+                        // All TTS marked ready, chime finished, but no actual TTS files were added (e.g. requiredTts was empty)
+                        // and queue is empty. This signals end of audio for this event.
+                        console.log("SignageUI: All TTS marked ready for current event, audio queue empty, chime finished. Proceeding to finish event.");
+                        playNextAudioFileInSequence(); // This will lead to event completion.
                     }
                 }
+            } else if (allRequiredTTSForEventReceived && targetEventForTTS.ttsReady) {
+                console.log(`SignageUI: TTS for call ${targetEventForTTS.id}-${targetEventForTTS.location} was already marked ready. Additional TTS (${ttsData.lang}) received but likely redundant or already queued.`);
             }
         } else {
-            console.log("SignageUI: Received TTS for an unknown call event (not current and not in queue). Ignoring:", ttsData);
+            console.log("SignageUI: Received TTS for an unknown or outdated call event (not current and not in queue). Ignoring:", ttsData);
         }
     }
 
@@ -712,7 +741,7 @@ document.addEventListener('DOMContentLoaded', () => {
             callIdElement.textContent = sanitizeText(callData.id);
             locationElement.textContent = sanitizeText(callData.location);
         } else {
-            console.log("SignageUI: Clearing current call display (callData is null or invalid).");
+            console.log("SignageUI: Clearing current call display (callData is null or invalid). Setting to placeholders.");
             callIdElement.textContent = '----'; // Placeholder for no current call.
             locationElement.textContent = '----';
         }
@@ -728,43 +757,45 @@ document.addEventListener('DOMContentLoaded', () => {
      */
     function updateQueueDisplayInternals(queueState) {
         const lang = window.currentGlobalLanguage || 'en';
-        const labels = (typeof UI_TEXT !== 'undefined' && UI_TEXT[lang]) ? UI_TEXT[lang] : UI_TEXT.en;
+        const labels = (typeof UI_TEXT !== 'undefined' && UI_TEXT[lang]) ? UI_TEXT[lang] : (UI_TEXT.en || {});
 
         // Update completed history list.
         listHistoryCalls.innerHTML = ''; // Clear previous list items.
         if (queueState && queueState.completed_history && queueState.completed_history.length > 0) {
             // Display only the most recent items up to MAX_HISTORY_ITEMS_DISPLAY.
-            queueState.completed_history.slice(0, MAX_HISTORY_ITEMS_DISPLAY).forEach(call => {
+            // Slice, then reverse to display newest at the top (if inserting at end).
+            // Or, slice and insert at beginning.
+            const historyToShow = queueState.completed_history.slice(0, MAX_HISTORY_ITEMS_DISPLAY);
+            historyToShow.forEach(call => {
                 const li = document.createElement('li');
                 li.className = 'history-item flex justify-between items-center';
                 li.innerHTML = `<span><strong class="font-semibold id-part">${sanitizeText(call.id)}</strong> &rarr; <strong class="font-semibold id-part">${sanitizeText(call.location)}</strong></span>
                                 <span class="text-xs text-gray-400">${formatDisplayTime(call.timestamp)}</span>`;
-                // Insert at the beginning to show newest entries first.
-                listHistoryCalls.insertBefore(li, listHistoryCalls.firstChild);
+                listHistoryCalls.appendChild(li); // Append, assuming CSS handles order or server sends in display order.
+                // If server sends newest first, this is correct.
+                // Original code used insertBefore(li, listHistoryCalls.firstChild) which is fine too.
             });
         } else {
             // Display placeholder if history is empty.
-            listHistoryCalls.innerHTML = `<li class="history-item italic text-gray-500">${labels.historyPlaceholder}</li>`;
+            listHistoryCalls.innerHTML = `<li class="history-item italic text-gray-500">${labels.historyPlaceholder || "Waiting for calls..."}</li>`;
         }
 
         // Update skipped history list.
         listSkippedCalls.innerHTML = ''; // Clear previous list items.
         if (queueState && queueState.skipped_history && queueState.skipped_history.length > 0) {
             // Display only the `MAX_SKIPPED_ITEMS_TO_DISPLAY` most recent skipped items.
-            // Using `.slice(-MAX_SKIPPED_ITEMS_TO_DISPLAY)` gets the last N elements.
-            const itemsToShow = queueState.skipped_history.slice(-MAX_SKIPPED_ITEMS_TO_DISPLAY);
+            const itemsToShow = queueState.skipped_history.slice(0, MAX_SKIPPED_ITEMS_TO_DISPLAY);
             itemsToShow.forEach(call => {
                 const li = document.createElement('li');
                 li.className = 'history-item flex justify-between items-center';
                 // Use a different color for skipped calls for visual distinction.
                 li.innerHTML = `<span><strong class="font-semibold id-part text-yellow-400">${sanitizeText(call.id)}</strong> &rarr; <strong class="font-semibold id-part text-yellow-400">${sanitizeText(call.location)}</strong></span>
                                 <span class="text-xs text-gray-400">${formatDisplayTime(call.timestamp)}</span>`;
-                // Insert at the beginning to show newest entries first.
-                listSkippedCalls.insertBefore(li, listSkippedCalls.firstChild);
+                listSkippedCalls.appendChild(li); // Similar to completed history, depends on server sort order.
             });
         } else {
             // Display placeholder if skipped history is empty.
-            listSkippedCalls.innerHTML = `<li class="history-item italic text-gray-500">${labels.skippedPlaceholder}</li>`;
+            listSkippedCalls.innerHTML = `<li class="history-item italic text-gray-500">${labels.skippedPlaceholder || "No skipped calls."}</li>`;
         }
     }
 
@@ -815,6 +846,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (banners.length === 0) {
                 // This case should ideally be caught by the outer check, but as a safeguard.
                 console.warn("SignageUI: 'displayCurrentBanner' called with empty banners list.");
+                if (placeholderParentDiv) placeholderParentDiv.classList.remove('hidden'); // Show placeholder
                 return;
             }
             const bannerUrl = banners[currentBannerIdx];
@@ -822,7 +854,7 @@ document.addEventListener('DOMContentLoaded', () => {
             announcementBannerContainer.innerHTML = ''; // Clear previous banner.
 
             // Render based on media type.
-            if (['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(extension)) {
+            if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg'].includes(extension)) {
                 const img = document.createElement('img');
                 img.src = bannerUrl;
                 img.alt = "Announcement Banner";
@@ -856,7 +888,7 @@ document.addEventListener('DOMContentLoaded', () => {
         // If there are multiple banners, set up cycling for images.
         if (banners.length > 1) {
             // Only cycle images automatically. Videos handle their own sequencing via `onended`.
-            const isImagePlaylist = banners.every(url => ['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(url.split('.').pop().toLowerCase()));
+            const isImagePlaylist = banners.every(url => ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg'].includes(url.split('.').pop().toLowerCase()));
             if (isImagePlaylist) {
                 // Use a default cycle time if not provided by backend.
                 const imageCycleTime = (announcementStatus.banner_cycle_interval_seconds || 10) * 1000;
