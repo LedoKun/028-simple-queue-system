@@ -15,12 +15,13 @@ LABEL org.opencontainers.image.authors="LedoKun <romamp100@gmail.com>"
 # Build arguments passed from the GitHub Actions workflow
 ARG BUILD_DATE
 ARG VCS_REF
-ARG TARGETPLATFORM # Automatically provided by Docker Buildx for the current platform being built
+ARG TARGETPLATFORM
+ARG GH_REPO
 
 # Set OCI standard image labels
 LABEL org.opencontainers.image.created=$BUILD_DATE
 LABEL org.opencontainers.image.revision=$VCS_REF
-LABEL org.opencontainers.image.source="https://github.com/${GITHUB_REPOSITORY}" # Example, assuming GITHUB_REPOSITORY is available or passed as build-arg
+LABEL org.opencontainers.image.source="https://github.com/${GH_REPO}"
 
 # Application runtime environment variables
 ENV RUST_LOG=info \
@@ -45,14 +46,14 @@ WORKDIR /
 # Copy tini from the helper stage
 COPY --from=tini-env /tini-static /tini-static
 
-# Copy static assets
+# Copy static assets (ensure 'public' directory is in the repo root)
 COPY --chown=nonroot:nonroot public /public
 
 # Copy the pre-compiled, platform-specific Rust binary
 # The path matches the structure created in the 'Prepare binaries for Docker build' step of the GitHub Action
 COPY staging_binaries/${TARGETPLATFORM}/queue-calling-system /queue-calling-system
 
-# Ensure the binary is executable by the nonroot user
+# Ensure the binary and tini are executable by the nonroot user
 RUN chmod 755 /queue-calling-system /tini-static
 
 # Define the volume for persistent announcement data

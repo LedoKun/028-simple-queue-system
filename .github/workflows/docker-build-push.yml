@@ -17,10 +17,8 @@ jobs:
         target_info:
           - name: amd64 # Friendly name for platform
             rust_target: x86_64-unknown-linux-gnu
-            # No specific cross-linker or package typically needed if runner is x86_64
-            # and building for x86_64-unknown-linux-gnu
-            linker_command: "" # Explicitly empty or can be omitted if logic handles it
-            cross_package: ""  # Explicitly empty
+            linker_command: "" # Native build, linker usually auto-detected
+            cross_package: ""  # No cross-compiler package needed
           - name: arm64
             rust_target: aarch64-unknown-linux-gnu
             linker_command: aarch64-linux-gnu-gcc # For Cargo
@@ -51,7 +49,6 @@ jobs:
       - name: Build binary
         run: |
           # Set linker environment variables for cross-compilation
-          # Ensure linker_command is not empty before trying to use it
           if [ -n "${{ matrix.target_info.linker_command }}" ]; then
             if [ "${{ matrix.target_info.rust_target }}" = "aarch64-unknown-linux-gnu" ]; then
               export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=${{ matrix.target_info.linker_command }}
@@ -59,6 +56,7 @@ jobs:
               export CARGO_TARGET_ARMV7_UNKNOWN_LINUX_GNUEABIHF_LINKER=${{ matrix.target_info.linker_command }}
             fi
           fi
+          # Cargo.toml already specifies release profile optimizations
           cargo build --verbose --release --target ${{ matrix.target_info.rust_target }}
 
       - name: Upload compiled binary artifact
@@ -75,7 +73,7 @@ jobs:
     permissions:
       contents: read      # To checkout the repository
       packages: write     # To push to GitHub Container Registry (GHCR)
-      actions: read       # To download artifacts from other jobs (implied by download-artifact)
+      # actions: read       # Implied by download-artifact for artifacts from the same workflow run
 
     steps:
       - name: Checkout code
@@ -121,14 +119,13 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: . # Root of the repository, includes staging_binaries and public dirs
-          file: ./Dockerfile # Path to your Dockerfile
+          file: ./Dockerfile # Path to Dockerfile
           push: true
           platforms: linux/amd64,linux/arm64,linux/arm/v7
           tags: ghcr.io/${{ steps.repo_lc.outputs.name }}:latest
-          # build-args from your original workflow, still useful for image metadata
           build-args: |
             BUILD_DATE=${{ github.event.head_commit.timestamp }}
             VCS_REF=${{ github.sha }}
-          # Optional: Enable Docker layer caching for faster subsequent builds
+            GH_REPO=${{ github.repository }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
