@@ -17,14 +17,18 @@ jobs:
         target_info:
           - name: amd64 # Friendly name for platform
             rust_target: x86_64-unknown-linux-gnu
-            # No specific cross-linker typically needed if runner is x86_64
+            # No specific cross-linker or package typically needed if runner is x86_64
             # and building for x86_64-unknown-linux-gnu
+            linker_command: "" # Explicitly empty or can be omitted if logic handles it
+            cross_package: ""  # Explicitly empty
           - name: arm64
             rust_target: aarch64-unknown-linux-gnu
-            cross_linker: aarch64-linux-gnu-gcc
+            linker_command: aarch64-linux-gnu-gcc # For Cargo
+            cross_package: gcc-aarch64-linux-gnu   # For apt-get
           - name: armv7
             rust_target: armv7-unknown-linux-gnueabihf # Common for ARMv7 hard-float
-            cross_linker: arm-linux-gnueabihf-gcc
+            linker_command: arm-linux-gnueabihf-gcc  # For Cargo
+            cross_package: gcc-arm-linux-gnueabihf # For apt-get
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -32,30 +36,29 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: stable # Or your specific Rust version like '1.78'
+          toolchain: stable
           targets: ${{ matrix.target_info.rust_target }}
 
-      - name: Install cross-compilation C linkers
-        if: matrix.target_info.cross_linker
+      - name: Install cross-compilation tools (C linkers/compilers)
+        if: matrix.target_info.cross_package # Only run if a cross_package is specified
         run: |
           sudo apt-get update -y
-          sudo apt-get install -y ${{ matrix.target_info.cross_linker }}
+          sudo apt-get install -y ${{ matrix.target_info.cross_package }}
 
       - name: Rust Cache
         uses: Swatinem/rust-cache@v2
-        # Default configuration is usually sufficient.
-        # It caches ~/.cargo/bin, ~/.cargo/registry/index, ~/.cargo/registry/cache,
-        # ~/.cargo/git/db, and target directories.
 
       - name: Build binary
         run: |
           # Set linker environment variables for cross-compilation
-          if [ "${{ matrix.target_info.rust_target }}" = "aarch64-unknown-linux-gnu" ]; then
-            export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=${{ matrix.target_info.cross_linker }}
-          elif [ "${{ matrix.target_info.rust_target }}" = "armv7-unknown-linux-gnueabihf" ]; then
-            export CARGO_TARGET_ARMV7_UNKNOWN_LINUX_GNUEABIHF_LINKER=${{ matrix.target_info.cross_linker }}
+          # Ensure linker_command is not empty before trying to use it
+          if [ -n "${{ matrix.target_info.linker_command }}" ]; then
+            if [ "${{ matrix.target_info.rust_target }}" = "aarch64-unknown-linux-gnu" ]; then
+              export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=${{ matrix.target_info.linker_command }}
+            elif [ "${{ matrix.target_info.rust_target }}" = "armv7-unknown-linux-gnueabihf" ]; then
+              export CARGO_TARGET_ARMV7_UNKNOWN_LINUX_GNUEABIHF_LINKER=${{ matrix.target_info.linker_command }}
+            fi
           fi
-          # Your Cargo.toml already specifies release profile optimizations (lto, codegen-units, panic, strip)
           cargo build --verbose --release --target ${{ matrix.target_info.rust_target }}
 
       - name: Upload compiled binary artifact
