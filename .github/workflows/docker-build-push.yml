@@ -6,27 +6,30 @@ on:
       - main
 
 env:
-  CARGO_TERM_COLOR: always # Ensures colors are used in Cargo output
+  CARGO_TERM_COLOR: always
 
 jobs:
   build-rust-binaries:
     name: Build Rust Binary (${{ matrix.target_info.name }})
     runs-on: ubuntu-latest
+    permissions:
+      contents: read  # For actions/checkout
+      actions: write  # For Swatinem/rust-cache (read and write)
     strategy:
       matrix:
         target_info:
-          - name: amd64 # Friendly name for platform
+          - name: amd64
             rust_target: x86_64-unknown-linux-gnu
-            linker_command: "" # Native build, linker usually auto-detected
-            cross_package: ""  # No cross-compiler package needed
+            linker_command: ""
+            cross_package: ""
           - name: arm64
             rust_target: aarch64-unknown-linux-gnu
-            linker_command: aarch64-linux-gnu-gcc # For Cargo
-            cross_package: gcc-aarch64-linux-gnu   # For apt-get
+            linker_command: aarch64-linux-gnu-gcc
+            cross_package: gcc-aarch64-linux-gnu
           - name: armv7
-            rust_target: armv7-unknown-linux-gnueabihf # Common for ARMv7 hard-float
-            linker_command: arm-linux-gnueabihf-gcc  # For Cargo
-            cross_package: gcc-arm-linux-gnueabihf # For apt-get
+            rust_target: armv7-unknown-linux-gnueabihf
+            linker_command: arm-linux-gnueabihf-gcc
+            cross_package: gcc-arm-linux-gnueabihf
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -38,7 +41,7 @@ jobs:
           targets: ${{ matrix.target_info.rust_target }}
 
       - name: Install cross-compilation tools (C linkers/compilers)
-        if: matrix.target_info.cross_package # Only run if a cross_package is specified
+        if: matrix.target_info.cross_package
         run: |
           sudo apt-get update -y
           sudo apt-get install -y ${{ matrix.target_info.cross_package }}
@@ -48,7 +51,6 @@ jobs:
 
       - name: Build binary
         run: |
-          # Set linker environment variables for cross-compilation
           if [ -n "${{ matrix.target_info.linker_command }}" ]; then
             if [ "${{ matrix.target_info.rust_target }}" = "aarch64-unknown-linux-gnu" ]; then
               export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=${{ matrix.target_info.linker_command }}
@@ -56,25 +58,23 @@ jobs:
               export CARGO_TARGET_ARMV7_UNKNOWN_LINUX_GNUEABIHF_LINKER=${{ matrix.target_info.linker_command }}
             fi
           fi
-          # Cargo.toml already specifies release profile optimizations
           cargo build --verbose --release --target ${{ matrix.target_info.rust_target }}
 
       - name: Upload compiled binary artifact
         uses: actions/upload-artifact@v4
         with:
-          name: app-binary-${{ matrix.target_info.name }} # e.g., app-binary-amd64
+          name: app-binary-${{ matrix.target_info.name }}
           path: target/${{ matrix.target_info.rust_target }}/release/queue-calling-system
-          if-no-files-found: error # Fail if the binary isn't found
+          if-no-files-found: error
 
   build-and-push-docker:
     name: Build and Push Docker Image
     runs-on: ubuntu-latest
-    needs: build-rust-binaries # Ensures binaries are built before this job runs
+    needs: build-rust-binaries
     permissions:
-      contents: read      # To checkout the repository
-      packages: write     # To push to GitHub Container Registry (GHCR)
-      # actions: read       # Implied by download-artifact for artifacts from the same workflow run
-
+      contents: read    # For actions/checkout
+      packages: write   # To push to GitHub Container Registry (GHCR)
+      actions: write    # For Docker layer caching (type=gha) and download-artifact
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -82,8 +82,7 @@ jobs:
       - name: Download all compiled binary artifacts
         uses: actions/download-artifact@v4
         with:
-          path: ./downloaded-artifacts # All artifacts will be downloaded into subdirectories here
-          # e.g., ./downloaded-artifacts/app-binary-amd64/queue-calling-system
+          path: ./downloaded-artifacts
 
       - name: Prepare binaries for Docker build context
         run: |
@@ -118,8 +117,8 @@ jobs:
       - name: Build and push Docker image (multi-arch)
         uses: docker/build-push-action@v5
         with:
-          context: . # Root of the repository, includes staging_binaries and public dirs
-          file: ./Dockerfile # Path to Dockerfile
+          context: .
+          file: ./Dockerfile
           push: true
           platforms: linux/amd64,linux/arm64,linux/arm/v7
           tags: ghcr.io/${{ steps.repo_lc.outputs.name }}:latest

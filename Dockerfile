@@ -15,8 +15,10 @@ LABEL org.opencontainers.image.authors="LedoKun <romamp100@gmail.com>"
 # Build arguments passed from the GitHub Actions workflow
 ARG BUILD_DATE
 ARG VCS_REF
-ARG TARGETPLATFORM # Automatically provided by Docker Buildx for the current platform being built
-ARG GH_REPO        # Passed from GitHub Actions: contains owner/repository
+# Automatically provided by Docker Buildx for the current platform being built
+ARG TARGETPLATFORM
+# Passed from GitHub Actions: contains owner/repository
+ARG GH_REPO
 
 # Set OCI standard image labels
 LABEL org.opencontainers.image.created=$BUILD_DATE
