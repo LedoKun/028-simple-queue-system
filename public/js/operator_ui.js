@@ -402,7 +402,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 : `Force skip request for ${sanitizeText(originalId)} processed.`;
             showFeedback(message, 'success');
             originalIdInput.value = ''; // Clear inputs after successful skip.
-            locationInput.value = '';
+            // locationInput.value = '';
             originalIdInput.focus();
         } else {
             // If API call failed and apiClient didn't show specific error feedback.
