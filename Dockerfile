@@ -15,8 +15,8 @@ LABEL org.opencontainers.image.authors="LedoKun <romamp100@gmail.com>"
 # Build arguments passed from the GitHub Actions workflow
 ARG BUILD_DATE
 ARG VCS_REF
-ARG TARGETPLATFORM
-ARG GH_REPO
+ARG TARGETPLATFORM # Automatically provided by Docker Buildx for the current platform being built
+ARG GH_REPO        # Passed from GitHub Actions: contains owner/repository
 
 # Set OCI standard image labels
 LABEL org.opencontainers.image.created=$BUILD_DATE
@@ -43,18 +43,17 @@ ENV RUST_LOG=info \
 
 WORKDIR /
 
-# Copy tini from the helper stage
-COPY --from=tini-env /tini-static /tini-static
+# Copy tini from the helper stage and set execute permissions
+COPY --from=tini-env --chmod=755 /tini-static /tini-static
 
-# Copy static assets (ensure 'public' directory is in the repo root)
+# Copy static assets
 COPY --chown=nonroot:nonroot public /public
 
-# Copy the pre-compiled, platform-specific Rust binary
-# The path matches the structure created in the 'Prepare binaries for Docker build' step of the GitHub Action
-COPY staging_binaries/${TARGETPLATFORM}/queue-calling-system /queue-calling-system
+# Copy the pre-compiled, platform-specific Rust binary and set execute permissions
+COPY --chmod=755 staging_binaries/${TARGETPLATFORM}/queue-calling-system /queue-calling-system
 
-# Ensure the binary and tini are executable by the nonroot user
-RUN chmod 755 /queue-calling-system /tini-static
+# The problematic RUN chmod line is now removed, as permissions are set during COPY
+# REMOVED: RUN chmod 755 /queue-calling-system /tini-static
 
 # Define the volume for persistent announcement data
 # This path is relative to WORKDIR / and uses SERVE_DIR_PATH and ANNOUNCEMENTS_SUB_PATH
