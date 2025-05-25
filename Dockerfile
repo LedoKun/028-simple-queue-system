@@ -1,16 +1,28 @@
-FROM rust:1-bookworm AS build-env
+# Stage 1: Helper to get tini static binary from a slim Debian image
+FROM debian:bookworm-slim AS tini-env
+# tini is a lightweight init system that reaps zombie processes
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends tini && \
+    cp /usr/bin/tini-static /tini-static && \
+    # Clean up apt cache to keep this layer small
+    rm -rf /var/lib/apt/lists/*
+
+# Stage 2: Final application image using distroless for a minimal footprint
+FROM gcr.io/distroless/cc-debian12:nonroot
 
 LABEL org.opencontainers.image.authors="LedoKun <romamp100@gmail.com>"
 
-WORKDIR /app
-COPY . /app
+# Build arguments passed from the GitHub Actions workflow
+ARG BUILD_DATE
+ARG VCS_REF
+ARG TARGETPLATFORM # Automatically provided by Docker Buildx for the current platform being built
 
-RUN apt-get update && apt-get install -y tini
-RUN cargo build --release
+# Set OCI standard image labels
+LABEL org.opencontainers.image.created=$BUILD_DATE
+LABEL org.opencontainers.image.revision=$VCS_REF
+LABEL org.opencontainers.image.source="https://github.com/${GITHUB_REPOSITORY}" # Example, assuming GITHUB_REPOSITORY is available or passed as build-arg
 
-FROM gcr.io/distroless/cc-debian12:nonroot
-
-# Set environment variables
+# Application runtime environment variables
 ENV RUST_LOG=info \
     SERVER_ADDRESS=0.0.0.0 \
     SERVER_PORT=3000 \
@@ -29,11 +41,26 @@ ENV RUST_LOG=info \
     TTS_CACHE_WEB_PATH=/tts_cache
 
 WORKDIR /
-COPY --from=build-env /app/target/release/queue-calling-system /
-COPY --from=build-env /usr/bin/tini-static /tini-static
+
+# Copy tini from the helper stage
+COPY --from=tini-env /tini-static /tini-static
+
+# Copy static assets
 COPY --chown=nonroot:nonroot public /public
 
-VOLUME /app/public/media/audios_and_banners
+# Copy the pre-compiled, platform-specific Rust binary
+# The path matches the structure created in the 'Prepare binaries for Docker build' step of the GitHub Action
+COPY staging_binaries/${TARGETPLATFORM}/queue-calling-system /queue-calling-system
 
+# Ensure the binary is executable by the nonroot user
+RUN chmod 755 /queue-calling-system /tini-static
+
+# Define the volume for persistent announcement data
+# This path is relative to WORKDIR / and uses SERVE_DIR_PATH and ANNOUNCEMENTS_SUB_PATH
+VOLUME /public/media/audios_and_banners
+
+# Use tini as the entrypoint to manage the application process
 ENTRYPOINT ["/tini-static", "--"]
+
+# Default command to run the application
 CMD ["/queue-calling-system"]

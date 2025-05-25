@@ -1,21 +1,101 @@
-name: Docker Build and Push (Multi-Arch)
+name: Rust CI and Docker Build (Multi-Arch)
 
 on:
   push:
     branches:
       - main
 
-jobs:
-  build-and-push:
-    runs-on: ubuntu-latest
+env:
+  CARGO_TERM_COLOR: always # Ensures colors are used in Cargo output
 
+jobs:
+  build-rust-binaries:
+    name: Build Rust Binary (${{ matrix.target_info.name }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        target_info:
+          - name: amd64 # Friendly name for platform
+            rust_target: x86_64-unknown-linux-gnu
+            # No specific cross-linker typically needed if runner is x86_64
+            # and building for x86_64-unknown-linux-gnu
+          - name: arm64
+            rust_target: aarch64-unknown-linux-gnu
+            cross_linker: aarch64-linux-gnu-gcc
+          - name: armv7
+            rust_target: armv7-unknown-linux-gnueabihf # Common for ARMv7 hard-float
+            cross_linker: arm-linux-gnueabihf-gcc
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable # Or your specific Rust version like '1.78'
+          targets: ${{ matrix.target_info.rust_target }}
+
+      - name: Install cross-compilation C linkers
+        if: matrix.target_info.cross_linker
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y ${{ matrix.target_info.cross_linker }}
+
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+        # Default configuration is usually sufficient.
+        # It caches ~/.cargo/bin, ~/.cargo/registry/index, ~/.cargo/registry/cache,
+        # ~/.cargo/git/db, and target directories.
+
+      - name: Build binary
+        run: |
+          # Set linker environment variables for cross-compilation
+          if [ "${{ matrix.target_info.rust_target }}" = "aarch64-unknown-linux-gnu" ]; then
+            export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=${{ matrix.target_info.cross_linker }}
+          elif [ "${{ matrix.target_info.rust_target }}" = "armv7-unknown-linux-gnueabihf" ]; then
+            export CARGO_TARGET_ARMV7_UNKNOWN_LINUX_GNUEABIHF_LINKER=${{ matrix.target_info.cross_linker }}
+          fi
+          # Your Cargo.toml already specifies release profile optimizations (lto, codegen-units, panic, strip)
+          cargo build --verbose --release --target ${{ matrix.target_info.rust_target }}
+
+      - name: Upload compiled binary artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-binary-${{ matrix.target_info.name }} # e.g., app-binary-amd64
+          path: target/${{ matrix.target_info.rust_target }}/release/queue-calling-system
+          if-no-files-found: error # Fail if the binary isn't found
+
+  build-and-push-docker:
+    name: Build and Push Docker Image
+    runs-on: ubuntu-latest
+    needs: build-rust-binaries # Ensures binaries are built before this job runs
     permissions:
-      contents: read
-      packages: write
+      contents: read      # To checkout the repository
+      packages: write     # To push to GitHub Container Registry (GHCR)
+      actions: read       # To download artifacts from other jobs (implied by download-artifact)
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+
+      - name: Download all compiled binary artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: ./downloaded-artifacts # All artifacts will be downloaded into subdirectories here
+          # e.g., ./downloaded-artifacts/app-binary-amd64/queue-calling-system
+
+      - name: Prepare binaries for Docker build context
+        run: |
+          mkdir -p ./staging_binaries/linux/amd64
+          mkdir -p ./staging_binaries/linux/arm64
+          mkdir -p ./staging_binaries/linux/arm/v7
+
+          cp ./downloaded-artifacts/app-binary-amd64/queue-calling-system ./staging_binaries/linux/amd64/queue-calling-system
+          cp ./downloaded-artifacts/app-binary-arm64/queue-calling-system ./staging_binaries/linux/arm64/queue-calling-system
+          cp ./downloaded-artifacts/app-binary-armv7/queue-calling-system ./staging_binaries/linux/arm/v7/queue-calling-system
+
+          echo "Contents of staging_binaries:"
+          ls -R ./staging_binaries
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
@@ -23,10 +103,9 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Convert repository name to lowercase
-        run: echo "REPO_LC=${REPO,,}" >> $GITHUB_ENV
-        env:
-          REPO: ${{ github.repository }}
+      - name: Convert repository name to lowercase for image tag
+        id: repo_lc
+        run: echo "name=$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_OUTPUT
 
       - name: Login to GitHub Container Registry
         uses: docker/login-action@v3
@@ -38,10 +117,15 @@ jobs:
       - name: Build and push Docker image (multi-arch)
         uses: docker/build-push-action@v5
         with:
-          context: .
+          context: . # Root of the repository, includes staging_binaries and public dirs
+          file: ./Dockerfile # Path to your Dockerfile
           push: true
           platforms: linux/amd64,linux/arm64,linux/arm/v7
-          tags: ghcr.io/${{ env.REPO_LC }}:latest
+          tags: ghcr.io/${{ steps.repo_lc.outputs.name }}:latest
+          # build-args from your original workflow, still useful for image metadata
           build-args: |
             BUILD_DATE=${{ github.event.head_commit.timestamp }}
             VCS_REF=${{ github.sha }}
+          # Optional: Enable Docker layer caching for faster subsequent builds
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
