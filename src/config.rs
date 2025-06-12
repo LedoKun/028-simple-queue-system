@@ -108,13 +108,13 @@ pub struct AppConfig {
 
     /// A comma-separated string of supported TTS languages, optionally with a display name.
     /// Format: "code1:DisplayName1,code2:DisplayName2,...".
-    /// Example: "th-TH:Thai,en-GB:British English".
+    /// Example: "th:Thai,en-GB:British English".
     ///
     /// Corresponds to the `TTS_SUPPORTED_LANGUAGES` environment variable.
-    /// Default: `"th-TH:Thai,en-GB:British English"`.
+    /// Default: `"th:Thai,en-GB:British English"`.
     #[envconfig(
         from = "TTS_SUPPORTED_LANGUAGES",
-        default = "th-TH:Thai,en-GB:British English"
+        default = "th:Thai,en-GB:British English"
     )]
     pub tts_supported_languages: String,
 
@@ -232,7 +232,7 @@ impl AppConfig {
     /// It extracts only the language code part (before the colon, if present).
     ///
     /// # Example
-    /// If `tts_supported_languages` is `"th-TH:Thai,en-GB:British English,fr:French"`,
+    /// If `tts_supported_languages` is `"th:Thai,en-GB:British English,fr:French"`,
     /// this method returns `vec!["th", "en-uk", "fr"]`.
     ///
     /// # Returns
@@ -332,7 +332,7 @@ mod tests {
         };
 
         // Test case 1: Multiple languages with display names.
-        config.tts_supported_languages = "th-TH:Thai,en-GB:British English,fr:French".to_string();
+        config.tts_supported_languages = "th:Thai,en-GB:British English,fr:French".to_string();
         assert_eq!(
             config.ordered_supported_language_codes(),
             vec!["th".to_string(), "en-uk".to_string(), "fr".to_string()],
