@@ -32,7 +32,7 @@ use crate::{config::AppConfig, AppEvent};
 const GOOGLE_TTS_URL_BASE: &str = "http://translate.google.com/translate_tts";
 /// Maximum number of characters allowed per text chunk for the Google TTS API.
 /// Text longer than this will be split and concatenated.
-const MAX_CHARS_PER_CHUNK: usize = 100;
+const MAX_CHARS_PER_CHUNK: usize = 200;
 /// Maximum attempts to generate a unique user agent before potentially reusing one.
 const MAX_UA_GENERATION_ATTEMPTS: u8 = 10;
 /// Maximum number of retry attempts for TTS API requests.
@@ -55,8 +55,6 @@ pub struct TTSManager {
     event_bus_sender: broadcast::Sender<AppEvent>,
     /// A map of supported language codes to their display names, parsed from `AppConfig`.
     supported_languages_map: HashMap<String, String>,
-    /// Regular expression used for tokenizing input text into smaller chunks.
-    tokenizer_regex: Regex,
     /// A mutex-protected HashSet to store user agents recently used for TTS requests,
     /// to avoid immediate repetition and potential rate limiting.
     last_call_uas: Arc<Mutex<HashSet<String>>>,
@@ -138,110 +136,72 @@ impl TTSManager {
             }
         });
 
-        // Compile the regex for text tokenization.
-        // This pattern splits text by common punctuation and whitespace.
-        let punc_pattern = r"[¡!()\[\]¿?.,;:—«»\s\n]+";
-        let tokenizer_regex = Regex::new(punc_pattern).expect("Failed to compile tokenizer regex");
-        debug!("TTSManager new: Tokenizer regex compiled: {}", punc_pattern);
-
         TTSManager {
             config,
             http_client,
             event_bus_sender,
             supported_languages_map,
-            tokenizer_regex,
             last_call_uas: Arc::new(Mutex::new(HashSet::new())), // Initialize set for tracking recent UAs
         }
     }
 
-    /// Tokenizes the input text into a vector of strings, chunking it based on
-    /// `MAX_CHARS_PER_CHUNK` and punctuation.
-    ///
-    /// This is necessary because TTS APIs often have character limits per request.
-    /// The function attempts to split text at natural break points (punctuation/spaces)
-    /// before resorting to hard cuts.
+    /// Splits a long text into shorter chunks suitable for the TTS API.
+    /// This function is ported from the logic in `splitLongText.ts`.
     ///
     /// # Arguments
-    /// - `text`: The input string to be tokenized.
+    /// - `text`: The input string to be split.
+    /// - `max_length`: The maximum length of each chunk.
     ///
     /// # Returns
-    /// A `Vec<String>` where each string is a chunk of the original text,
-    /// suitable for individual TTS API calls.
-    fn tokenize(&self, text: &str) -> Vec<String> {
-        debug!("Tokenizing text (length: {})", text.len());
-        if text.is_empty() {
-            trace!("Tokenize: Input text is empty, returning empty Vec.");
-            return Vec::new();
-        }
+    /// A `Result<Vec<String>, String>` containing a vector of text chunks or an error.
+    fn split_long_text(&self, text: &str, max_length: usize) -> Result<Vec<String>, String> {
+        // This regex combines whitespace and default punctuation from the TS source.
+        // It uses correct Rust string escapes: \u{...} for Unicode, \" for quotes, and \\\\ for a literal backslash.
+        let space_and_punct_regex =
+            Regex::new("[\u{FEFF}\u{A0}\\s!\"#$%&'()*+,-./:;<=>?@\\\\^_`{|}~]+")
+                .expect("Failed to compile punctuation regex");
 
-        // Split the text by the tokenizer regex (punctuation and whitespace).
-        let parts: Vec<&str> = self
-            .tokenizer_regex
-            .split(text)
-            .filter(|p| !p.is_empty()) // Filter out empty strings resulting from splits
-            .collect();
-        trace!(
-            "Tokenize: Split into {} initial parts: {:?}",
-            parts.len(),
-            parts
-        );
+        let is_space_or_punct =
+            |c: char| -> bool { space_and_punct_regex.is_match(&c.to_string()) };
 
-        if parts.is_empty() {
-            trace!("Tokenize: No valid parts after splitting, returning empty Vec.");
-            return Vec::new();
-        }
+        let last_index_of_space_or_punct = |s: &str, left: usize, right: usize| -> Option<usize> {
+            s[left..=right].rfind(is_space_or_punct)
+        };
 
-        let mut chunks = Vec::new();
-        let mut current_chunk = String::new();
+        let mut result: Vec<String> = Vec::new();
+        let mut start = 0;
 
-        // Iterate through the split parts and build chunks, respecting MAX_CHARS_PER_CHUNK.
-        for part in parts {
-            trace!("Tokenize: Processing part: '{}'", part);
-            // Calculate potential length if 'part' is appended to 'current_chunk'.
-            // Add 1 for the space that will be inserted between parts.
-            let potential_len =
-                current_chunk.len() + if current_chunk.is_empty() { 0 } else { 1 } + part.len();
+        while start < text.len() {
+            if text.len() - start <= max_length {
+                result.push(text[start..].to_string());
+                break;
+            }
 
-            // If adding the current part makes the chunk too long,
-            // push the current chunk and start a new one with the current part.
-            if !current_chunk.is_empty() && potential_len > MAX_CHARS_PER_CHUNK {
-                trace!(
-                    "Tokenize: Current chunk ('{}') too long ({} chars), pushing and starting new.",
-                    current_chunk,
-                    current_chunk.len()
-                );
-                chunks.push(current_chunk.trim().to_string()); // Trim before pushing
-                current_chunk = String::from(part);
-            } else {
-                // Otherwise, append the current part to the current chunk.
-                if !current_chunk.is_empty() {
-                    current_chunk.push(' '); // Add a space between parts
+            let mut end = start + max_length - 1;
+
+            if let (Some(char_at_end), Some(char_after_end)) =
+                (text.chars().nth(end), text.chars().nth(end + 1))
+            {
+                if is_space_or_punct(char_at_end) || is_space_or_punct(char_after_end) {
+                    result.push(text[start..=end].to_string());
+                    start = end + 1;
+                    continue;
                 }
-                current_chunk.push_str(part);
-                trace!(
-                    "Tokenize: Appended part to current chunk: '{}' (current length: {})",
-                    current_chunk,
-                    current_chunk.len()
-                );
+            }
+
+            if let Some(split_pos) = last_index_of_space_or_punct(text, start, end) {
+                end = start + split_pos;
+                result.push(text[start..=end].to_string());
+                start = end + 1;
+            } else {
+                return Err(format!(
+                    "The word is too long to split into a short text: '{}...'",
+                    &text[start..start + max_length]
+                ));
             }
         }
-        // Push the final chunk if it's not empty.
-        if !current_chunk.is_empty() {
-            trace!("Tokenize: Pushing final chunk: '{}'", current_chunk);
-            chunks.push(current_chunk.trim().to_string());
-        }
 
-        // Filter out any chunks that might have become empty after trimming.
-        let final_chunks: Vec<String> = chunks
-            .into_iter()
-            .filter(|s| !s.trim().is_empty())
-            .collect();
-        debug!(
-            "Tokenize: Finished tokenization. Resulting chunks ({} total): {:?}",
-            final_chunks.len(),
-            final_chunks
-        );
-        final_chunks
+        Ok(result)
     }
 
     /// Triggers the asynchronous generation of TTS audio for a given call ID, location, and language.
@@ -293,7 +253,13 @@ impl TTSManager {
             text_for_this_lang
         );
         // Tokenize the text into smaller parts.
-        let tokenized_parts = self.tokenize(&text_for_this_lang);
+        let tokenized_parts = match self.split_long_text(&text_for_this_lang, MAX_CHARS_PER_CHUNK) {
+            Ok(parts) => parts,
+            Err(e) => {
+                error!("Failed to tokenize text: {}", e);
+                return Err(e);
+            }
+        };
         debug!(
             "Trigger TTS Generation: Tokenized text into {} parts.",
             tokenized_parts.len()
@@ -399,7 +365,7 @@ impl TTSManager {
         lang: &str,
     ) -> Result<Vec<u8>, String> {
         let mut attempt = 1;
-        
+
         loop {
             debug!(
                 "Fetching Google TTS part {}/{} (lang {}) - attempt {}/{}: URL: {}, User-Agent: {}",
@@ -426,7 +392,7 @@ impl TTSManager {
                         total_parts,
                         attempt
                     );
-                    
+
                     if response.status().is_success() {
                         match response.bytes().await {
                             Ok(bytes) => {
@@ -449,7 +415,7 @@ impl TTSManager {
                                     attempt,
                                     e
                                 );
-                                
+
                                 if attempt >= MAX_TTS_RETRY_ATTEMPTS {
                                     error!("{} - Maximum retries exceeded", error_msg);
                                     return Err(error_msg);
@@ -473,7 +439,7 @@ impl TTSManager {
                             status,
                             error_body
                         );
-                        
+
                         if attempt >= MAX_TTS_RETRY_ATTEMPTS {
                             error!("{} - Maximum retries exceeded", error_msg);
                             return Err(error_msg);
@@ -491,7 +457,7 @@ impl TTSManager {
                         attempt,
                         e
                     );
-                    
+
                     if attempt >= MAX_TTS_RETRY_ATTEMPTS {
                         error!("{} - Maximum retries exceeded", error_msg);
                         return Err(error_msg);
@@ -504,7 +470,7 @@ impl TTSManager {
             // Calculate exponential backoff delay
             let delay_ms = RETRY_BASE_DELAY_MS * (1 << (attempt - 1)); // 200ms, 400ms, 800ms, 1600ms, 3200ms
             let delay_duration = Duration::from_millis(delay_ms);
-            
+
             debug!(
                 "Retrying TTS request for part {}/{} in {}ms (attempt {}/{})",
                 part_idx + 1,
@@ -513,7 +479,7 @@ impl TTSManager {
                 attempt + 1,
                 MAX_TTS_RETRY_ATTEMPTS
             );
-            
+
             sleep(delay_duration).await;
             attempt += 1;
         }
@@ -523,7 +489,7 @@ impl TTSManager {
     /// executed in a spawned Tokio task.
     ///
     /// It checks for cached audio first. If not found, it iterates through text parts,
-    /// fetches audio from Google TTS with retry logic, concatenates them, writes to cache, 
+    /// fetches audio from Google TTS with retry logic, concatenates them, writes to cache,
     /// prunes the cache, and then broadcasts a `TTSComplete` event.
     ///
     /// # Arguments
@@ -812,15 +778,13 @@ impl TTSManager {
         );
     }
 
-    /// Builds the full Google TTS API URL for a given text part, language, and chunk index.
-    ///
-    /// This function constructs the URL including query parameters required by the Google TTS service.
+    /// Builds the full Google TTS API URL for a given text part and language.
+    /// This implementation is ported from `getAudioUrl.ts`.
     ///
     /// # Arguments
     /// - `text_part`: The segment of text to be converted to speech.
     /// - `lang`: The language code (e.g., "en-US", "th").
-    /// - `idx`: The zero-based index of the current text part in the sequence of parts.
-    /// - `total_parts`: The total number of text parts in the sequence.
+    /// - `slow`: Whether to use a slower speech rate.
     ///
     /// # Returns
     /// A `String` containing the fully formed Google TTS API URL.
@@ -830,25 +794,22 @@ impl TTSManager {
         idx: usize,
         total_parts: usize,
     ) -> String {
-        trace!(
-            "Static Build Google TTS URL: Building URL for part {}/{} (lang: '{}', text: '{}')",
-            idx,
-            total_parts,
-            lang,
-            text_part
-        );
-        let encoded_text = url_encode(text_part); // URL-encode the text to be safe in query parameters.
-        let url = format!(
-            "{}?ie=UTF-8&tl={}&q={}&total={}&idx={}&client=tw-ob&textlen={}",
+        let encoded_text = url_encode(text_part);
+        // The `slow` parameter is not used in the original Rust code, so it's set to a default of `false`.
+        // The `ttsspeed` parameter is derived from this boolean.
+        let slow = false;
+        let ttsspeed = if slow { "0.24" } else { "1" };
+
+        format!(
+            "{}?ie=UTF-8&q={}&tl={}&total={}&idx={}&textlen={}&client=tw-ob&prev=input&ttsspeed={}",
             GOOGLE_TTS_URL_BASE,
-            lang,
             encoded_text,
+            lang,
             total_parts,
             idx,
-            text_part.chars().count() // `textlen` parameter is typically character count.
-        );
-        trace!("Static Build Google TTS URL: Generated URL: {}", url);
-        url
+            text_part.len(),
+            ttsspeed
+        )
     }
 
     /// Constructs the human-readable text that will be converted to speech for a call.
