@@ -9,6 +9,7 @@
 //! - Generating and managing user agents to avoid rate limiting or blocking by TTS services.
 //! - Providing methods to trigger TTS generation and retrieve supported languages.
 //! - Broadcasting `AppEvent::TTSComplete` events when audio generation finishes.
+//! - Implementing retry logic for robust TTS generation with exponential backoff.
 
 use fake_user_agent::get_rua;
 use regex::Regex;
@@ -18,10 +19,10 @@ use std::{
     collections::{HashMap, HashSet},
     path::{Path, PathBuf},
     sync::Arc,
-    time::SystemTime, // Import Duration for clarity
+    time::{Duration, SystemTime}, // Import Duration for retry delays
 };
 use tokio::sync::{broadcast, Mutex};
-use tokio::{fs as tokio_fs, io::AsyncWriteExt, task};
+use tokio::{fs as tokio_fs, io::AsyncWriteExt, task, time::sleep}; // Import sleep for retry delays
 use tracing::{debug, error, info, trace, warn}; // Import tracing macros
 use urlencoding::encode as url_encode;
 
@@ -34,6 +35,10 @@ const GOOGLE_TTS_URL_BASE: &str = "http://translate.google.com/translate_tts";
 const MAX_CHARS_PER_CHUNK: usize = 100;
 /// Maximum attempts to generate a unique user agent before potentially reusing one.
 const MAX_UA_GENERATION_ATTEMPTS: u8 = 10;
+/// Maximum number of retry attempts for TTS API requests.
+const MAX_TTS_RETRY_ATTEMPTS: u8 = 5;
+/// Base delay for exponential backoff retry strategy (in milliseconds).
+const RETRY_BASE_DELAY_MS: u64 = 200;
 
 /// Manages Text-to-Speech (TTS) operations, including fetching audio from
 /// external services, caching, and text tokenization.
@@ -370,12 +375,156 @@ impl TTSManager {
         path
     }
 
+    /// Performs a single TTS API request with retry logic.
+    ///
+    /// This function implements exponential backoff retry strategy for robust TTS generation.
+    /// It will retry up to MAX_TTS_RETRY_ATTEMPTS times on failure.
+    ///
+    /// # Arguments
+    /// - `http_client`: The HTTP client to use for the request.
+    /// - `tts_url`: The TTS API URL to request.
+    /// - `user_agent_str`: The User-Agent string to use for the request.
+    /// - `part_idx`: The index of the current text part (for logging).
+    /// - `total_parts`: The total number of text parts (for logging).
+    /// - `lang`: The language code (for logging).
+    ///
+    /// # Returns
+    /// A `Result<Vec<u8>, String>` containing the audio bytes on success or an error message on failure.
+    async fn fetch_tts_with_retry(
+        http_client: &ReqwestClient,
+        tts_url: &str,
+        user_agent_str: &str,
+        part_idx: usize,
+        total_parts: usize,
+        lang: &str,
+    ) -> Result<Vec<u8>, String> {
+        let mut attempt = 1;
+        
+        loop {
+            debug!(
+                "Fetching Google TTS part {}/{} (lang {}) - attempt {}/{}: URL: {}, User-Agent: {}",
+                part_idx + 1,
+                total_parts,
+                lang,
+                attempt,
+                MAX_TTS_RETRY_ATTEMPTS,
+                tts_url,
+                user_agent_str
+            );
+
+            match http_client
+                .get(tts_url)
+                .header(USER_AGENT, user_agent_str)
+                .send()
+                .await
+            {
+                Ok(response) => {
+                    debug!(
+                        "Fetch TTS with Retry: Received response status: {} for part {}/{} (attempt {})",
+                        response.status(),
+                        part_idx + 1,
+                        total_parts,
+                        attempt
+                    );
+                    
+                    if response.status().is_success() {
+                        match response.bytes().await {
+                            Ok(bytes) => {
+                                info!(
+                                    "Successfully fetched TTS part {}/{} (lang {}) on attempt {} - {} bytes received",
+                                    part_idx + 1,
+                                    total_parts,
+                                    lang,
+                                    attempt,
+                                    bytes.len()
+                                );
+                                return Ok(bytes.to_vec());
+                            }
+                            Err(e) => {
+                                let error_msg = format!(
+                                    "Failed to get bytes from Google TTS part {}/{} (lang {}) on attempt {}: {}",
+                                    part_idx + 1,
+                                    total_parts,
+                                    lang,
+                                    attempt,
+                                    e
+                                );
+                                
+                                if attempt >= MAX_TTS_RETRY_ATTEMPTS {
+                                    error!("{} - Maximum retries exceeded", error_msg);
+                                    return Err(error_msg);
+                                } else {
+                                    warn!("{} - Retrying...", error_msg);
+                                }
+                            }
+                        }
+                    } else {
+                        let status = response.status();
+                        let error_body = response
+                            .text()
+                            .await
+                            .unwrap_or_else(|_| "Could not read error body".to_string());
+                        let error_msg = format!(
+                            "Google TTS part {}/{} (lang {}) request failed on attempt {}: Status {}, Body: {}",
+                            part_idx + 1,
+                            total_parts,
+                            lang,
+                            attempt,
+                            status,
+                            error_body
+                        );
+                        
+                        if attempt >= MAX_TTS_RETRY_ATTEMPTS {
+                            error!("{} - Maximum retries exceeded", error_msg);
+                            return Err(error_msg);
+                        } else {
+                            warn!("{} - Retrying...", error_msg);
+                        }
+                    }
+                }
+                Err(e) => {
+                    let error_msg = format!(
+                        "HTTP request to Google TTS part {}/{} (lang {}) failed on attempt {}: {}",
+                        part_idx + 1,
+                        total_parts,
+                        lang,
+                        attempt,
+                        e
+                    );
+                    
+                    if attempt >= MAX_TTS_RETRY_ATTEMPTS {
+                        error!("{} - Maximum retries exceeded", error_msg);
+                        return Err(error_msg);
+                    } else {
+                        warn!("{} - Retrying...", error_msg);
+                    }
+                }
+            }
+
+            // Calculate exponential backoff delay
+            let delay_ms = RETRY_BASE_DELAY_MS * (1 << (attempt - 1)); // 200ms, 400ms, 800ms, 1600ms, 3200ms
+            let delay_duration = Duration::from_millis(delay_ms);
+            
+            debug!(
+                "Retrying TTS request for part {}/{} in {}ms (attempt {}/{})",
+                part_idx + 1,
+                total_parts,
+                delay_ms,
+                attempt + 1,
+                MAX_TTS_RETRY_ATTEMPTS
+            );
+            
+            sleep(delay_duration).await;
+            attempt += 1;
+        }
+    }
+
     /// Performs the actual Google TTS generation task. This is an asynchronous operation
     /// executed in a spawned Tokio task.
     ///
     /// It checks for cached audio first. If not found, it iterates through text parts,
-    /// fetches audio from Google TTS, concatenates them, writes to cache, prunes the cache,
-    /// and then broadcasts a `TTSComplete` event.
+    /// fetches audio from Google TTS with retry logic, concatenates them, writes to cache, 
+    /// prunes the cache, and then broadcasts a `TTSComplete` event.
     ///
     /// # Arguments
     /// - `config`: Shared application configuration.
@@ -533,76 +682,33 @@ impl TTSManager {
                 // if `get_rua()` generates many repetitions quickly.
             }
 
-            // Make the HTTP GET request to the Google TTS API.
-            debug!(
-                "Fetching Google TTS part {}/{} (lang {}): URL: {}, User-Agent: {}",
-                idx + 1,
+            // Fetch audio with retry logic
+            match Self::fetch_tts_with_retry(
+                &http_client,
+                &tts_url,
+                &user_agent_str,
+                idx,
                 total_parts,
-                lang,
-                tts_url,
-                user_agent_str
-            );
-
-            match http_client
-                .get(&tts_url)
-                .header(USER_AGENT, &user_agent_str) // Set the chosen User-Agent header.
-                .send()
-                .await
+                &lang,
+            )
+            .await
             {
-                Ok(response) => {
-                    debug!(
-                        "Perform Google TTS Task: Received response status: {} for part {}/{}",
-                        response.status(),
+                Ok(bytes) => {
+                    trace!(
+                        "Perform Google TTS Task: Received {} bytes for part {}/{}",
+                        bytes.len(),
                         idx + 1,
                         total_parts
                     );
-                    if response.status().is_success() {
-                        match response.bytes().await {
-                            Ok(bytes) => {
-                                trace!(
-                                    "Perform Google TTS Task: Received {} bytes for part {}/{}",
-                                    bytes.len(),
-                                    idx + 1,
-                                    total_parts
-                                );
-                                all_audio_bytes.extend_from_slice(&bytes) // Append audio bytes.
-                            }
-                            Err(e) => {
-                                error!(
-                                    "Failed to get bytes from Google TTS part {}/{} (lang {}): {}",
-                                    idx + 1,
-                                    total_parts,
-                                    lang,
-                                    e
-                                );
-                                return; // Exit task on error.
-                            }
-                        }
-                    } else {
-                        // Log detailed error for non-success HTTP status codes.
-                        let status = response.status();
-                        let error_body = response
-                            .text()
-                            .await
-                            .unwrap_or_else(|_| "Could not read error body".to_string());
-                        error!(
-                            "Google TTS part {}/{} (lang {}) request failed: Status {}, Body: {}",
-                            idx + 1,
-                            total_parts,
-                            lang,
-                            status,
-                            error_body
-                        );
-                        return; // Exit task on error.
-                    }
+                    all_audio_bytes.extend_from_slice(&bytes); // Append audio bytes.
                 }
                 Err(e) => {
-                    // Log HTTP request errors (e.g., network issues, timeouts).
                     error!(
-                        "HTTP request to Google TTS part {}/{} (lang {}) failed: {}",
+                        "Failed to fetch Google TTS part {}/{} (lang {}) after {} retries: {}",
                         idx + 1,
                         total_parts,
                         lang,
+                        MAX_TTS_RETRY_ATTEMPTS,
                         e
                     );
                     return; // Exit task on error.
