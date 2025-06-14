@@ -16,7 +16,16 @@
 
 	// Features to add to the dev container. More info: https://containers.dev/features.
 	"features": {
-		"ghcr.io/devcontainers/features/node:1": {}
+		"ghcr.io/devcontainers/features/node:1": {},
+		"ghcr.io/devcontainers/features/python:1": {
+			"toolsToInstall": "black"
+		}
+	},
+
+	"containerEnv": {
+		"PIP_BREAK_SYSTEM_PACKAGES": "true",
+		"PIP_ROOT_USER_ACTION": "ignore",
+		"PIP_USER": "true"
 	},
 
 	// Use 'forwardPorts' to make a list of ports inside the container available locally.
@@ -24,7 +33,7 @@
 
 	// Use 'postCreateCommand' to run commands after the container is created.
 	// "postCreateCommand": "rustc --version",
-	"postCreateCommand": "sudo apt-get update && sudo apt-get dist-upgrade -y && npm install && cargo clean && cargo build"
+	"postCreateCommand": "sudo apt-get update && sudo apt-get dist-upgrade -y && pip install --upgrade pip && pip install --upgrade -r ./requirements.txt && npm install && cargo clean && cargo build"
 
 	// Configure tool-specific properties.
 	// "customizations": {},
