@@ -63,7 +63,7 @@ pub enum AppEvent {
     /// Contains the current `AnnouncementStatus`.
     AnnouncementStatus(AnnouncementStatus),
     /// An event signaling that a Text-to-Speech audio generation is complete.
-    /// Includes details about the generated audio file.
+    /// Includes details about the generated audio file(s).
     TTSComplete {
         /// The unique ID of the TTS request or associated call.
         id: String,
@@ -71,8 +71,10 @@ pub enum AppEvent {
         location: String,
         /// The language of the generated TTS audio (e.g., "en-US", "th-TH").
         lang: String,
-        /// The URL where the generated audio file can be accessed.
-        audio_url: String,
+        /// The URLs where the generated audio files can be accessed.
+        /// For online TTS, this will contain a single URL.
+        /// For stem audio fallback, this will contain multiple URLs in playback order.
+        audio_urls: Vec<String>,
     },
 }
 
