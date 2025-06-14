@@ -5,8 +5,11 @@
  * (`signage.html`). It updates the current call display, call histories, and handles
  * the playback and cycling of audio announcements and banner media. It primarily
  * relies on Server-Sent Events (SSE) for real-time data updates from the backend.
+ * 
+ * Updated to support multiple TTS audio URLs for stem audio fallback.
+ * 
  * @author LedoKun <romamp100@gmail.com>
- * @version 1.0.0
+ * @version 1.1.0
  */
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -297,13 +300,15 @@ document.addEventListener('DOMContentLoaded', () => {
             // If TTS for this call was somehow already marked ready (e.g., re-queued event), add its audio.
             if (currentProcessingEvent.ttsReady) {
                 const ttsItems = [];
-                currentProcessingEvent.requiredTts.forEach(langCode => {
-                    const audioUrl = currentProcessingEvent.receivedTts[langCode];
-                    // Avoid adding duplicate TTS audio if somehow already present in queue.
-                    if (audioUrl && !audioPlaybackQueue.some(item => item.src === audioUrl && item.playerType === 'tts')) {
-                        ttsItems.push({ src: audioUrl, playerType: 'tts' });
-                    }
-                });
+                // Handle multiple TTS URLs (stem audio fallback)
+                if (currentProcessingEvent.receivedTtsUrls && currentProcessingEvent.receivedTtsUrls.length > 0) {
+                    currentProcessingEvent.receivedTtsUrls.forEach(audioUrl => {
+                        // Avoid adding duplicate TTS audio if somehow already present in queue.
+                        if (audioUrl && !audioPlaybackQueue.some(item => item.src === audioUrl && item.playerType === 'tts')) {
+                            ttsItems.push({ src: audioUrl, playerType: 'tts' });
+                        }
+                    });
+                }
                 if (ttsItems.length > 0) audioPlaybackQueue.push(...ttsItems);
             }
         } else if (currentProcessingEvent.type === 'announcement') {
@@ -480,7 +485,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 console.log("SignageUI: New unique call event identified for queueing:", newCall.id, "-", newCall.location);
                 const callEvent = {
                     type: 'call', id: newCall.id, location: newCall.location, callData: { ...newCall },
-                    requiredTts: [...orderedTtsLangCodes], receivedTts: {},
+                    requiredTts: [...orderedTtsLangCodes], receivedTtsUrls: [], // Changed to handle multiple URLs
                     chimeFinished: false, ttsReady: false, timestamp: new Date().toISOString()
                     // ttsWaitTimeoutId will be added dynamically if needed
                 };
@@ -546,40 +551,59 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     /**
-     * Handles `sse_ttscomplete` custom events. Stores received TTS audio URL for a call
+     * Handles `sse_ttscomplete` custom events. Stores received TTS audio URLs for a call
      * and potentially unblocks its processing if all TTS files are ready.
+     * Updated to handle multiple audio URLs for stem audio fallback.
      * @param {CustomEvent} event - The custom event with `detail` containing `ttsData`.
      * @private
      */
     function handleTTSCompleteSSE(event) {
-        const ttsData = event.detail; // Contains id, location, lang, audio_url.
+        const ttsData = event.detail; // Contains id, location, lang, audio_urls.
         console.log('SignageUI: SSE_TTSCOMPLETE received:', ttsData);
+
+        // Validate that audio_urls is an array
+        if (!Array.isArray(ttsData.audio_urls) || ttsData.audio_urls.length === 0) {
+            console.warn('SignageUI: Received TTSComplete event with invalid or empty audio_urls:', ttsData);
+            return;
+        }
 
         let targetEventForTTS = null;
         // Check if TTS is for the currently processing call.
-        if (currentProcessingEvent && currentProcessingEvent.type === 'call' && currentProcessingEvent.id === ttsData.id && currentProcessingEvent.location === ttsData.location) {
+        if (currentProcessingEvent && currentProcessingEvent.type === 'call' &&
+            currentProcessingEvent.id === ttsData.id && currentProcessingEvent.location === ttsData.location) {
             targetEventForTTS = currentProcessingEvent;
         } else {
             // If not current, search for the call event in the main `eventQueue`.
-            targetEventForTTS = eventQueue.find(evt => evt.type === 'call' && evt.id === ttsData.id && evt.location === ttsData.location);
+            targetEventForTTS = eventQueue.find(evt => evt.type === 'call' &&
+                evt.id === ttsData.id && evt.location === ttsData.location);
         }
 
         if (targetEventForTTS) {
-            // Avoid reprocessing if TTS for this lang was already received and event marked ready.
-            if (targetEventForTTS.ttsReady && targetEventForTTS.receivedTts[ttsData.lang] === ttsData.audio_url) {
-                console.log(`SignageUI: TTS data (${ttsData.lang}) for call ${targetEventForTTS.id}-${targetEventForTTS.location} already processed. Ignoring duplicate.`);
+            // Check if we already have TTS data for this language to avoid reprocessing
+            const langIndex = targetEventForTTS.requiredTts.indexOf(ttsData.lang);
+            if (langIndex === -1) {
+                console.log(`SignageUI: TTS data received for lang '${ttsData.lang}' but it's not in required languages for call ${targetEventForTTS.id}-${targetEventForTTS.location}. Ignoring.`);
                 return;
             }
 
-            targetEventForTTS.receivedTts[ttsData.lang] = ttsData.audio_url; // Store the URL.
-            console.log(`SignageUI: Stored TTS (${ttsData.lang}) for call event ${targetEventForTTS.id}-${targetEventForTTS.location}.`);
+            // Store the TTS audio URLs for this language
+            console.log(`SignageUI: Storing TTS audio URLs (${ttsData.lang}) for call event ${targetEventForTTS.id}-${targetEventForTTS.location}. URLs: ${ttsData.audio_urls.length}`);
 
-            // Check if all required TTS audio files for this event have now been received.
-            const allRequiredTTSForEventReceived = targetEventForTTS.requiredTts.every(lang => !!targetEventForTTS.receivedTts[lang]);
+            // Remove this language from required list and store the URLs
+            targetEventForTTS.requiredTts.splice(langIndex, 1);
 
-            if (allRequiredTTSForEventReceived && !targetEventForTTS.ttsReady) { // Process only if newly becoming ready.
-                targetEventForTTS.ttsReady = true; // Mark the event's TTS as fully ready.
-                console.log(`SignageUI: All TTS now ready for call event ${targetEventForTTS.id}-${targetEventForTTS.location}.`);
+            // For multiple languages, we could store per-language, but for simplicity,
+            // we'll use the first complete language set received
+            if (!targetEventForTTS.receivedTtsUrls || targetEventForTTS.receivedTtsUrls.length === 0) {
+                targetEventForTTS.receivedTtsUrls = [...ttsData.audio_urls];
+            }
+
+            // Check if all required TTS languages have been received (or we have at least one complete set)
+            const allRequiredTTSReceived = targetEventForTTS.requiredTts.length === 0 || targetEventForTTS.receivedTtsUrls.length > 0;
+
+            if (allRequiredTTSReceived && !targetEventForTTS.ttsReady) {
+                targetEventForTTS.ttsReady = true; // Mark the event's TTS as ready.
+                console.log(`SignageUI: TTS now ready for call event ${targetEventForTTS.id}-${targetEventForTTS.location} with ${targetEventForTTS.receivedTtsUrls.length} audio files.`);
 
                 // Clear any pending TTS timeout for this event as TTS has now completed.
                 if (targetEventForTTS.ttsWaitTimeoutId) {
@@ -592,10 +616,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (currentProcessingEvent === targetEventForTTS) {
                     console.log("SignageUI: Adding newly ready TTS audio to live audioPlaybackQueue for CURRENT event.");
                     const ttsAudioItemsToAdd = [];
-                    // Loop through requiredTts to maintain order, though if timeout cleared requiredTts, this might be empty.
-                    // If requiredTts was not cleared by timeout, this populates TTS files in order.
-                    targetEventForTTS.requiredTts.forEach(langCode => {
-                        const audioUrl = targetEventForTTS.receivedTts[langCode];
+
+                    // Add all TTS audio URLs to the playback queue
+                    targetEventForTTS.receivedTtsUrls.forEach(audioUrl => {
                         // Ensure it's not already in the live queue (e.g. from a re-entrant call).
                         if (audioUrl && !audioPlaybackQueue.some(item => item.src === audioUrl && item.playerType === 'tts')) {
                             ttsAudioItemsToAdd.push({ src: audioUrl, playerType: 'tts' });
@@ -615,8 +638,8 @@ document.addEventListener('DOMContentLoaded', () => {
                             playNextAudioFileInSequence();
                         }
                     } else if (!isAudioFilePlaying && audioPlaybackQueue.length === 0 && targetEventForTTS.chimeFinished) {
-                        // Case: All TTS declared ready (e.g. requiredTts became empty due to timeout),
-                        // chime finished, and the audio queue is empty. Proceed to finish the event.
+                        // Case: All TTS declared ready but no URLs to add, chime finished, and the audio queue is empty. 
+                        // Proceed to finish the event.
                         playNextAudioFileInSequence();
                     }
                 }
