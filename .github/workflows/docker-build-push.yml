@@ -122,6 +122,9 @@ jobs:
           push: true
           platforms: linux/amd64,linux/arm64,linux/arm/v7
           tags: ghcr.io/${{ steps.repo_lc.outputs.name }}:latest
+          labels: |
+            org.opencontainers.image.description=A simple queue management system with a web interface and TTS announcements.
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
           build-args: |
             BUILD_DATE=${{ github.event.head_commit.timestamp }}
             VCS_REF=${{ github.sha }}
