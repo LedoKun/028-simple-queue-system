@@ -11,6 +11,7 @@ RUN apt-get update && \
 FROM gcr.io/distroless/cc-debian12:nonroot
 
 LABEL org.opencontainers.image.authors="LedoKun <romamp100@gmail.com>"
+LABEL org.opencontainers.image.description="A simple queue management system with a web interface and TTS announcements."
 
 # Build arguments passed from the GitHub Actions workflow
 ARG BUILD_DATE
