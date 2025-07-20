@@ -1,2 +1,5 @@
 aiohttp
 fake-useragent
+google-genai
+pydub
+tenacity
