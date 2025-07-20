@@ -57,7 +57,7 @@ The system can be configured using the following environment variables. You can 
 | `MAX_SKIPPED_HISTORY_SIZE` | `5` | Maximum number of skipped calls to store in the history. |
 | `SERVE_DIR_PATH` | `./public` | Path to the directory containing static web files. |
 | `ANNOUNCEMENTS_SUB_PATH` | `media/audios_and_banners` | Sub-path within SERVE_DIR_PATH where announcement audio and banner files are located. |
-| `ANNOUNCEMENT_AUTO_CYCLE_INTERVAL_SECONDS` | `1200` | Interval (in seconds) for automatically cycling announcements. Set to 0 to disable. |
+| `ANNOUNCEMENT_AUTO_CYCLE_INTERVAL_SECONDS` | `600` | Interval (in seconds) for automatically cycling announcements. Set to 0 to disable. |
 | `ANNOUNCEMENT_MANUAL_TRIGGER_COOLDOWN_SECONDS` | `60` | Cooldown period (in seconds) after manually triggering an announcement. |
 | `GTTS_CACHE_BASE_PATH` | `/tmp/gtts_audio_cache` | Base path for caching generated TTS audio files. |
 | `TTS_CACHE_MAXIMUM_FILES` | `500` | Maximum number of TTS audio files to keep in the cache. |
