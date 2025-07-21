@@ -1,5 +1,3 @@
-Help fix error for my GitHub workflow. Current code - 
-
 name: Rust CI and Docker Build (Multi-Arch)
 
 on:
