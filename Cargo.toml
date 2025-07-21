@@ -48,8 +48,6 @@ fake_user_agent = "0.2"
 # For regular expressions, used in input validation and text processing.
 regex = "1"
 
-openssl = { version = "0.10", features = ["vendored"] }
-
 # Rocket_CORS: A Rocket fairing to handle Cross-Origin Resource Sharing.
 # Essential for allowing frontend applications from different origins to connect.
 [dependencies.rocket_cors]
