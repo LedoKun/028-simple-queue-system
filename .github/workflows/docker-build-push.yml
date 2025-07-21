@@ -44,7 +44,7 @@ jobs:
         if: matrix.target_info.cross_package
         run: |
           sudo apt-get update -y
-          sudo apt-get install -y ${{ matrix.target_info.cross_package }}
+          sudo apt-get install -y ${{ matrix.target_info.cross_package }} libssl-dev libcrypto-dev build-essential
 
       - name: Rust Cache
         uses: Swatinem/rust-cache@v2
