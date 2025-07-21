@@ -46,10 +46,10 @@ jobs:
         run: |
           apt-get update -y
           # Debian requires allowing dangerous repository changes to add architectures
-          apt-get install -y ca-certificates
+          apt-get install -y ca-certificates build-essential pkg-config curl wget
           dpkg --add-architecture ${{ matrix.target_info.architecture }}
           apt-get update -y
-          apt-get install -y --no-install-recommends ${{ matrix.target_info.cross_package }} build-essential pkg-config curl wget
+          apt-get install -y --no-install-recommends ${{ matrix.target_info.cross_package }}
 
       # The dtolnay/rust-toolchain action is compatible with Debian
       - name: Install Rust toolchain
