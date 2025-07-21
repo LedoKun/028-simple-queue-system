@@ -40,13 +40,6 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # The dtolnay/rust-toolchain action is compatible with Debian
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: stable
-          targets: ${{ matrix.target_info.rust_target }}
-
       # These commands now run inside the Debian container
       - name: Install cross-compilation tools (C linkers/compilers)
         if: matrix.target_info.cross_package
@@ -56,7 +49,14 @@ jobs:
           apt-get install -y ca-certificates
           dpkg --add-architecture ${{ matrix.target_info.architecture }}
           apt-get update -y
-          apt-get install -y --no-install-recommends ${{ matrix.target_info.cross_package }} build-essential pkg-config
+          apt-get install -y --no-install-recommends ${{ matrix.target_info.cross_package }} build-essential pkg-config curl wget
+
+      # The dtolnay/rust-toolchain action is compatible with Debian
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+          targets: ${{ matrix.target_info.rust_target }}
 
       # The Swatinem/rust-cache action is also compatible
       - name: Rust Cache
