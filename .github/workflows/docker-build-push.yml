@@ -28,12 +28,12 @@ jobs:
           - name: arm64
             rust_target: aarch64-unknown-linux-gnu
             linker_command: aarch64-linux-gnu-gcc
-            cross_package: gcc-aarch64-linux-gnu linux-libc-dev-arm64-cross
+            cross_package: gcc-aarch64-linux-gnu
             architecture: arm64
           - name: armhf
             rust_target: armv7-unknown-linux-gnueabihf
             linker_command: arm-linux-gnueabihf-gcc
-            cross_package: gcc-arm-linux-gnueabihf linux-libc-dev-armhf-cross
+            cross_package: gcc-arm-linux-gnueabihf
             architecture: armhf
 
     steps:
@@ -43,7 +43,7 @@ jobs:
       - name: Install base dependencies
         run: |
           apt-get update -y
-          apt-get install -y --no-install-recommends ca-certificates build-essential pkg-config curl gcc-multilib linux-libc-dev
+          apt-get install -y --no-install-recommends ca-certificates build-essential pkg-config curl
 
       # These commands now run inside the Debian container
       - name: Install cross-compilation tools (C linkers/compilers)
@@ -63,8 +63,8 @@ jobs:
       - name: Install cross-compilation tools (C linkers/compilers)
         if: matrix.target_info.cross_package
         run: |
-          sudo apt-get update -y
-          sudo apt-get install -y ${{ matrix.target_info.cross_package }}
+          apt-get update -y
+          apt-get install -y ${{ matrix.target_info.cross_package }}
 
       - name: Rust Cache
         uses: Swatinem/rust-cache@v2
