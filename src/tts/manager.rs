@@ -31,7 +31,7 @@ use urlencoding::encode as url_encode;
 use crate::{config::AppConfig, AppEvent};
 
 /// Base URL for the Google Translate Text-to-Speech API.
-const GOOGLE_TTS_URL_BASE: &str = "http://translate.google.com/translate_tts";
+const GOOGLE_TTS_URL_BASE: &str = "https://translate.google.com/translate_tts";
 /// Maximum number of characters allowed per text chunk for the Google TTS API.
 /// Text longer than this will be split and concatenated.
 const MAX_CHARS_PER_CHUNK: usize = 200;
