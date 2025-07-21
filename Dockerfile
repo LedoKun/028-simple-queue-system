@@ -1,9 +1,10 @@
 # Stage 1: Helper to get tini static binary from a slim Debian image
-FROM debian:bookworm-slim AS tini-env
+FROM debian:bookworm-slim AS build-env
 # tini is a lightweight init system that reaps zombie processes
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends tini && \
+    apt-get install -y --no-install-recommends tini ca-certificates && \
     cp /usr/bin/tini-static /tini-static && \
+    update-ca-certificates && \
     # Clean up apt cache to keep this layer small
     rm -rf /var/lib/apt/lists/*
 
@@ -47,7 +48,10 @@ ENV RUST_LOG=info \
 WORKDIR /
 
 # Copy tini from the helper stage and set execute permissions
-COPY --from=tini-env --chmod=755 /tini-static /tini-static
+COPY --from=build-env --chmod=755 /tini-static /tini-static
+
+# Copy certs from the build-env
+COPY --from=build-env /etc/ssl/certs /etc/ssl/certs
 
 # Copy static assets
 COPY --chown=nonroot:nonroot public /public
