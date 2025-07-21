@@ -13,7 +13,7 @@ jobs:
     name: Build Rust Binary (${{ matrix.target_info.name }})
     runs-on: ubuntu-latest
     # This container directive runs all steps in a Debian environment
-    container: debian:bullseye-slim
+    container: debian:bullseye
     permissions:
       contents: read
       actions: write
