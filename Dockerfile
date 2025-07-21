@@ -55,9 +55,6 @@ COPY --chown=nonroot:nonroot public /public
 # Copy the pre-compiled, platform-specific Rust binary and set execute permissions
 COPY --chmod=755 staging_binaries/${TARGETPLATFORM}/queue-calling-system /queue-calling-system
 
-# The problematic RUN chmod line is now removed, as permissions are set during COPY
-# REMOVED: RUN chmod 755 /queue-calling-system /tini-static
-
 # Define the volume for persistent announcement data
 # This path is relative to WORKDIR / and uses SERVE_DIR_PATH and ANNOUNCEMENTS_SUB_PATH
 VOLUME /public/media/audios_and_banners
