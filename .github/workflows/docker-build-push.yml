@@ -12,9 +12,11 @@ jobs:
   build-rust-binaries:
     name: Build Rust Binary (${{ matrix.target_info.name }})
     runs-on: ubuntu-latest
+    # This container directive runs all steps in a Debian environment
+    container: debian:bullseye-slim
     permissions:
-      contents: read  # For actions/checkout
-      actions: write  # For Swatinem/rust-cache (read and write)
+      contents: read
+      actions: write
     strategy:
       matrix:
         target_info:
@@ -22,28 +24,41 @@ jobs:
             rust_target: x86_64-unknown-linux-gnu
             linker_command: ""
             cross_package: ""
+            architecture: ""
           - name: arm64
             rust_target: aarch64-unknown-linux-gnu
             linker_command: aarch64-linux-gnu-gcc
             cross_package: gcc-aarch64-linux-gnu libssl-dev:arm64
+            architecture: arm64
+          - name: armhf
+            rust_target: armv7-unknown-linux-gnueabihf
+            linker_command: arm-linux-gnueabihf-gcc
+            cross_package: gcc-arm-linux-gnueabihf libssl-dev:armhf
+            architecture: armhf
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      # The dtolnay/rust-toolchain action is compatible with Debian
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: stable
           targets: ${{ matrix.target_info.rust_target }}
 
+      # These commands now run inside the Debian container
       - name: Install cross-compilation tools (C linkers/compilers)
         if: matrix.target_info.cross_package
         run: |
-          sudo dpkg --add-architecture arm64
-          sudo apt-get update -y
-          sudo apt-get install -y ${{ matrix.target_info.cross_package }} build-essential pkg-config
+          apt-get update -y
+          # Debian requires allowing dangerous repository changes to add architectures
+          apt-get install -y ca-certificates
+          dpkg --add-architecture ${{ matrix.target_info.architecture }}
+          apt-get update -y
+          apt-get install -y --no-install-recommends ${{ matrix.target_info.cross_package }} build-essential pkg-config
 
+      # The Swatinem/rust-cache action is also compatible
       - name: Rust Cache
         uses: Swatinem/rust-cache@v2
 
@@ -52,6 +67,8 @@ jobs:
           if [ -n "${{ matrix.target_info.linker_command }}" ]; then
             if [ "${{ matrix.target_info.rust_target }}" = "aarch64-unknown-linux-gnu" ]; then
               export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=${{ matrix.target_info.linker_command }}
+            elif [ "${{ matrix.target_info.rust_target }}" = "armv7-unknown-linux-gnueabihf" ]; then
+              export CARGO_TARGET_ARMV7_UNKNOWN_LINUX_GNUEABIHF_LINKER=${{ matrix.target_info.linker_command }}
             fi
           fi
           cargo build --verbose --release --target ${{ matrix.target_info.rust_target }}
@@ -65,12 +82,12 @@ jobs:
 
   build-and-push-docker:
     name: Build and Push Docker Image
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-latest # Using ubuntu-latest is standard for Docker-based actions
     needs: build-rust-binaries
     permissions:
-      contents: read    # For actions/checkout
-      packages: write   # To push to GitHub Container Registry (GHCR)
-      actions: write    # For Docker layer caching (type=gha) and download-artifact
+      contents: read
+      packages: write
+      actions: write
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -88,6 +105,7 @@ jobs:
 
           cp ./downloaded-artifacts/app-binary-amd64/queue-calling-system ./staging_binaries/linux/amd64/queue-calling-system
           cp ./downloaded-artifacts/app-binary-arm64/queue-calling-system ./staging_binaries/linux/arm64/queue-calling-system
+          cp ./downloaded-artifacts/app-binary-armhf/queue-calling-system ./staging_binaries/linux/arm/v7/queue-calling-system
 
           echo "Contents of staging_binaries:"
           ls -R ./staging_binaries
