@@ -60,7 +60,12 @@ jobs:
           toolchain: stable
           targets: ${{ matrix.target_info.rust_target }}
 
-      # The Swatinem/rust-cache action is also compatible
+      - name: Install cross-compilation tools (C linkers/compilers)
+        if: matrix.target_info.cross_package
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y ${{ matrix.target_info.cross_package }}
+
       - name: Rust Cache
         uses: Swatinem/rust-cache@v2
 
