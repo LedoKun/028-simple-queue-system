@@ -43,7 +43,7 @@ jobs:
       - name: Install base dependencies
         run: |
           apt-get update -y
-          apt-get install -y --no-install-recommends ca-certificates build-essential pkg-config curl
+          apt-get install -y --no-install-recommends ca-certificates build-essential pkg-config curl gcc-multilib
 
       # These commands now run inside the Debian container
       - name: Install cross-compilation tools (C linkers/compilers)
