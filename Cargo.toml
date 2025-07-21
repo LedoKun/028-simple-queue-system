@@ -26,7 +26,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 # Reqwest: HTTP client. "json" feature for JSON support.
 # `default-features = false` is used to explicitly manage features and reduce dependencies.
-reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
+reqwest = { version = "0.12", features = ["json", "rustls-tls", "brotli", "gzip", "zstd", "deflate"], default-features = false }
 
 # For recursive directory traversal, used in announcement scanning.
 walkdir = "2"

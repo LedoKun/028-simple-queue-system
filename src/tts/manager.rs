@@ -85,6 +85,13 @@ impl TTSManager {
         // Build the HTTP client with a configured timeout.
         let http_client = ReqwestClient::builder()
             .timeout(config.tts_external_service_timeout())
+            .use_rustls_tls()
+            .tls_built_in_root_certs(true)
+            .tls_built_in_webpki_certs(true)
+            .gzip(true)
+            .brotli(true)
+            .zstd(true)
+            .deflate(true)
             .build()
             .expect("Failed to create HTTP client for TTSManager");
         debug!(
