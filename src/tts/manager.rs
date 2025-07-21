@@ -3,6 +3,7 @@
 //! Manages Text-to-Speech (TTS) generation and caching for the Queue Calling System.
 //!
 //! This module is responsible for:
+//! - Checking for pre-generated audio files for immediate response.
 //! - Initializing an HTTP client for external TTS services (like Google Translate TTS).
 //! - Handling the caching of generated audio files to reduce redundant API calls.
 //! - Tokenizing input text into smaller chunks suitable for TTS API limits.
@@ -30,7 +31,7 @@ use urlencoding::encode as url_encode;
 use crate::{config::AppConfig, AppEvent};
 
 /// Base URL for the Google Translate Text-to-Speech API.
-const GOOGLE_TTS_URL_BASE: &str = "http://translate.google.com/translate_tts";
+const GOOGLE_TTS_URL_BASE: &str = "https://translate.google.com/translate_tts";
 /// Maximum number of characters allowed per text chunk for the Google TTS API.
 /// Text longer than this will be split and concatenated.
 const MAX_CHARS_PER_CHUNK: usize = 200;
@@ -41,7 +42,7 @@ const MAX_TTS_RETRY_ATTEMPTS: u8 = 5;
 /// Base delay for exponential backoff retry strategy (in milliseconds).
 const RETRY_BASE_DELAY_MS: u64 = 200;
 /// Timeout for online TTS generation before falling back to stem audio (in seconds).
-const ONLINE_TTS_TIMEOUT_SECONDS: u64 = 2;
+const ONLINE_TTS_TIMEOUT_SECONDS: u64 = 5;
 
 /// Manages Text-to-Speech (TTS) operations, including fetching audio from
 /// external services, caching, text tokenization, and fallback to stem audio.
@@ -491,10 +492,10 @@ impl TTSManager {
     /// Performs the actual TTS generation task with fallback to stem audio.
     /// This is an asynchronous operation executed in a spawned Tokio task.
     ///
-    /// It checks for cached audio first. If not found, it attempts online TTS generation
-    /// for ALL supported languages with a timeout. If online TTS fails or times out,
-    /// it falls back to stem audio files. Finally, it broadcasts a `TTSComplete` event
-    /// with the audio URL(s).
+    /// It first checks for a pre-generated file. If not found, it checks for a dynamically
+    /// cached audio file. If neither is found, it attempts online TTS generation for all
+    /// supported languages with a timeout. If online TTS fails or times out, it falls
+    /// back to stem audio files. Finally, it broadcasts a `TTSComplete` event.
     ///
     /// # Arguments
     /// - `config`: Shared application configuration.
@@ -504,7 +505,7 @@ impl TTSManager {
     /// - `id`: Call ID.
     /// - `location`: Call location.
     /// - `lang`: Language code (used for event response, but we generate for all languages).
-    /// - `text_parts`: Pre-tokenized text chunks to synthesize (not used for multi-lang).
+    /// - `_text_parts`: Pre-tokenized text chunks (not used for multi-lang generation).
     async fn perform_tts_task_with_fallback(
         config: Arc<AppConfig>,
         http_client: ReqwestClient,
@@ -520,7 +521,53 @@ impl TTSManager {
             id, lang, location
         );
 
-        // Get all supported languages in order
+        let call_filename = Self::get_sanitized_call_filename(&id, &location);
+
+        // --- 1. PRE-GENERATED CACHE CHECK ---
+        // The pre-generated path is inside the public serving directory, as requested.
+        let pregen_fs_base_path = config.serve_dir_path.join("media/audio_cache/multi");
+        let pregen_file_path = pregen_fs_base_path.join(&call_filename);
+
+        debug!(
+            "TTS task: for call_id='{}', checking pre-generated path='{:?}'",
+            id, pregen_file_path
+        );
+
+        if tokio_fs::metadata(&pregen_file_path).await.is_ok() {
+            info!("Found pre-generated TTS audio: {:?}", pregen_file_path);
+            // The URL is relative to the root of the serving directory. We use serve_dir_path as the
+            // filesystem base and an empty string for the web path segment to achieve this.
+            if let Some(audio_url) = Self::get_web_accessible_audio_url(
+                &pregen_file_path,
+                &config.serve_dir_path,
+                &config.serve_dir_path, // Base for stripping is the entire public dir
+                "",                     // Web path segment is empty (root)
+            ) {
+                debug!(
+                    "Perform TTS Task: Broadcasting TTSComplete for pre-generated audio. URL: {}",
+                    audio_url
+                );
+                let event = AppEvent::TTSComplete {
+                    id: id.clone(),
+                    location: location.clone(),
+                    lang: lang.clone(),
+                    audio_urls: vec![audio_url],
+                };
+                if let Err(e) = sender.send(event) {
+                    debug!("Failed to broadcast TTSComplete for pre-generated TTS audio (id: {}, lang: {}): {}", id, lang, e);
+                }
+            } else {
+                error!("Failed to get web-accessible URL for pre-generated TTS audio (id: {}, lang: {}): {:?}", id, lang, pregen_file_path);
+            }
+            return; // Exit after finding the pre-generated file.
+        }
+
+        info!(
+            "Pre-generated audio not found. Checking dynamic cache for call id '{}'...",
+            id
+        );
+
+        // Get all supported languages in order.
         let ordered_lang_codes = config.ordered_supported_language_codes();
         if ordered_lang_codes.is_empty() {
             warn!("No supported languages configured, falling back to stem audio");
@@ -528,22 +575,22 @@ impl TTSManager {
             return;
         }
 
-        // Determine the expected path for the cached concatenated audio file
+        // --- 2. DYNAMIC CACHE CHECK ---
+        // Determine the expected path for the dynamically cached concatenated audio file.
         let cache_file_path =
             Self::get_multi_language_cache_file_path(&config.gtts_cache_base_path, &id, &location);
 
         debug!(
-            "TTS task: for call_id='{}', location='{}', checking cache_path='{:?}'",
-            id, location, cache_file_path
+            "TTS task: for call_id='{}', checking dynamic cache path='{:?}'",
+            id, cache_file_path
         );
 
-        // Check if the concatenated audio file already exists in the cache.
+        // Check if the concatenated audio file already exists in the dynamic cache.
         if tokio_fs::metadata(&cache_file_path).await.is_ok() {
             info!(
-                "Multi-language TTS audio found in cache: {:?}",
+                "Multi-language TTS audio found in dynamic cache: {:?}",
                 cache_file_path
             );
-            debug!("Perform TTS Task: Attempting to get web-accessible URL for cached file.");
             // If cached, get its web-accessible URL and broadcast a completion event.
             if let Some(audio_url) = Self::get_web_accessible_audio_url(
                 &cache_file_path,
@@ -567,15 +614,16 @@ impl TTSManager {
             } else {
                 error!("Failed to get web-accessible URL for cached TTS audio (id: {}, lang: {}): {:?}", id, lang, cache_file_path);
             }
-            return; // Exit if audio is found in cache
+            return; // Exit if audio is found in the dynamic cache.
         }
 
         info!(
-            "Multi-language TTS audio not found in cache ({:?}), attempting online generation for call id '{}'...",
+            "Dynamic TTS audio not found in cache ({:?}), attempting online generation for call id '{}'...",
             cache_file_path, id
         );
 
-        // Attempt online TTS generation for all languages with timeout
+        // --- 3. ONLINE GENERATION AND FALLBACK ---
+        // Attempt online TTS generation for all languages with a timeout.
         let online_tts_timeout = Duration::from_secs(ONLINE_TTS_TIMEOUT_SECONDS);
         let online_tts_result = tokio::time::timeout(
             online_tts_timeout,
@@ -592,7 +640,7 @@ impl TTSManager {
 
         match online_tts_result {
             Ok(Ok(audio_url)) => {
-                // Online TTS succeeded
+                // Online TTS succeeded.
                 info!(
                     "Online multi-language TTS generation succeeded for call id '{}'",
                     id
@@ -608,12 +656,12 @@ impl TTSManager {
                 }
             }
             Ok(Err(online_error)) => {
-                // Online TTS failed
+                // Online TTS failed.
                 warn!("Online multi-language TTS generation failed for call id '{}': {}. Falling back to stem audio.", id, online_error);
                 Self::fallback_to_stem_audio(&config, &sender, &id, &location, &lang).await;
             }
             Err(_timeout_error) => {
-                // Online TTS timed out
+                // Online TTS timed out.
                 warn!("Online multi-language TTS generation timed out after {}s for call id '{}'. Falling back to stem audio.", ONLINE_TTS_TIMEOUT_SECONDS, id);
                 Self::fallback_to_stem_audio(&config, &sender, &id, &location, &lang).await;
             }
@@ -771,12 +819,9 @@ impl TTSManager {
         })
     }
 
-    /// Generates a cache file path for multi-language TTS audio.
-    fn get_multi_language_cache_file_path(
-        cache_base_path: &Path,
-        call_id: &str,
-        call_location: &str,
-    ) -> PathBuf {
+    /// Generates a sanitized filename for a multi-language TTS call.
+    /// e.g., "A01", "Counter 1" -> "A01-Counter_1.mp3"
+    fn get_sanitized_call_filename(call_id: &str, call_location: &str) -> String {
         let sanitize = |s: &str| {
             s.chars()
                 .map(|c| {
@@ -788,15 +833,20 @@ impl TTSManager {
                 })
                 .collect::<String>()
         };
-
         let call_id_sanitized = sanitize(call_id);
         let call_location_sanitized = sanitize(call_location);
+        format!("{}-{}.mp3", call_id_sanitized, call_location_sanitized)
+    }
 
+    /// Generates a cache file path for multi-language TTS audio.
+    fn get_multi_language_cache_file_path(
+        cache_base_path: &Path,
+        call_id: &str,
+        call_location: &str,
+    ) -> PathBuf {
+        let filename = Self::get_sanitized_call_filename(call_id, call_location);
         // Store multi-language files in a "multi" subdirectory
-        cache_base_path.join("multi").join(format!(
-            "{}-{}.mp3",
-            call_id_sanitized, call_location_sanitized
-        ))
+        cache_base_path.join("multi").join(filename)
     }
 
     /// Generates a unique user agent that hasn't been used recently.
@@ -1348,7 +1398,7 @@ impl TTSManager {
                 trace!("Build Speak Text: Thai phrasing: '{}'", text);
                 text
             }
-            "en-uk" | "en-us" | "en" => {
+            "en-uk" | "en-us" | "en-gb" | "en" => {
                 let text = format!("Number {}, to counter {}", id, location); // English phrasing
                 trace!("Build Speak Text: English phrasing: '{}'", text);
                 text
