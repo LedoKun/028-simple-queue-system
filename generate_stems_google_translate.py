@@ -14,7 +14,7 @@ REQUEST_TIMEOUT = 5
 MAX_RETRIES = 10
 GOOGLE_TTS_URL = "https://translate.google.com/translate_tts"
 # New: Set desired bitrate for compression (e.g., "64k", "48k")
-COMPRESSION_BITRATE = "24k"
+COMPRESSION_BITRATE = "32k"
 ua = UserAgent()
 
 THAI_PHRASE_FILENAME_MAP = {
@@ -33,13 +33,6 @@ PARTS_TO_GENERATE = {
         "numbers": [str(i) for i in range(0, 10)],
         "characters": [chr(i) for i in range(ord('A'), ord('Z') + 1)]
     }
-}
-
-# --- New: Configuration for Cache Pre-generation ---
-CACHE_CONFIG = {
-    "chars": [chr(i) for i in range(ord('A'), ord('C') + 1)],
-    "numbers": range(1, 61),  # 1 to 60
-    "counters": range(1, 6)    # 1 to 5
 }
 
 
@@ -197,11 +190,21 @@ async def pregenerate_cache():
     semaphore = asyncio.Semaphore(CONCURRENCY_LIMIT)
     tasks = []
 
-    all_combinations = list(product(
-        CACHE_CONFIG["chars"],
-        CACHE_CONFIG["numbers"],
-        CACHE_CONFIG["counters"]
+    # A
+    A_combinations = list(product(
+        ["A"],
+        list(range(1, 101)),
+        list(range(1, 6))
     ))
+
+    # Other chars
+    X_combinations = list(product(
+        [chr(i) for i in range(ord('B'), ord('C') + 1)],
+        range(1, 11),  # 1 to 10
+        range(1, 6)    # 1 to 5
+    ))
+
+    all_combinations = A_combinations + X_combinations
 
     tasks_to_create = []
     print("Checking for existing cache files...")
