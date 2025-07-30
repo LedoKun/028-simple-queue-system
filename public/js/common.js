@@ -220,3 +220,29 @@ function formatDisplayTime(isoTimestamp) {
         return "Invalid Time";
     }
 }
+
+// --- Periodic Page Refresh ---
+
+/**
+ * Sets up a periodic page refresh to prevent long-term memory leaks from crashing the browser.
+ * This is a pragmatic solution for long-running kiosk/signage applications.
+ */
+(function setupPeriodicRefresh() {
+    // Refresh the page every 30 minutes (30 * 60 * 1000 milliseconds).
+    const REFRESH_INTERVAL_MS = 30 * 60 * 1000;
+
+    // Set a timeout for the main refresh action.
+    setTimeout(() => {
+        // Log a warning message 10 seconds before the actual reload.
+        // This helps developers watching the console to know it's intentional.
+        console.warn(`Page will be refreshed in 10 seconds to clear memory and prevent crashes.`);
+
+        setTimeout(() => {
+            console.log("PERIODIC REFRESH: Reloading page now.");
+            location.reload();
+        }, 10000); // 10-second warning period
+
+    }, REFRESH_INTERVAL_MS - 10000); // Schedule the warning to appear 10s before the full interval.
+
+    console.log(`Periodic page refresh scheduled every ${REFRESH_INTERVAL_MS / 60000} minutes.`);
+})();
