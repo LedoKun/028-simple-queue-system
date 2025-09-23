@@ -50,12 +50,20 @@ document.addEventListener('DOMContentLoaded', () => {
      * are pushed here and processed sequentially to manage audio playback and UI updates.
      */
     let eventQueue = [];
+    window.SignageEventQueue = eventQueue;
 
     /**
      * @type {object|null} The event object currently being processed (i.e., its audio is playing or being prepared).
      * Ensures only one event's audio sequence (e.g., chime + TTS for a call) is active at a time.
      */
     let currentProcessingEvent = null;
+    Object.defineProperty(window, 'SignageCurrentEvent', {
+        configurable: true,
+        enumerable: false,
+        get() {
+            return currentProcessingEvent;
+        }
+    });
 
     /**
      * @type {Array<object>} A queue of audio file URLs and their player types (chime, tts, announcement),

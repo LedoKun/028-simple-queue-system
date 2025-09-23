@@ -225,24 +225,111 @@ function formatDisplayTime(isoTimestamp) {
 
 /**
  * Sets up a periodic page refresh to prevent long-term memory leaks from crashing the browser.
- * This is a pragmatic solution for long-running kiosk/signage applications.
+ * This version adds safeguards for active signage announcements and preserves operator inputs.
  */
 (function setupPeriodicRefresh() {
-    // Refresh the page every 30 minutes (30 * 60 * 1000 milliseconds).
-    const REFRESH_INTERVAL_MS = 30 * 60 * 1000;
+    const REFRESH_INTERVAL_MS = 30 * 60 * 1000; // 30 minutes
+    const REFRESH_WARNING_MS = 10_000; // Warn 10 seconds before refresh
+    const OPERATOR_STATION_STORAGE_KEY = 'operator_station_number';
 
-    // Set a timeout for the main refresh action.
-    setTimeout(() => {
-        // Log a warning message 10 seconds before the actual reload.
-        // This helps developers watching the console to know it's intentional.
-        console.warn(`Page will be refreshed in 10 seconds to clear memory and prevent crashes.`);
+    const isSignagePage = () => window.location.pathname.includes('signage');
+    const isOperatorPage = () => window.location.pathname.includes('operator');
 
+    const isAudioActive = (audioEl) =>
+        !!audioEl && !audioEl.paused && !audioEl.ended && audioEl.currentTime > 0;
+
+    const hasActiveAnnouncementPlayback = () => {
+        if (!isSignagePage()) return false;
+        const announcementAudio = document.getElementById('announcement-audio-player');
+        const ttsAudio = document.getElementById('tts-audio-player');
+        const chimeAudio = document.getElementById('chimeAudio');
+        const isAudioPlaying = [announcementAudio, ttsAudio, chimeAudio].some(isAudioActive);
+
+        let pendingQueue = false;
+        const globalQueue = window.SignageEventQueue;
+        const currentEvent = window.SignageCurrentEvent;
+
+        if (Array.isArray(globalQueue) && globalQueue.length > 0) {
+            pendingQueue = true;
+        }
+
+        if (currentEvent && typeof currentEvent === 'object') {
+            // Treat an ongoing event like announcement/call as active work that should block refresh.
+            pendingQueue = true;
+        }
+
+        return isAudioPlaying || pendingQueue;
+    };
+
+    const saveOperatorStationValue = () => {
+        if (!isOperatorPage()) return;
+        const stationInput = document.getElementById('call-location');
+        if (stationInput) {
+            try {
+                sessionStorage.setItem(OPERATOR_STATION_STORAGE_KEY, stationInput.value || '');
+            } catch (error) {
+                console.warn('Unable to persist operator station value:', error);
+            }
+        }
+    };
+
+    const restoreOperatorStationValue = () => {
+        if (!isOperatorPage()) return;
+        try {
+            const storedValue = sessionStorage.getItem(OPERATOR_STATION_STORAGE_KEY);
+            if (storedValue !== null) {
+                const stationInput = document.getElementById('call-location');
+                if (stationInput && !stationInput.value) {
+                    stationInput.value = storedValue;
+                }
+            }
+        } catch (error) {
+            console.warn('Unable to restore operator station value:', error);
+        }
+    };
+
+    const monitorOperatorStationInput = () => {
+        if (!isOperatorPage()) return;
+        const stationInput = document.getElementById('call-location');
+        if (stationInput) {
+            stationInput.addEventListener('input', saveOperatorStationValue);
+        }
+    };
+
+    const scheduleRefreshCycle = () => {
         setTimeout(() => {
-            console.log("PERIODIC REFRESH: Reloading page now.");
-            location.reload();
-        }, 10000); // 10-second warning period
+            console.warn('Page will be refreshed in 10 seconds to clear memory and prevent crashes.');
 
-    }, REFRESH_INTERVAL_MS - 10000); // Schedule the warning to appear 10s before the full interval.
+            const attemptRefresh = () => {
+                if (hasActiveAnnouncementPlayback()) {
+                    console.info('Delaying refresh; announcement audio is still playing.');
+                    setTimeout(attemptRefresh, REFRESH_WARNING_MS);
+                    return;
+                }
 
+                saveOperatorStationValue();
+                console.log('PERIODIC REFRESH: Reloading page now.');
+                location.reload();
+            };
+
+            setTimeout(attemptRefresh, REFRESH_WARNING_MS);
+        }, REFRESH_INTERVAL_MS - REFRESH_WARNING_MS);
+    };
+
+    const initializeOperatorPersistence = () => {
+        if (!isOperatorPage()) return;
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', () => {
+                restoreOperatorStationValue();
+                monitorOperatorStationInput();
+            });
+        } else {
+            restoreOperatorStationValue();
+            monitorOperatorStationInput();
+        }
+    };
+
+    initializeOperatorPersistence();
+    scheduleRefreshCycle();
     console.log(`Periodic page refresh scheduled every ${REFRESH_INTERVAL_MS / 60000} minutes.`);
 })();
