@@ -1,69 +1,36 @@
-# Cargo.toml
-
 [package]
-name = "queue-calling-system"  # The name of your crate.
-version = "0.1.0"             # The current version of your crate.
-edition = "2021"              # The Rust edition to compile against.
+name = "queue-calling-system"
+version = "0.1.0"
+edition = "2021"
 
 [dependencies]
-# Rocket web framework. The "json" feature is needed for API JSON handling.
-rocket = { version = "0.5", features = ["json"] }
-
-# Tokio asynchronous runtime.
-tokio = { version = "1", features = ["full"] }
-
-# Serde for serialization/deserialization. "derive" enables macros.
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0" # For JSON-specific operations.
-
-# For loading environment variables from a .env file during development.
-dotenv = "0.15"
-
-# Tracing for structured logging and observability.
-tracing = "0.1"
-# Configures tracing. "env-filter" allows controlling log levels via the RUST_LOG environment variable.
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-
-# Reqwest: HTTP client. "json" feature for JSON support.
-# `default-features = false` is used to explicitly manage features and reduce dependencies.
-reqwest = { version = "0.12", features = ["json", "rustls-tls", "brotli", "gzip", "zstd", "deflate"], default-features = false }
-
-# For recursive directory traversal, used in announcement scanning.
-walkdir = "2"
-
-# For handling dates and times. "serde" feature enables serialization.
 chrono = { version = "0.4", features = ["serde"] }
-
-# For loading structured configuration from environment variables.
+dotenv = "0.15"
 envconfig = "0.10"
 envconfig_derive = "0.10"
-
-# Utilities for URL manipulation.
+fake_user_agent = "0.2"
+regex = "1"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "brotli", "gzip", "zstd", "deflate"] }
+rocket = { version = "0.5", features = ["json"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tokio = { version = "1", features = ["full"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 url = "2.5"
 urlencoding = "2.1"
+walkdir = "2"
 
-# For generating realistic user agents to avoid bot detection by external services.
-fake_user_agent = "0.2"
-
-# For regular expressions, used in input validation and text processing.
-regex = "1"
-
-# Rocket_CORS: A Rocket fairing to handle Cross-Origin Resource Sharing.
-# Essential for allowing frontend applications from different origins to connect.
 [dependencies.rocket_cors]
 version = "0.6"
 
-# Defines dependencies that are only used for testing, examples, and benchmarks.
 [dev-dependencies]
-# Enhances `assert_eq!` messages for clearer test failures.
 pretty_assertions = "1.4"
-# Provides utilities for testing with `tracing` enabled.
 tracing-test = "0.2"
 
-# Defines custom build profiles. The `release` profile is for optimized production builds.
 [profile.release]
-opt-level = 3       # Optimization level: 0-3. 3 is the default for release.
-lto = "fat"         # Link-Time Optimization: "fat" provides the most aggressive whole-program optimization.
-codegen-units = 1   # Number of code generation units. 1 maximizes optimization but increases compile time.
-panic = "abort"     # What to do on panic. "abort" results in smaller binaries as it avoids unwind tables.
-strip = true        # Strips debug symbols, significantly reducing the binary size.
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+strip = true
