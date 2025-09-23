@@ -29,4 +29,6 @@ pub mod manager;
 // use crate::announcements::{AnnouncementManager, AnnouncementSlot, AnnouncementStatus};
 pub use manager::AnnouncementManager;
 pub use manager::AnnouncementSlot;
+pub use manager::AnnouncementSlotSummary;
 pub use manager::AnnouncementStatus;
+pub use manager::ManualTriggerError;

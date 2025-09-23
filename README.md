@@ -56,9 +56,11 @@ The system can be configured using the following environment variables. You can 
 | `MAX_HISTORY_SIZE` | `5` | Maximum number of completed calls to store in the history. |
 | `MAX_SKIPPED_HISTORY_SIZE` | `5` | Maximum number of skipped calls to store in the history. |
 | `SERVE_DIR_PATH` | `./public` | Path to the directory containing static web files. |
-| `ANNOUNCEMENTS_SUB_PATH` | `media/audios_and_banners` | Sub-path within SERVE_DIR_PATH where announcement audio and banner files are located. |
+| `ANNOUNCEMENTS_AUDIO_SUB_PATH` | `media/announcements` | Sub-path within SERVE_DIR_PATH where announcement audio files are located. |
+| `BANNERS_SUB_PATH` | `media/banners` | Sub-path within SERVE_DIR_PATH where banner media is stored. |
 | `ANNOUNCEMENT_AUTO_CYCLE_INTERVAL_SECONDS` | `600` | Interval (in seconds) for automatically cycling announcements. Set to 0 to disable. |
-| `ANNOUNCEMENT_MANUAL_TRIGGER_COOLDOWN_SECONDS` | `60` | Cooldown period (in seconds) after manually triggering an announcement. |
+| `ANNOUNCEMENT_MANUAL_TRIGGER_COOLDOWN_SECONDS` | `5` | Cooldown period (in seconds) after manually triggering an announcement. |
+| `BANNER_ROTATION_INTERVAL_SECONDS` | `10` | Interval (in seconds) for rotating banners on the signage display. |
 | `GTTS_CACHE_BASE_PATH` | `/tmp/gtts_audio_cache` | Base path for caching generated TTS audio files. |
 | `TTS_CACHE_MAXIMUM_FILES` | `500` | Maximum number of TTS audio files to keep in the cache. |
 | `TTS_EXTERNAL_SERVICE_TIMEOUT_SECONDS` | `15` | Timeout (in seconds) for external TTS service requests. |

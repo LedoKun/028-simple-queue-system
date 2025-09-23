@@ -16,15 +16,16 @@
 
 use regex; // Import the regex crate for input validation
 use rocket::{
-    get, post, response::status, response::stream::EventStream, serde::json::Json, State,
+    get, http::Status, post, response::status, response::stream::EventStream, serde::json::Json,
+    State,
 };
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use tokio::sync::broadcast;
 use tokio::time as TokioTime;
 use tracing::{debug, error, info, trace, warn}; // Import tracing macros
 
-use crate::announcements;
+use crate::announcements::{self, ManualTriggerError};
 use crate::queue::QueueState;
 use crate::sse::manager::SSEManager;
 use crate::{AppEvent, AppState}; // Ensure AppEvent and AppState are imported
@@ -69,6 +70,15 @@ pub struct ForceSkipRequest {
     /// The location associated with the skipped call (e.g., "5", "10").
     /// Validation enforces digits only.
     location: String,
+}
+
+/// Standard error response payload for API endpoints.
+#[derive(Serialize, Debug)]
+#[serde(crate = "rocket::serde")]
+pub struct ErrorResponse {
+    error: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    remaining_seconds: Option<u64>,
 }
 
 /// Rocket route for manually triggering Text-to-Speech generation for a given call.
@@ -605,12 +615,87 @@ pub async fn get_announcement_status(
 /// # Returns
 /// `status::Accepted` (202) with a confirmation message.
 #[post("/announcements/next")]
-pub async fn manual_advance_announcement(state: &State<AppState>) -> status::Accepted<String> {
+pub async fn manual_advance_announcement(
+    state: &State<AppState>,
+) -> Result<status::Accepted<String>, status::Custom<Json<ErrorResponse>>> {
     info!("POST /api/announcements/next: Triggering manual announcement advancement.");
     let mut announcement_manager = state.announcement_manager.lock().await;
-    announcement_manager.manual_advance_slot().await;
-    // Release the announcement_manager lock.
+    let manual_result = announcement_manager.manual_advance_slot().await;
     drop(announcement_manager);
-    debug!("Announcement advancement triggered successfully.");
-    status::Accepted("Announcement advancement triggered".to_string())
+
+    match manual_result {
+        Ok(_) => {
+            debug!("Manual announcement advancement triggered successfully.");
+            Ok(status::Accepted(
+                "Announcement advancement triggered".to_string(),
+            ))
+        }
+        Err(err) => {
+            warn!("Manual announcement advancement failed: {}", err);
+            Err(manual_trigger_error_to_response(&err))
+        }
+    }
+}
+
+/// Rocket route for manually triggering a specific announcement slot by ID.
+#[post("/announcements/trigger/<slot_id>")]
+pub async fn manual_trigger_specific_announcement(
+    state: &State<AppState>,
+    slot_id: &str,
+) -> Result<status::Accepted<String>, status::Custom<Json<ErrorResponse>>> {
+    info!(
+        "POST /api/announcements/trigger/{}: Triggering manual announcement by slot ID.",
+        slot_id
+    );
+    let mut announcement_manager = state.announcement_manager.lock().await;
+    let manual_result = announcement_manager.manual_trigger_slot(slot_id).await;
+    drop(announcement_manager);
+
+    match manual_result {
+        Ok(_) => {
+            debug!(
+                "Manual announcement trigger succeeded for slot '{}'.",
+                slot_id
+            );
+            Ok(status::Accepted(format!(
+                "Announcement '{}' triggered",
+                slot_id
+            )))
+        }
+        Err(err) => {
+            warn!(
+                "Manual announcement trigger for slot '{}' failed: {}",
+                slot_id, err
+            );
+            Err(manual_trigger_error_to_response(&err))
+        }
+    }
+}
+
+fn manual_trigger_error_to_response(
+    err: &ManualTriggerError,
+) -> status::Custom<Json<ErrorResponse>> {
+    match err {
+        ManualTriggerError::CooldownActive { remaining_seconds } => status::Custom(
+            Status::TooManyRequests,
+            Json(ErrorResponse {
+                error: err.to_string(),
+                remaining_seconds: Some(*remaining_seconds),
+            }),
+        ),
+        ManualTriggerError::SlotNotFound(_) => status::Custom(
+            Status::NotFound,
+            Json(ErrorResponse {
+                error: err.to_string(),
+                remaining_seconds: None,
+            }),
+        ),
+        ManualTriggerError::NoSlotsAvailable => status::Custom(
+            Status::ServiceUnavailable,
+            Json(ErrorResponse {
+                error: err.to_string(),
+                remaining_seconds: None,
+            }),
+        ),
+    }
 }

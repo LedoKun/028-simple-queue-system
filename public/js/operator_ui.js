@@ -27,6 +27,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const statusAnnouncementCooldown = document.getElementById('status-announcement-cooldown');
     const statusAnnouncementCooldownTimer = document.getElementById('status-announcement-cooldown-timer');
     const btnNextAnnouncement = document.getElementById('btn-next-announcement');
+    const announcementSlotList = document.getElementById('announcement-slot-list');
 
     const sseStatusIndicator = document.getElementById('sse-status-indicator');
 
@@ -35,6 +36,11 @@ document.addEventListener('DOMContentLoaded', () => {
      * Used to clear the interval when the cooldown ends or status updates.
      */
     let cooldownIntervalId = null;
+
+    /**
+     * @type {object|null} Stores the last known announcement status for fallback UI updates.
+     */
+    let lastAnnouncementStatus = null;
 
     /**
      * @constant {number} MAX_LIST_ITEMS_OPERATOR - Maximum number of history/skipped calls
@@ -160,6 +166,79 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     /**
+     * Creates a shallow clone of the announcement status suitable for UI caching.
+     * @param {object|null} status
+     * @returns {object|null}
+     */
+    function cloneAnnouncementStatus(status) {
+        if (!status) return null;
+        return {
+            ...status,
+            available_slots: Array.isArray(status.available_slots)
+                ? status.available_slots.map(slot => ({
+                    ...slot,
+                    audio_playlist: Array.isArray(slot.audio_playlist) ? [...slot.audio_playlist] : [],
+                }))
+                : [],
+        };
+    }
+
+    /**
+     * Renders the list of available announcement slots with manual trigger buttons.
+     * @param {object|null} announcementStatus - The current announcement status.
+     * @private
+     */
+    function renderAnnouncementSlotButtons(announcementStatus) {
+        if (!announcementSlotList) return;
+
+        announcementSlotList.innerHTML = '';
+
+        if (!announcementStatus || !Array.isArray(announcementStatus.available_slots) || announcementStatus.available_slots.length === 0) {
+            const placeholder = document.createElement('p');
+            placeholder.className = 'text-sm text-gray-400 italic';
+            placeholder.textContent = 'No announcements available.';
+            announcementSlotList.appendChild(placeholder);
+            return;
+        }
+
+        const cooldownActive = Boolean(announcementStatus.cooldown_active);
+        const activeSlotId = announcementStatus.current_slot_id || null;
+
+        announcementStatus.available_slots.forEach(slot => {
+            const slotButton = document.createElement('button');
+            slotButton.type = 'button';
+            slotButton.className = 'flex items-center justify-between gap-2 w-full bg-purple-700 hover:bg-purple-800 text-white font-semibold py-2 px-3 rounded-md shadow focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-opacity-50 transition duration-150 text-left';
+
+            if (slot.id === activeSlotId) {
+                slotButton.classList.add('border', 'border-purple-300');
+            }
+
+            const audioCount = Array.isArray(slot.audio_playlist) ? slot.audio_playlist.length : 0;
+
+            const labelSpan = document.createElement('span');
+            labelSpan.className = 'slot-trigger-label';
+            labelSpan.textContent = `Trigger ${slot.id}`;
+            slotButton.appendChild(labelSpan);
+
+            const metaSpan = document.createElement('span');
+            metaSpan.className = 'slot-trigger-meta text-xs text-purple-200 uppercase tracking-wide';
+            const metaParts = [`${audioCount} file${audioCount === 1 ? '' : 's'}`];
+            if (slot.id === activeSlotId) metaParts.push('current');
+            metaSpan.textContent = metaParts.join(' • ');
+            slotButton.appendChild(metaSpan);
+
+            if (cooldownActive) {
+                slotButton.disabled = true;
+                slotButton.classList.add('opacity-50', 'cursor-not-allowed');
+            }
+
+            slotButton.addEventListener('click', () => handleManualAnnouncementTrigger(slot.id, slotButton));
+
+            announcementSlotList.appendChild(slotButton);
+        });
+    }
+
+    /**
      * Updates the display of the current announcement slot and its cooldown status.
      * Manages a countdown timer for the manual trigger cooldown.
      *
@@ -173,12 +252,15 @@ document.addEventListener('DOMContentLoaded', () => {
     function updateAnnouncementStatusDisplay(announcementStatus) {
         console.log("OperatorUI: 'updateAnnouncementStatusDisplay' called with status:", announcementStatus);
 
+        lastAnnouncementStatus = cloneAnnouncementStatus(announcementStatus);
+
         // Handle cases where announcementStatus is null or undefined.
         if (!announcementStatus) {
             console.warn("OperatorUI: 'announcementStatus' is null or undefined in 'updateAnnouncementStatusDisplay'. Displaying placeholders.");
             if (statusAnnouncementSlot) statusAnnouncementSlot.textContent = 'N/A';
             if (statusAnnouncementCooldown) statusAnnouncementCooldown.textContent = 'Unknown';
             if (statusAnnouncementCooldownTimer) statusAnnouncementCooldownTimer.textContent = '';
+            renderAnnouncementSlotButtons(null);
             // Disable the 'Next Announcement' button if status is unknown.
             if (btnNextAnnouncement) {
                 btnNextAnnouncement.disabled = true;
@@ -186,6 +268,8 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             return;
         }
+
+        renderAnnouncementSlotButtons(announcementStatus);
 
         // Update current announcement slot ID display.
         if (statusAnnouncementSlot) statusAnnouncementSlot.textContent = announcementStatus.current_slot_id || 'N/A';
@@ -225,6 +309,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         btnNextAnnouncement.disabled = false;
                         btnNextAnnouncement.classList.remove('opacity-50', 'cursor-not-allowed');
                     }
+                    renderAnnouncementSlotButtons({ ...announcementStatus, cooldown_active: false, cooldown_remaining_seconds: 0 });
                 }
             }, 1000); // Update every second.
         } else {
@@ -420,6 +505,48 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     /**
+     * Handles manual triggering of a specific announcement slot.
+     * @param {string} slotId - The ID of the announcement slot to trigger.
+     * @param {HTMLButtonElement} [buttonEl] - The button element that initiated the request.
+     * @async
+     * @private
+     */
+    async function handleManualAnnouncementTrigger(slotId, buttonEl) {
+        clearFeedback();
+
+        const labelSpan = buttonEl ? buttonEl.querySelector('.slot-trigger-label') : null;
+        const metaSpan = buttonEl ? buttonEl.querySelector('.slot-trigger-meta') : null;
+        const originalLabel = labelSpan ? labelSpan.textContent : null;
+        const originalMeta = metaSpan ? metaSpan.textContent : null;
+
+        if (buttonEl) {
+            buttonEl.disabled = true;
+            buttonEl.classList.add('opacity-50', 'cursor-not-allowed');
+            if (labelSpan) labelSpan.textContent = `Triggering ${slotId}...`;
+            if (metaSpan) metaSpan.textContent = 'Please wait';
+        }
+
+        const response = await apiClient.triggerAnnouncement(slotId);
+
+        if (response) {
+            const message = (response.message && typeof response.message === 'string')
+                ? response.message
+                : `Announcement '${sanitizeText(slotId)}' trigger requested.`;
+            showFeedback(message, 'info');
+        }
+
+        setTimeout(() => {
+            if (!buttonEl || !document.body.contains(buttonEl)) return; // Button likely re-rendered by SSE.
+            if (!buttonEl.disabled) return; // Already re-enabled by status update.
+            if (labelSpan && originalLabel) labelSpan.textContent = originalLabel;
+            if (metaSpan && originalMeta) metaSpan.textContent = originalMeta;
+            buttonEl.disabled = false;
+            buttonEl.classList.remove('opacity-50', 'cursor-not-allowed');
+            console.warn(`OperatorUI: Re-enabled manual announcement button for '${slotId}' via timeout; SSE update may be delayed.`);
+        }, 7000);
+    }
+
+    /**
      * Handles the click event for the 'Trigger Next Announcement' button.
      * Initiates a manual announcement advancement via the API.
      *
@@ -450,6 +577,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 btnNextAnnouncement.disabled = false;
                 btnNextAnnouncement.textContent = 'Trigger Next Announcement';
                 console.warn("OperatorUI: Re-enabled 'Next Announcement' button via timeout; SSE update might be delayed or an issue occurred preventing status update.");
+                if (lastAnnouncementStatus) {
+                    const clonedStatus = cloneAnnouncementStatus(lastAnnouncementStatus);
+                    if (clonedStatus) {
+                        clonedStatus.cooldown_active = false;
+                        clonedStatus.cooldown_remaining_seconds = 0;
+                        renderAnnouncementSlotButtons(clonedStatus);
+                    }
+                }
             } else if (btnNextAnnouncement && !btnNextAnnouncement.disabled) {
                 // If it was already re-enabled (e.g., by SSE update), just ensure text is correct.
                 btnNextAnnouncement.textContent = 'Trigger Next Announcement';

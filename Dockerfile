@@ -34,9 +34,11 @@ ENV RUST_LOG=info \
     MAX_HISTORY_SIZE=5 \
     MAX_SKIPPED_HISTORY_SIZE=5 \
     SERVE_DIR_PATH=./public \
-    ANNOUNCEMENTS_SUB_PATH=media/audios_and_banners \
+    ANNOUNCEMENTS_AUDIO_SUB_PATH=media/announcements \
+    BANNERS_SUB_PATH=media/banners \
     ANNOUNCEMENT_AUTO_CYCLE_INTERVAL_SECONDS=600 \
-    ANNOUNCEMENT_MANUAL_TRIGGER_COOLDOWN_SECONDS=60 \
+    ANNOUNCEMENT_MANUAL_TRIGGER_COOLDOWN_SECONDS=5 \
+    BANNER_ROTATION_INTERVAL_SECONDS=10 \
     GTTS_CACHE_BASE_PATH=/tmp/gtts_audio_cache \
     TTS_CACHE_MAXIMUM_FILES=500 \
     TTS_EXTERNAL_SERVICE_TIMEOUT_SECONDS=5 \
@@ -59,9 +61,9 @@ COPY --chown=nonroot:nonroot public /public
 # Copy the pre-compiled, platform-specific Rust binary and set execute permissions
 COPY --chmod=755 staging_binaries/${TARGETPLATFORM}/queue-calling-system /queue-calling-system
 
-# Define the volume for persistent announcement data
-# This path is relative to WORKDIR / and uses SERVE_DIR_PATH and ANNOUNCEMENTS_SUB_PATH
-VOLUME /public/media/audios_and_banners
+# Define the volumes for persistent announcement data
+# These paths are relative to WORKDIR / and align with SERVE_DIR_PATH
+VOLUME ["/public/media/announcements", "/public/media/banners"]
 
 # Use tini as the entrypoint to manage the application process
 ENTRYPOINT ["/tini-static", "--"]

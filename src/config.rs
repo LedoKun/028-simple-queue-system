@@ -9,6 +9,7 @@
 //! loaded configuration.
 
 use envconfig::Envconfig;
+use std::env;
 use std::net::{IpAddr, SocketAddr};
 use std::path::PathBuf; // Import Path for potential use in docs
 use std::time::Duration;
@@ -62,10 +63,18 @@ pub struct AppConfig {
     /// The sub-path within `SERVE_DIR_PATH` where custom announcement audio files are stored.
     /// This path will be joined with `serve_dir_path` to form the full path.
     ///
-    /// Corresponds to the `ANNOUNCEMENTS_SUB_PATH` environment variable.
-    /// Default: `media/audios_and_banners`.
-    #[envconfig(from = "ANNOUNCEMENTS_SUB_PATH", default = "media/audios_and_banners")]
-    pub announcements_sub_path: PathBuf,
+    /// Corresponds to the `ANNOUNCEMENTS_AUDIO_SUB_PATH` environment variable.
+    /// Default: `media/announcements`.
+    #[envconfig(from = "ANNOUNCEMENTS_AUDIO_SUB_PATH", default = "media/announcements")]
+    pub announcements_audio_sub_path: PathBuf,
+
+    /// The sub-path within `SERVE_DIR_PATH` where banner media files are stored.
+    /// Banners are now decoupled from announcement audio to allow separate rotation timings.
+    ///
+    /// Corresponds to the `BANNERS_SUB_PATH` environment variable.
+    /// Default: `media/banners`.
+    #[envconfig(from = "BANNERS_SUB_PATH", default = "media/banners")]
+    pub banners_sub_path: PathBuf,
 
     /// The interval in seconds after which the announcement system will automatically cycle
     /// to the next announcement, if configured to do so.
@@ -79,9 +88,16 @@ pub struct AppConfig {
     /// another manual trigger will be ignored.
     ///
     /// Corresponds to the `ANNOUNCEMENT_MANUAL_TRIGGER_COOLDOWN_SECONDS` environment variable.
-    /// Default: `60` (1 minute).
-    #[envconfig(from = "ANNOUNCEMENT_MANUAL_TRIGGER_COOLDOWN_SECONDS", default = "60")]
+    /// Default: `5` seconds.
+    #[envconfig(from = "ANNOUNCEMENT_MANUAL_TRIGGER_COOLDOWN_SECONDS", default = "5")]
     pub announcement_manual_trigger_cooldown_seconds: u64,
+
+    /// The interval in seconds between banner rotations on the signage display.
+    ///
+    /// Corresponds to the `BANNER_ROTATION_INTERVAL_SECONDS` environment variable.
+    /// Default: `10` seconds.
+    #[envconfig(from = "BANNER_ROTATION_INTERVAL_SECONDS", default = "10")]
+    pub banner_rotation_interval_seconds: u64,
 
     /// The base directory used for caching generated Text-to-Speech (TTS) audio files.
     /// This directory must be writable by the application.
@@ -168,7 +184,16 @@ impl AppConfig {
         // Initialize AppConfig from environment variables.
         // The `Envconfig` derive macro handles parsing and defaults.
         match Self::init_from_env() {
-            Ok(config) => {
+            Ok(mut config) => {
+                // Canonicalize serve_dir_path so that downstream path operations (e.g., strip_prefix)
+                // operate on consistent absolute paths. If canonicalization fails (e.g., path does not yet
+                // exist), fall back to joining with the current working directory to obtain an absolute path.
+                config.serve_dir_path = match config.serve_dir_path.canonicalize() {
+                    Ok(canonical) => canonical,
+                    Err(_) => env::current_dir()
+                        .map(|cwd| cwd.join(&config.serve_dir_path))
+                        .unwrap_or_else(|_| config.serve_dir_path.clone()),
+                };
                 info!("Application configuration loaded successfully.");
                 debug!("Loaded configuration: {:#?}", config); // Use debug for detailed config dump
                 config
@@ -183,16 +208,36 @@ impl AppConfig {
         }
     }
 
-    /// Constructs the full, absolute path to the base directory for custom announcements.
+    /// Constructs the full, absolute path to the base directory for custom announcement audio.
     ///
-    /// This path is formed by joining `serve_dir_path` with `announcements_sub_path`.
+    /// This path is formed by joining `serve_dir_path` with `announcements_audio_sub_path`.
     ///
     /// # Returns
-    /// A `PathBuf` representing the combined base path for announcements.
-    pub fn announcement_base_path(&self) -> PathBuf {
-        let full_path = self.serve_dir_path.join(&self.announcements_sub_path);
-        debug!("Calculated announcement_base_path: {:?}", full_path);
+    /// A `PathBuf` representing the combined base path for announcement audio.
+    pub fn announcement_audio_base_path(&self) -> PathBuf {
+        let full_path = self.serve_dir_path.join(&self.announcements_audio_sub_path);
+        debug!("Calculated announcement_audio_base_path: {:?}", full_path);
         full_path
+    }
+
+    /// Constructs the full, absolute path to the base directory for banner media.
+    ///
+    /// # Returns
+    /// A `PathBuf` representing the combined base path for banners.
+    pub fn banner_base_path(&self) -> PathBuf {
+        let full_path = self.serve_dir_path.join(&self.banners_sub_path);
+        debug!("Calculated banner_base_path: {:?}", full_path);
+        full_path
+    }
+
+    /// Converts the `banner_rotation_interval_seconds` into a `Duration`.
+    ///
+    /// # Returns
+    /// A `Duration` representing the banner rotation interval.
+    pub fn banner_rotation_interval(&self) -> Duration {
+        let duration = Duration::from_secs(self.banner_rotation_interval_seconds);
+        debug!("Banner rotation interval duration: {:?}", duration);
+        duration
     }
 
     /// Combines the `server_address` and `server_port` into a `SocketAddr`.
@@ -319,7 +364,9 @@ mod tests {
             max_history_size: 5,
             max_skipped_history_size: 5,
             serve_dir_path: PathBuf::from("./public"),
-            announcements_sub_path: PathBuf::from("media"),
+            announcements_audio_sub_path: PathBuf::from("media"),
+            banners_sub_path: PathBuf::from("media"),
+            banner_rotation_interval_seconds: 10,
             announcement_auto_cycle_interval_seconds: 1200,
             announcement_manual_trigger_cooldown_seconds: 60,
             gtts_cache_base_path: PathBuf::from("/tmp/cache"),

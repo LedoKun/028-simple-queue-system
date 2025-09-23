@@ -69,8 +69,8 @@ async fn main() -> Result<(), rocket::Error> {
     }
 
     // 2. announcements_base_path: Directory for storing custom announcement audio files.
-    // This path is derived from `serve_dir_path` and `announcements_sub_path`.
-    let announcements_path = config.announcement_base_path();
+    // This path is derived from `serve_dir_path` and `announcements_audio_sub_path`.
+    let announcements_path = config.announcement_audio_base_path();
     tracing::debug!(
         "Checking/creating announcements directory at: {:?}",
         announcements_path
@@ -88,6 +88,23 @@ async fn main() -> Result<(), rocket::Error> {
         tracing::info!(
             "Successfully ensured announcements directory exists at {:?}",
             announcements_path
+        );
+    }
+
+    // 3. banner_base_path: Directory for storing banner assets used by signage clients.
+    let banner_path = config.banner_base_path();
+    tracing::debug!("Checking/creating banner directory at: {:?}", banner_path);
+    if let Err(e) = fs::create_dir_all(&banner_path) {
+        tracing::error!(
+            "CRITICAL: Failed to ensure banner directory exists at {:?}: {}",
+            banner_path,
+            e
+        );
+        panic!("Failed to ensure essential banner directory exists. Shutting down.");
+    } else {
+        tracing::info!(
+            "Successfully ensured banner directory exists at {:?}",
+            banner_path
         );
     }
     tracing::info!("Directory setup complete.");
@@ -147,6 +164,7 @@ async fn main() -> Result<(), rocket::Error> {
                 routes::get_queue_state, // Get the current state of the call queue.
                 routes::get_announcement_status, // Get status of ongoing announcements.
                 routes::manual_advance_announcement, // Manually advance announcement playback.
+                routes::manual_trigger_specific_announcement, // Trigger a specific announcement slot.
             ],
         )
         // Mount the TTS cache FileServer at its configured web path.

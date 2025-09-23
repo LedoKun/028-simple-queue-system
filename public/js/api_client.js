@@ -251,6 +251,18 @@ const apiClient = {
     },
 
     /**
+     * Triggers a specific announcement slot by its identifier.
+     * @memberof apiClient
+     * @param {string} slotId - The identifier of the announcement slot to trigger.
+     * @returns {Promise<object|null>} The API response or null on error.
+     */
+    triggerAnnouncement: function (slotId) {
+        console.log("API_CLIENT: triggerAnnouncement initiated for slot:", slotId);
+        const encodedSlot = encodeURIComponent(slotId);
+        return this.request(`/announcements/trigger/${encodedSlot}`, { method: 'POST' });
+    },
+
+    /**
      * Fetches the current status of the announcement system, including the active slot
      * and cooldown information for manual triggers.
      * @memberof apiClient

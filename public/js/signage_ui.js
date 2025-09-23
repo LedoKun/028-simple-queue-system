@@ -20,7 +20,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const listHistoryCalls = document.getElementById('list-history-calls'); // <ul> for recently called history.
     const listSkippedCalls = document.getElementById('list-skipped-calls'); // <ul> for no-show/skipped calls.
     const announcementBannerContainer = document.getElementById('announcement-banner-container'); // Container for banner images/videos.
-    const announcementPlaceholderSpan = document.getElementById('announcement-placeholder'); // Span shown when no banner is active.
+    let announcementPlaceholderSpan = document.getElementById('announcement-placeholder'); // Span shown when no banner is active.
     const chimeAudio = document.getElementById("chimeAudio"); // <audio> element for the chime sound.
     const announcementAudioPlayer = document.getElementById('announcement-audio-player'); // <audio> element for announcement audio files.
     const ttsAudioPlayer = document.getElementById('tts-audio-player'); // <audio> element for Text-to-Speech audio.
@@ -428,6 +428,52 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     /**
+     * Ensures the announcement banner placeholder elements exist inside the container.
+     * Creates them dynamically if they were removed (e.g., by innerHTML resets).
+     * @returns {{wrapper: HTMLElement|null, span: HTMLElement|null}}
+     */
+    function ensureBannerPlaceholderElement() {
+        if (!announcementBannerContainer) {
+            return { wrapper: null, span: null };
+        }
+
+        let wrapper = announcementPlaceholderSpan ? announcementPlaceholderSpan.parentElement : null;
+
+        if (!announcementPlaceholderSpan || !wrapper) {
+            wrapper = document.createElement('div');
+            wrapper.className = 'w-full h-full flex justify-center items-center bg-gray-750 rounded';
+
+            const span = document.createElement('span');
+            span.id = 'announcement-placeholder';
+            span.className = 'text-gray-500 text-sm md:text-base';
+            span.textContent = 'Announcements';
+
+            wrapper.appendChild(span);
+            announcementBannerContainer.appendChild(wrapper);
+            announcementPlaceholderSpan = span;
+            return { wrapper, span };
+        }
+
+        if (!announcementBannerContainer.contains(wrapper)) {
+            announcementBannerContainer.appendChild(wrapper);
+        }
+
+        return { wrapper, span: announcementPlaceholderSpan };
+    }
+
+    /**
+     * Removes all child nodes from the announcement banner container.
+     */
+    function clearBannerContainer(placeholderWrapper = null) {
+        if (!announcementBannerContainer) return;
+        Array.from(announcementBannerContainer.children).forEach(child => {
+            if (!placeholderWrapper || child !== placeholderWrapper) {
+                announcementBannerContainer.removeChild(child);
+            }
+        });
+    }
+
+    /**
      * Updates static text placeholders on the page (e.g., "Waiting for calls...")
      * based on the `window.currentGlobalLanguage`.
      * @private
@@ -442,7 +488,10 @@ document.addEventListener('DOMContentLoaded', () => {
         const skippedLi = listSkippedCalls.querySelector('.italic');
         if (skippedLi && listSkippedCalls.children.length <= 1) skippedLi.textContent = labels.skippedPlaceholder || "No skipped calls.";
 
-        if (announcementPlaceholderSpan) announcementPlaceholderSpan.textContent = labels.announcementPlaceholder || "Announcements";
+        const { span: placeholderSpan } = ensureBannerPlaceholderElement();
+        if (placeholderSpan) {
+            placeholderSpan.textContent = labels.announcementPlaceholder || "Announcements";
+        }
     }
 
     // --- SSE Event Handlers ---
@@ -739,62 +788,99 @@ document.addEventListener('DOMContentLoaded', () => {
      * @private
      */
     function updateAnnouncementDisplay(announcementStatus) {
-        // Clear any existing banner cycling interval.
-        if (bannerIntervalId) { clearInterval(bannerIntervalId); bannerIntervalId = null; }
+        if (!announcementBannerContainer) return;
 
-        announcementBannerContainer.innerHTML = ''; // Clear previous banner content.
-        const placeholderParentDiv = announcementPlaceholderSpan ? announcementPlaceholderSpan.parentElement : null;
+        // Clear any existing banner cycling interval.
+        if (bannerIntervalId) {
+            clearInterval(bannerIntervalId);
+            bannerIntervalId = null;
+        }
+
+        const { wrapper: placeholderWrapper, span: placeholderSpan } = ensureBannerPlaceholderElement();
+
+        clearBannerContainer(placeholderWrapper);
 
         // If no announcement or no banners, show the placeholder text.
         if (!announcementStatus || !announcementStatus.current_banner_playlist || announcementStatus.current_banner_playlist.length === 0) {
-            if (placeholderParentDiv) placeholderParentDiv.classList.remove('hidden'); // Show placeholder's parent div.
-            if (announcementPlaceholderSpan) {
-                updateStaticElementPlaceholders(); // Ensure placeholder text is correct.
-                announcementPlaceholderSpan.classList.remove('hidden'); // Show the placeholder span itself.
+            if (placeholderWrapper) {
+                placeholderWrapper.classList.remove('hidden');
+                announcementBannerContainer.appendChild(placeholderWrapper);
+            }
+            if (placeholderSpan) {
+                const lang = window.currentGlobalLanguage || 'en';
+                const labels = (UI_TEXT && UI_TEXT[lang]) ? UI_TEXT[lang] : (UI_TEXT && UI_TEXT.en ? UI_TEXT.en : {});
+                placeholderSpan.textContent = labels.announcementPlaceholder || "Announcements";
             }
             return;
         }
 
-        // Banners are present, so hide the placeholder.
-        if (placeholderParentDiv) placeholderParentDiv.classList.add('hidden');
-        if (announcementPlaceholderSpan) announcementPlaceholderSpan.classList.add('hidden');
+        if (placeholderWrapper) {
+            placeholderWrapper.classList.add('hidden');
+        }
 
-        const banners = announcementStatus.current_banner_playlist;
+        const banners = announcementStatus.current_banner_playlist.slice();
         let currentBannerIdx = 0; // Start with the first banner.
 
         /** Displays the banner at `currentBannerIdx`. Handles images and videos. */
         function displayCurrentBanner() {
-            if (banners.length === 0) { // Safeguard if called with empty list.
-                if (placeholderParentDiv) placeholderParentDiv.classList.remove('hidden'); return;
+            if (banners.length === 0) {
+                if (placeholderWrapper) {
+                    announcementBannerContainer.appendChild(placeholderWrapper);
+                }
+                return;
             }
+
             const bannerUrl = banners[currentBannerIdx];
             const extension = bannerUrl.split('.').pop().toLowerCase();
-            announcementBannerContainer.innerHTML = ''; // Clear previous banner.
+            clearBannerContainer(placeholderWrapper);
 
-            if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg'].includes(extension)) {
-                const img = document.createElement('img'); img.src = bannerUrl; img.alt = "Announcement Banner"; img.className = "banner-media";
+            if (["jpg", "jpeg", "png", "gif", "webp", "svg"].includes(extension)) {
+                const img = document.createElement('img');
+                img.src = bannerUrl;
+                img.alt = "Announcement Banner";
+                img.className = "banner-media";
                 announcementBannerContainer.appendChild(img);
-            } else if (['mp4', 'webm', 'ogg'].includes(extension)) {
-                const video = document.createElement('video'); video.src = bannerUrl; video.className = "banner-media";
-                video.autoplay = true; video.muted = true; video.playsInline = true; video.loop = (banners.length === 1); // Loop only if it's a single video.
-                // If multiple videos, advance to next on 'ended'.
-                if (banners.length > 1) video.onended = () => { currentBannerIdx = (currentBannerIdx + 1) % banners.length; displayCurrentBanner(); };
+            } else if (["mp4", "webm", "ogg", "mov"].includes(extension)) {
+                const video = document.createElement('video');
+                video.src = bannerUrl;
+                video.className = "banner-media";
+                video.autoplay = true;
+                video.muted = true;
+                video.playsInline = true;
+                video.loop = (banners.length === 1);
+                if (banners.length > 1) {
+                    video.onended = () => {
+                        currentBannerIdx = (currentBannerIdx + 1) % banners.length;
+                        displayCurrentBanner();
+                    };
+                }
                 announcementBannerContainer.appendChild(video);
                 video.play().catch(e => console.error("SignageUI: Error playing banner video:", bannerUrl, e));
             } else {
                 console.warn('SignageUI: Unsupported banner media type:', bannerUrl);
-                if (placeholderParentDiv) placeholderParentDiv.classList.remove('hidden'); // Fallback to placeholder.
+                if (placeholderWrapper) {
+                    placeholderWrapper.classList.remove('hidden');
+                    announcementBannerContainer.appendChild(placeholderWrapper);
+                }
             }
         }
+
         displayCurrentBanner(); // Display the first banner immediately.
 
         // If multiple banners, and they are all images, set up an interval to cycle them.
         // Videos handle their own cycling via the 'onended' event.
         if (banners.length > 1) {
-            const isImagePlaylist = banners.every(url => ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg'].includes(url.split('.').pop().toLowerCase()));
+            const isImagePlaylist = banners.every(url => {
+                const ext = url.split('.').pop().toLowerCase();
+                return ["jpg", "jpeg", "png", "gif", "webp", "svg"].includes(ext);
+            });
+
             if (isImagePlaylist) {
                 const imageCycleTime = (announcementStatus.banner_cycle_interval_seconds || 10) * 1000; // Default to 10s.
-                bannerIntervalId = setInterval(() => { currentBannerIdx = (currentBannerIdx + 1) % banners.length; displayCurrentBanner(); }, imageCycleTime);
+                bannerIntervalId = setInterval(() => {
+                    currentBannerIdx = (currentBannerIdx + 1) % banners.length;
+                    displayCurrentBanner();
+                }, imageCycleTime);
             }
         }
     }
