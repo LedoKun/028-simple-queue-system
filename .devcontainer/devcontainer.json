@@ -18,7 +18,7 @@
 	"features": {
 		"ghcr.io/devcontainers/features/node:1": {},
 		"ghcr.io/devcontainers/features/python:1": {
-			"toolsToInstall": "black"
+			"toolsToInstall": "ruff uv"
 		}
 	},
 
@@ -33,10 +33,21 @@
 
 	// Use 'postCreateCommand' to run commands after the container is created.
 	// "postCreateCommand": "rustc --version",
-	"postCreateCommand": "sudo apt-get update && sudo apt-get install -y ffmpeg && sudo apt-get dist-upgrade -y && pip install --upgrade pip && pip install --upgrade -r ./requirements.txt && npm install && cargo clean && cargo build"
+	"postCreateCommand": "sudo apt-get update && sudo apt-get install -y ffmpeg && sudo apt-get dist-upgrade -y && uv pip install --system --upgrade -r ./requirements.txt && npm install && cargo clean && cargo build",
 
-	// Configure tool-specific properties.
-	// "customizations": {},
+	"customizations": {
+		"vscode": {
+			"extensions": [
+				"ms-python.python",
+				"charliermarsh.ruff"
+			],
+			"settings": {
+				"python.linting.enabled": true,
+				"python.linting.ruffEnabled": true,
+				"python.linting.pylintEnabled": false
+			}
+		}
+	},
 
 	// Uncomment to connect as root instead. More info: https://aka.ms/dev-containers-non-root.
 	// "remoteUser": "root"
