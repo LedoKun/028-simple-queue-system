@@ -25,7 +25,8 @@
 	"containerEnv": {
 		"PIP_BREAK_SYSTEM_PACKAGES": "true",
 		"PIP_ROOT_USER_ACTION": "ignore",
-		"PIP_USER": "true"
+		"PIP_USER": "true",
+		"RUST_LOG": "debug"
 	},
 
 	// Use 'forwardPorts' to make a list of ports inside the container available locally.
