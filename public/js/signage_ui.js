@@ -723,16 +723,9 @@ document.addEventListener('DOMContentLoaded', () => {
      */
     function dispatchSseStatusToIndicator(statusKey, message = '') {
         if (!sseStatusIndicator) return;
-        sseStatusIndicator.textContent = message || statusKey;
-        let bgColor = sseStatusIndicator.dataset.lastBgColor || 'bg-gray-500'; // Default.
-        switch (statusKey) {
-            case 'connecting': bgColor = 'bg-yellow-500'; break;
-            case 'connected': bgColor = 'bg-green-500'; break;
-            case 'disconnected': bgColor = 'bg-red-500'; break;
-            default: bgColor = 'bg-gray-600'; // Fallback for unknown status.
-        }
-        sseStatusIndicator.className = `fixed bottom-1 right-1 p-1 px-2 text-xs rounded-full text-white opacity-75 z-50 ${bgColor}`;
-        sseStatusIndicator.dataset.lastBgColor = bgColor; // Store for persistence if needed.
+        const normalizedStatus = statusKey || 'status';
+        sseStatusIndicator.textContent = message || normalizedStatus;
+        sseStatusIndicator.dataset.status = normalizedStatus;
     }
 
     // --- UI Update Helper Functions ---

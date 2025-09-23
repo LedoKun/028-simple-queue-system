@@ -18,166 +18,286 @@
             height: 100vh;
             width: 100vw;
             overflow: hidden;
-            background-color: #111827;
-            /* Tailwind gray-900 */
-            color: #d1d5db;
-            /* Tailwind gray-300 */
             font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
-        }
-
-        body {
+            color: #e5e7eb;
+            background: radial-gradient(120% 120% at 50% 20%, #1f2937 0%, #111827 60%, #0b1120 100%);
             -webkit-font-smoothing: antialiased;
             -moz-osx-font-smoothing: grayscale;
         }
 
-        .current-call-id {
-            font-size: clamp(4rem, 27vw, 22rem);
-            /* Adjusted max for potentially less width */
-            line-height: 1;
-            font-weight: 900;
-            color: #facc15;
-            /* yellow-400 */
-            text-shadow: 2px 2px 6px rgba(0, 0, 0, 0.4);
+        .signage-shell {
+            display: flex;
+            height: 100vh;
+            padding: 1.75rem 2rem;
+            gap: 1.75rem;
+            backdrop-filter: blur(10px);
         }
 
-        .current-call-location {
-            font-size: clamp(3rem, 20vw, 16rem);
-            /* Adjusted max */
-            line-height: 1;
-            font-weight: 800;
-            color: #e0e7ff;
-            /* indigo-100 */
-            text-shadow: 1px 1px 4px rgba(0, 0, 0, 0.3);
+        .now-serving {
+            flex: 2;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            border-radius: 24px;
+            padding: clamp(1.5rem, 3vw, 2.5rem);
+            background: linear-gradient(145deg, rgba(55, 65, 81, 0.65), rgba(17, 24, 39, 0.85));
+            border: 1px solid rgba(148, 163, 184, 0.15);
+            box-shadow: 0 35px 60px -40px rgba(15, 23, 42, 0.9);
+        }
+
+        .now-serving-header {
+            display: flex;
+            flex-direction: column;
+            gap: 0.35rem;
         }
 
         .main-label-text {
-            /* For "Thai / English" */
-            font-size: clamp(1.5rem, 4vw, 3.5rem);
+            font-size: clamp(1.4rem, 4vw, 2.8rem);
             font-weight: 600;
-            color: #9ca3af;
-            /* gray-400 */
-            margin-bottom: 0.1em;
-            /* Reduced margin */
+            color: rgba(224, 231, 255, 0.85);
         }
 
         .sub-label-text {
-            /* For "Other / Languages / ..." */
-            font-size: clamp(0.7rem, 1.5vw, 1.25rem);
-            /* Smaller for sub-labels */
-            color: #6b7280;
-            /* gray-500 */
-            line-height: 1.2;
-            word-wrap: break-word;
+            font-size: clamp(0.85rem, 2vw, 1.25rem);
+            color: rgba(148, 163, 184, 0.85);
+            letter-spacing: 0.02em;
         }
 
-        .column-section {
-            height: 100%;
+        .token-display {
+            margin-top: clamp(1.5rem, 4vw, 2.5rem);
+            font-size: clamp(5rem, 18vw, 16rem);
+            font-weight: 900;
+            line-height: 0.95;
+            letter-spacing: -0.04em;
+            color: #fde68a;
+            text-shadow: 0 18px 45px rgba(250, 204, 21, 0.35);
+        }
+
+        .counter-panel {
+            margin-top: clamp(1.5rem, 4vw, 2.5rem);
+            display: grid;
+            gap: 0.5rem;
+            max-width: 26rem;
+        }
+
+        #location-sublabels {
+            white-space: nowrap;
+        }
+
+        .counter-display {
+            font-size: clamp(3.5rem, 12vw, 9rem);
+            font-weight: 800;
+            color: #e2e8f0;
+            text-shadow: 0 10px 28px rgba(15, 23, 42, 0.55);
+        }
+
+        .side-panel {
+            flex: 1.1;
+            display: flex;
+            flex-direction: column;
+            gap: 1.5rem;
+        }
+
+        .glass-card {
+            background: rgba(17, 24, 39, 0.6);
+            border-radius: 20px;
+            border: 1px solid rgba(148, 163, 184, 0.12);
+            box-shadow: 0 25px 45px -35px rgba(15, 23, 42, 0.85);
             overflow: hidden;
             display: flex;
             flex-direction: column;
         }
 
-        .right-column-content-area {
-            /* For internal scrolling in right column parts */
-            overflow-y: auto;
-            flex-shrink: 1;
+        #announcement-area {
+            flex: none;
+            min-height: clamp(9rem, 35vh, 15rem);
+            background: #ffffff;
+            padding: 0.85rem;
+        }
+
+        #announcement-banner-container {
+            width: 100%;
+            height: 100%;
+            border-radius: 16px;
+            background: #ffffff;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            overflow: hidden;
         }
 
         .banner-media {
             width: 100%;
             height: 100%;
             object-fit: contain;
-            border-radius: 0.5rem;
         }
 
-        .id-part {
+        .list-card {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .list-card header {
+            padding: 1rem 1.25rem 0.75rem;
+            border-bottom: 1px solid rgba(148, 163, 184, 0.12);
+        }
+
+        .list-title {
+            font-size: clamp(1rem, 2.2vw, 1.65rem);
+            font-weight: 600;
+            letter-spacing: 0.015em;
+            display: flex;
+            align-items: baseline;
+            justify-content: space-between;
+        }
+
+        .list-title span {
+            font-size: 0.85rem;
+            color: rgba(156, 163, 175, 0.8);
+            font-weight: 500;
+        }
+
+        .list-scroll {
+            flex: 1;
+            overflow-y: auto;
+            padding: 1rem 1.25rem 1.75rem;
+        }
+
+        #list-history-calls,
+        #list-skipped-calls {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+        }
+
+        .history-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: clamp(0.9rem, 2vw, 1.15rem);
+            padding: 0.75rem 0.9rem;
+            border-radius: 14px;
+            background: rgba(30, 41, 59, 0.55);
+            border: 1px solid rgba(148, 163, 184, 0.08);
+        }
+
+        .history-item strong {
+            letter-spacing: 0.04em;
+        }
+
+        .history-item .id-part {
+            min-width: 4.25rem;
             display: inline-block;
-            min-width: 4rem;
+            text-align: center;
         }
 
-        @media (min-width: 48rem) {
-            .id-part {
-                min-width: 6rem;
+        .history-item .timestamp {
+            color: rgba(148, 163, 184, 0.75);
+            font-size: 0.85em;
+        }
+
+        @media (max-width: 768px) {
+            .signage-shell {
+                padding: 1.25rem;
+                gap: 1.25rem;
+                flex-direction: column;
+            }
+
+            .now-serving {
+                padding: 1.5rem;
             }
         }
 
-        @media (min-width: 64rem) {
-            .id-part {
-                min-width: 8rem;
-            }
+        #sse-status-indicator {
+            position: fixed;
+            right: 1.5rem;
+            bottom: 1.5rem;
+            padding: 0.45rem 0.9rem;
+            border-radius: 999px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            letter-spacing: 0.02em;
+            min-width: 9rem;
+            text-align: center;
+            background: rgba(59, 130, 246, 0.18);
+            color: #dbeafe;
+            transition: background-color 0.3s ease, color 0.3s ease;
+            z-index: 50;
+        }
+
+        #sse-status-indicator[data-status='connecting'] {
+            background: rgba(234, 179, 8, 0.25);
+            color: #fef08a;
+        }
+
+        #sse-status-indicator[data-status='connected'] {
+            background: rgba(34, 197, 94, 0.28);
+            color: #bbf7d0;
+        }
+
+        #sse-status-indicator[data-status='disconnected'] {
+            background: rgba(248, 113, 113, 0.28);
+            color: #fecaca;
         }
     </style>
 </head>
 
-<body class="flex h-screen w-screen overflow-hidden">
+<body>
+    <div class="signage-shell">
+        <section class="now-serving">
+            <div class="now-serving-header">
+                <div id="call-id-label" class="main-label-text">หมายเลข / TOKEN</div>
+                    <div id="call-id-sublabels" class="sub-label-text">Token / တိုကင် / 代幣 / 代币 / トークン / តូខិន / 토큰 / Thẻ Token</div>
+                </div>
+                <div id="current-call-id" class="token-display">----</div>
+                <div class="counter-panel">
+                    <div id="location-label" class="main-label-text">ช่อง / COUNTER</div>
+                    <div id="location-sublabels" class="sub-label-text">Loket / ကောင်တာ / 櫃檯 / 窗口 / 窓口 / កុងទ័រ / 창구 / Quầy</div>
+                    <div id="current-location" class="counter-display">----</div>
+                </div>
+        </section>
 
-    <div
-        class="column-section w-2/3 bg-gray-800 p-4 md:p-6 lg:p-8 flex flex-col justify-center items-center text-center">
-        <div>
-            <div id="call-id-label" class="main-label-text">
-                <span>หมายเลข / NUMBER</span>
-            </div>
-            <div class="sub-label-text mb-1 md:mb-2" id="call-id-sublabels">
-                Nomor / အမှတ် / 號碼 / 号码 / 番号 / លេខ / 번호 / số
-            </div>
-            <div id="current-call-id" class="current-call-id leading-none">----</div>
-        </div>
-        <div class="mt-6 md:mt-10 lg:mt-16">
-            <div id="location-label" class="main-label-text">
-                <span>ช่อง / COUNTER</span>
-            </div>
-            <div class="sub-label-text mb-1 md:mb-2" id="location-sublabels">
-                Loket / ကောင်တာ / 櫃檯 / 窗口 / 窓口 / កុងទ័រ / 창구 / quầy
-            </div>
-            <div id="current-location" class="current-call-location leading-none">----</div>
-        </div>
-    </div>
-
-    <div class="column-section w-1/3 bg-gray-850 border-l border-gray-700 p-3 md:p-4 flex flex-col">
-        <div id="announcement-area"
-            class="flex-none h-1/5 md:h-1/3 lg:h-1/2 xl:h-1/5 flex justify-center items-center bg-white p-1 md:p-2 mb-2 md:mb-3 rounded-md overflow-hidden shadow-lg">
-            <div id="announcement-banner-container" class="w-full h-full">
-                <div class="w-full h-full flex justify-center items-center bg-gray-750 rounded">
-                    <span id="announcement-placeholder" class="text-gray-500 text-sm md:text-base">Announcements</span>
+        <aside class="side-panel">
+            <div id="announcement-area" class="glass-card">
+                <div id="announcement-banner-container">
+                    <span id="announcement-placeholder" class="text-gray-600">Announcements</span>
                 </div>
             </div>
-        </div>
 
-        <div class="right-column-content-area flex-auto mb-2 md:mb-3">
-            <h2
-                class="text-base md:text-3xl font-semibold text-gray-100 mb-1 md:mb-2 sticky top-0 bg-gray-850 py-1 z-10">
-                เรียกแล้ว /
-                Recently Called
-            </h2>
-            <ul id="list-history-calls" class="text-gray-300">
-                <li class="history-item italic text-gray-500">Waiting for calls...</li>
-            </ul>
-        </div>
+            <div class="glass-card list-card">
+                <header class="list-title">เรียกแล้ว <span>Recently Served Tokens</span></header>
+                <div class="list-scroll">
+                    <ul id="list-history-calls">
+                        <li class="history-item italic text-gray-400">Waiting for tokens...</li>
+                    </ul>
+                </div>
+            </div>
 
-        <div class="right-column-content-area flex-none pt-2 mt-auto border-t border-gray-700"
-            style="min-height: 24em; max-height: 24em;">
-            <h2
-                class="text-base md:text-3xl font-semibold text-gray-100 mb-1 md:mb-2 sticky top-0 bg-gray-850 py-1 z-10">
-                เรียกไม่พบ / No-show
-            </h2>
-            <ul id="list-skipped-calls" class="text-gray-300">
-                <li class="history-item italic text-gray-500">No skipped calls.</li>
-            </ul>
-        </div>
+            <div class="glass-card list-card">
+                <header class="list-title">เรียกไม่พบ <span>Missed Tokens</span></header>
+                <div class="list-scroll">
+                    <ul id="list-skipped-calls">
+                        <li class="history-item italic text-gray-400">No skipped tokens.</li>
+                    </ul>
+                </div>
+            </div>
+        </aside>
     </div>
 
     <audio id="chimeAudio" src="media/chime.mp3" preload="auto" style="display:none;"></audio>
     <audio id="announcement-audio-player" style="display:none;"></audio>
     <audio id="tts-audio-player" style="display:none;"></audio>
-    <div id="sse-status-indicator"
-        class="fixed bottom-1 right-1 p-1 px-2 text-xs rounded-full text-white opacity-75 z-50"
-        title="SSE Connection Status"></div>
+    <div id="sse-status-indicator" title="SSE Connection Status" data-status="connecting">Connecting…</div>
 
     <script src="js/common.js"></script>
     <script src="js/api_client.js"></script>
     <script src="js/sse_handler.js"></script>
     <script src="js/signage_ui.js"></script>
-</body>
 </body>
 
 </html>

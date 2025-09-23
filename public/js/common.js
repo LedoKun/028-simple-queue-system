@@ -51,8 +51,8 @@ const UI_TEXT = {
         connected: "Live Connection Active",
         disconnected: "Connection lost. Retrying...",
         announcementPlaceholder: "Announcements",
-        historyPlaceholder: "Waiting for calls...",
-        skippedPlaceholder: "No skipped calls.",
+        historyPlaceholder: "Waiting for tokens...",
+        skippedPlaceholder: "No skipped tokens.",
         loading: "Loading...",
         errorPrefix: "Error: ",
         successPrefix: "Success: "
