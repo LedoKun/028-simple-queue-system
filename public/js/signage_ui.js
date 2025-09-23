@@ -189,7 +189,7 @@ document.addEventListener('DOMContentLoaded', () => {
         console.log(`SignageUI: Attempting to play audio file: ${nextAudio.src} using ${nextAudio.playerType} player.`);
         player.src = nextAudio.src; // Set the audio source.
         // Adjust playback rate for TTS and announcements for a "snappier" feel. Chime plays at normal speed.
-        player.playbackRate = (nextAudio.playerType === 'announcement' || nextAudio.playerType === 'tts') ? 1.25 : 1.0;
+        player.playbackRate = 1.1;
 
         // Attempt to play the audio. player.play() returns a Promise.
         player.play()
