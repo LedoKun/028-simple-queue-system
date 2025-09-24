@@ -25,6 +25,18 @@ const API_BASE_URL = '/api';
  */
 const SSE_URL = `${API_BASE_URL}/events`;
 
+/**
+ * Regular expression used to validate queue identifiers. The format matches a
+ * single uppercase prefix character followed by one or more digits (e.g. "A1").
+ */
+const CALL_IDENTIFIER_REGEX = /^[A-Z][0-9]+$/;
+
+/**
+ * Regular expression used to validate station/location identifiers. Only
+ * numeric strings are permitted (e.g. "5", "101").
+ */
+const CALL_LOCATION_REGEX = /^[0-9]+$/;
+
 // --- Language Data & Labels ---
 
 /**
@@ -78,6 +90,14 @@ const UI_TEXT = {
  * @type {string}
  */
 window.currentGlobalLanguage = 'en';
+
+function isValidCallIdentifier(candidate) {
+    return CALL_IDENTIFIER_REGEX.test(String(candidate).trim());
+}
+
+function isValidCallLocation(candidate) {
+    return CALL_LOCATION_REGEX.test(String(candidate).trim());
+}
 
 /**
  * Displays a feedback message to the user, typically in a dedicated feedback area
@@ -333,3 +353,10 @@ function formatDisplayTime(isoTimestamp) {
     scheduleRefreshCycle();
     console.log(`Periodic page refresh scheduled every ${REFRESH_INTERVAL_MS / 60000} minutes.`);
 })();
+
+window.Validation = Object.freeze({
+    isValidCallIdentifier,
+    isValidCallLocation,
+    CALL_IDENTIFIER_REGEX,
+    CALL_LOCATION_REGEX,
+});

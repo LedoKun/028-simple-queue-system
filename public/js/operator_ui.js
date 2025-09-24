@@ -100,8 +100,13 @@
             baseClass: sseStatusIndicator ? sseStatusIndicator.className : '',
         });
 
-        const ID_PATTERN = /^[A-Z]\d+$/;
-        const LOCATION_PATTERN = /^\d+$/;
+        const validation = window.Validation || {};
+        const isValidIdentifier = typeof validation.isValidCallIdentifier === 'function'
+            ? validation.isValidCallIdentifier
+            : (value) => /^[A-Z]\d+$/.test(String(value).trim());
+        const isValidLocation = typeof validation.isValidCallLocation === 'function'
+            ? validation.isValidCallLocation
+            : (value) => /^\d+$/.test(String(value).trim());
 
         /**
          * @type {number|null} Stores the ID of the `setInterval` timer for the announcement cooldown countdown.
@@ -148,8 +153,8 @@
             const originalId = originalIdInput.value.trim();
             const location = locationInput.value.trim();
 
-            const isIdValid = ID_PATTERN.test(originalId);
-            const isLocationValid = LOCATION_PATTERN.test(location);
+            const isIdValid = isValidIdentifier(originalId);
+            const isLocationValid = isValidLocation(location);
 
             // Buttons are enabled only if both ID and Location are valid.
             if (btnCall) btnCall.disabled = !(isIdValid && isLocationValid);
@@ -386,12 +391,12 @@
 
             // Re-validate inputs before API call, as button states might have been
             // manipulated or bypass (e.g., if JS disabled then re-enabled).
-            if (!ID_PATTERN.test(originalId)) {
+            if (!isValidIdentifier(originalId)) {
                 showFeedback('Identifier must start with an uppercase letter, followed by digits (e.g., A1, Z99).', 'error');
                 originalIdInput.focus(); // Focus on the problematic input.
                 return;
             }
-            if (!LOCATION_PATTERN.test(location)) {
+            if (!isValidLocation(location)) {
                 showFeedback('Location must be digits only (e.g., 5, 10).', 'error');
                 locationInput.focus(); // Focus on the problematic input.
                 return;
@@ -458,12 +463,12 @@
             const location = locationInput.value.trim();
 
             // Re-validate inputs.
-            if (!ID_PATTERN.test(originalId)) {
+            if (!isValidIdentifier(originalId)) {
                 showFeedback('Identifier must start with an uppercase letter, followed by digits (e.g., A1, Z99).', 'error');
                 originalIdInput.focus();
                 return;
             }
-            if (!LOCATION_PATTERN.test(location)) {
+            if (!isValidLocation(location)) {
                 showFeedback('Location must be digits only (e.g., 5, 10).', 'error');
                 locationInput.focus();
                 return;

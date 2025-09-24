@@ -156,17 +156,6 @@
             return this.get('/announcements/status');
         }
 
-        getLanguages() {
-            return this.get('/tts/languages');
-        }
-
-        getOrderedSupportedLanguages() {
-            return this.get('/tts/ordered-languages');
-        }
-
-        triggerTTS(ttsData) {
-            return this.post('/tts/trigger', ttsData);
-        }
     }
 
     global.apiClient = new ApiClient(BASE_URL);
