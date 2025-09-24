@@ -450,36 +450,10 @@
     <audio id="tts-audio-player" style="display:none;"></audio>
 
     <script src="js/common.js"></script>
+    <script src="js/ui_helpers.js"></script>
     <script src="js/api_client.js"></script>
     <script src="js/sse_handler.js"></script>
     <script src="js/signage_ui.js"></script>
-    <script>
-        function updateTime() {
-            const now = new Date();
-            const day = String(now.getDate()).padStart(2, '0');
-            const month = String(now.getMonth() + 1).padStart(2, '0');
-            const hours = String(now.getHours()).padStart(2, '0');
-            const minutes = String(now.getMinutes()).padStart(2, '0');
-            const seconds = String(now.getSeconds()).padStart(2, '0');
-
-            let year = now.getFullYear();
-            if (updateTime.buddhistYear) {
-                year += 543;
-            }
-
-            document.getElementById('time').textContent = `${hours}:${minutes}:${seconds}`;
-            document.getElementById('date').textContent = `${day}-${month}-${year}`;
-        }
-
-        updateTime.buddhistYear = false;
-        setInterval(() => {
-            updateTime.buddhistYear = !updateTime.buddhistYear;
-            updateTime();
-        }, 30000);
-
-        setInterval(updateTime, 1000);
-        updateTime();
-    </script>
 </body>
 
 </html>

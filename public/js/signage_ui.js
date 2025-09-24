@@ -1,126 +1,247 @@
-// public/js/signage_ui.js
+(function () {
+    'use strict';
 
-/**
- * @file This script manages the user interface for the public-facing signage display
- * (`signage.html`). It updates the current call display, call histories, and handles
- * the playback and cycling of audio announcements and banner media. It primarily
- * relies on Server-Sent Events (SSE) for real-time data updates from the backend.
- * 
- * Updated to support multiple TTS audio URLs for stem audio fallback.
- * 
- * @author LedoKun <romamp100@gmail.com>
- * @version 1.1.0
- */
-
-document.addEventListener('DOMContentLoaded', () => {
-    // --- DOM Elements ---
-    // Cache references to key HTML elements for efficient access and manipulation.
-    const callIdElement = document.getElementById('current-call-id'); // Displays the current call ID.
-    const locationElement = document.getElementById('current-location'); // Displays the current call location.
-    const listHistoryCalls = document.getElementById('list-history-calls'); // <ul> for recently called history.
-    const listSkippedCalls = document.getElementById('list-skipped-calls'); // <ul> for no-show/skipped calls.
-    const announcementBannerContainer = document.getElementById('announcement-banner-container'); // Container for banner images/videos.
-    let announcementPlaceholderSpan = document.getElementById('announcement-placeholder'); // Span shown when no banner is active.
-    const chimeAudio = document.getElementById("chimeAudio"); // <audio> element for the chime sound.
-    const announcementAudioPlayer = document.getElementById('announcement-audio-player'); // <audio> element for announcement audio files.
-    const ttsAudioPlayer = document.getElementById('tts-audio-player'); // <audio> element for Text-to-Speech audio.
-    const sseStatusIndicator = document.getElementById('sse-status-indicator'); // Visual indicator for SSE connection status.
-
-    // --- Internal State Variables ---
-    /**
-     * @type {Array<string>} Stores the ordered list of supported TTS language codes,
-     * fetched from the backend. Used to determine which TTS audio to request/expect for calls.
-     */
-    let orderedTtsLangCodes = [];
+    // public/js/signage_ui.js
 
     /**
-     * @type {number|null} Stores the interval ID for cycling through announcement banners.
-     * This allows the interval to be cleared if the banner set changes or disappears.
+     * @file This script manages the user interface for the public-facing signage display
+     * (`signage.html`). It updates the current call display, call histories, and handles
+     * the playback and cycling of audio announcements and banner media. It primarily
+     * relies on Server-Sent Events (SSE) for real-time data updates from the backend.
+     *
+     * Updated to support multiple TTS audio URLs for stem audio fallback.
+     *
+     * @author LedoKun <romamp100@gmail.com>
+     * @version 1.1.0
      */
-    let bannerIntervalId = null;
 
-    /** @constant {number} MAX_HISTORY_ITEMS_DISPLAY Maximum number of completed calls to display in the history list. */
-    const MAX_HISTORY_ITEMS_DISPLAY = 7;
+    document.addEventListener('DOMContentLoaded', init);
 
-    /** @constant {number} MAX_SKIPPED_ITEMS_TO_DISPLAY Maximum number of skipped calls to display in the list. */
-    const MAX_SKIPPED_ITEMS_TO_DISPLAY = 4;
+    function init() {
+        // --- DOM Elements ---
+        // Cache references to key HTML elements for efficient access and manipulation.
+        const callIdElement = document.getElementById('current-call-id'); // Displays the current call ID.
+        const locationElement = document.getElementById('current-location'); // Displays the current call location.
+        const listHistoryCalls = document.getElementById('list-history-calls'); // <ul> for recently called history.
+        const listSkippedCalls = document.getElementById('list-skipped-calls'); // <ul> for no-show/skipped calls.
+        const announcementBannerContainer = document.getElementById('announcement-banner-container'); // Container for banner images/videos.
+        let announcementPlaceholderSpan = document.getElementById('announcement-placeholder'); // Span shown when no banner is active.
+        const chimeAudio = document.getElementById('chimeAudio'); // <audio> element for the chime sound.
+        const announcementAudioPlayer = document.getElementById('announcement-audio-player'); // <audio> element for announcement audio files.
+        const ttsAudioPlayer = document.getElementById('tts-audio-player'); // <audio> element for Text-to-Speech audio.
+        const sseStatusIndicator = document.getElementById('sse-status-indicator'); // Visual indicator for SSE connection status.
 
-    /**
-     * @type {Array<object>} The main event queue. Events (new calls, announcements) from SSE
-     * are pushed here and processed sequentially to manage audio playback and UI updates.
-     */
-    let eventQueue = [];
-    window.SignageEventQueue = eventQueue;
+        const requiredElements = [
+            ['current call display', callIdElement],
+            ['location display', locationElement],
+            ['history list', listHistoryCalls],
+            ['skipped list', listSkippedCalls],
+            ['announcement banner container', announcementBannerContainer],
+            ['chime audio element', chimeAudio],
+            ['announcement audio player', announcementAudioPlayer],
+            ['tts audio player', ttsAudioPlayer],
+        ];
 
-    /**
-     * @type {object|null} The event object currently being processed (i.e., its audio is playing or being prepared).
-     * Ensures only one event's audio sequence (e.g., chime + TTS for a call) is active at a time.
-     */
-    let currentProcessingEvent = null;
-    Object.defineProperty(window, 'SignageCurrentEvent', {
-        configurable: true,
-        enumerable: false,
-        get() {
-            return currentProcessingEvent;
+        const missingElements = requiredElements.filter(([, el]) => !el).map(([label]) => label);
+        if (missingElements.length > 0) {
+            console.error('SignageUI: Required DOM nodes missing:', missingElements.join(', '));
+            return;
         }
-    });
 
-    /**
-     * @type {Array<object>} A queue of audio file URLs and their player types (chime, tts, announcement),
-     * specific to the `currentProcessingEvent`. Audio files are played sequentially from this queue.
-     */
-    let audioPlaybackQueue = [];
+        // Allow lightweight debug logging to be toggled from the console via `window.__QUEUE_DEBUG__ = true`.
+        const DEBUG = Boolean(window.__QUEUE_DEBUG__);
+        const debug = (...args) => {
+            if (!DEBUG) return;
+            console.log('[SignageUI]', ...args);
+        };
 
-    /**
-     * @type {boolean} Flag indicating if an audio file from the `audioPlaybackQueue` is currently playing.
-     * Prevents multiple audio tracks from playing concurrently.
-     */
-    let isAudioFilePlaying = false;
+        const fallbackRenderCallList = (container, items, { placeholderText = '' } = {}) => {
+            if (!container) return;
+            container.innerHTML = '';
+            if (!Array.isArray(items) || items.length === 0) {
+                const placeholder = document.createElement('li');
+                placeholder.textContent = placeholderText;
+                container.appendChild(placeholder);
+                return;
+            }
 
-    /**
-     * @type {object|null} Stores the data of the last call that was successfully displayed/announced.
-     * Used to keep the last call's details on screen when no new events are pending and the queue is idle.
-     */
-    let lastShownCallData = null;
+            items.forEach((entry) => {
+                const li = document.createElement('li');
+                const id = entry?.id ?? '----';
+                const location = entry?.location ?? '----';
+                li.textContent = `${id} → ${location}`;
+                container.appendChild(li);
+            });
+        };
 
-    /** @constant {number} TTS_TIMEOUT_DURATION Duration in milliseconds to wait for TTS audio files before giving up for a specific call. */
-    const TTS_TIMEOUT_DURATION = 10000; // 10 seconds
+        const renderCallListFn = (window.UIHelpers && typeof window.UIHelpers.renderCallList === 'function')
+            ? window.UIHelpers.renderCallList
+            : fallbackRenderCallList;
 
-    // --- Critical Dependency Check ---
-    // Ensures that 'common.js' (providing UI_TEXT, sanitizeText, formatDisplayTime) is loaded before this script.
-    if (typeof UI_TEXT === 'undefined' || typeof sanitizeText === 'undefined' || typeof formatDisplayTime === 'undefined') {
-        console.error("SignageUI: CRITICAL - 'common.js' might not be loaded correctly or before 'signage_ui.js'. Some essential utilities are missing.");
-        alert("Signage UI cannot initialize fully. Please check browser console for errors related to common.js loading.");
-        return; // Stop further initialization if critical dependencies are missing.
-    }
+        const createIndicatorUpdater = (window.UIHelpers && typeof window.UIHelpers.createSseIndicatorUpdater === 'function')
+            ? window.UIHelpers.createSseIndicatorUpdater
+            : () => (statusData = {}) => {
+                if (!sseStatusIndicator) return;
+                if (statusData.status) sseStatusIndicator.dataset.status = statusData.status;
+                sseStatusIndicator.textContent = statusData.message || statusData.status || '';
+            };
 
-    // --- Audio Playback Logic ---
+        const updateSseIndicator = createIndicatorUpdater(sseStatusIndicator, {
+            setDataset: true,
+            keepClasses: true,
+        });
 
-    /**
-     * Initiates playback of the next audio file in the `audioPlaybackQueue`.
-     * This function is called recursively when a track ends or an error occurs,
-     * ensuring sequential playback. It also handles the TTS waiting logic with timeout.
-     * @private
-     */
-    function playNextAudioFileInSequence() {
+        /**
+         * Controls the footer clock and toggles between Gregorian and Buddhist calendar years.
+         * Exposes start/stop handlers so the caller can manage underlying timers.
+         */
+        const signageClock = (() => {
+        const DATE_ID = 'date';
+        const TIME_ID = 'time';
+        let buddhistYearToggle = false;
+        let clockIntervalId = null;
+        let toggleIntervalId = null;
+
+        const renderClock = () => {
+            const timeEl = document.getElementById(TIME_ID);
+            const dateEl = document.getElementById(DATE_ID);
+            if (!timeEl || !dateEl) return;
+
+            const now = new Date();
+            const day = String(now.getDate()).padStart(2, '0');
+            const month = String(now.getMonth() + 1).padStart(2, '0');
+            const hours = String(now.getHours()).padStart(2, '0');
+            const minutes = String(now.getMinutes()).padStart(2, '0');
+            const seconds = String(now.getSeconds()).padStart(2, '0');
+
+            let year = now.getFullYear();
+            if (buddhistYearToggle) {
+                year += 543;
+            }
+
+            timeEl.textContent = `${hours}:${minutes}:${seconds}`;
+            dateEl.textContent = `${day}-${month}-${year}`;
+        };
+
+        const start = () => {
+            if (clockIntervalId || toggleIntervalId) return;
+            renderClock();
+            clockIntervalId = setInterval(renderClock, 1000);
+            toggleIntervalId = setInterval(() => {
+                buddhistYearToggle = !buddhistYearToggle;
+                renderClock();
+            }, 30000);
+        };
+
+        const stop = () => {
+            if (clockIntervalId) {
+                clearInterval(clockIntervalId);
+                clockIntervalId = null;
+            }
+            if (toggleIntervalId) {
+                clearInterval(toggleIntervalId);
+                toggleIntervalId = null;
+            }
+        };
+
+        return { start, stop };
+    })();
+
+        // --- Internal State Variables ---
+        /**
+         * @type {Array<string>} Stores the ordered list of supported TTS language codes,
+         * fetched from the backend. Used to determine which TTS audio to request/expect for calls.
+         */
+        let orderedTtsLangCodes = [];
+
+        /**
+         * @type {number|null} Stores the interval ID for cycling through announcement banners.
+         * This allows the interval to be cleared if the banner set changes or disappears.
+         */
+        let bannerIntervalId = null;
+
+        /** @constant {number} MAX_HISTORY_ITEMS_DISPLAY Maximum number of completed calls to display in the history list. */
+        const MAX_HISTORY_ITEMS_DISPLAY = 7;
+
+        /** @constant {number} MAX_SKIPPED_ITEMS_TO_DISPLAY Maximum number of skipped calls to display in the list. */
+        const MAX_SKIPPED_ITEMS_TO_DISPLAY = 4;
+
+        /**
+         * @type {Array<object>} The main event queue. Events (new calls, announcements) from SSE
+         * are pushed here and processed sequentially to manage audio playback and UI updates.
+         */
+        const eventQueue = [];
+        window.SignageEventQueue = eventQueue;
+
+        /**
+         * @type {object|null} The event object currently being processed (i.e., its audio is playing or being prepared).
+         * Ensures only one event's audio sequence (e.g., chime + TTS for a call) is active at a time.
+         */
+        let currentProcessingEvent = null;
+        Object.defineProperty(window, 'SignageCurrentEvent', {
+            configurable: true,
+            enumerable: false,
+            get() {
+                return currentProcessingEvent;
+            }
+        });
+
+        /**
+         * @type {Array<object>} A queue of audio file URLs and their player types (chime, tts, announcement),
+         * specific to the `currentProcessingEvent`. Audio files are played sequentially from this queue.
+         */
+        let audioPlaybackQueue = [];
+
+        /**
+         * @type {boolean} Flag indicating if an audio file from the `audioPlaybackQueue` is currently playing.
+         * Prevents multiple audio tracks from playing concurrently.
+         */
+        let isAudioFilePlaying = false;
+
+        /**
+         * @type {object|null} Stores the data of the last call that was successfully displayed/announced.
+         * Used to keep the last call's details on screen when no new events are pending and the queue is idle.
+         */
+        let lastShownCallData = null;
+
+        /** @constant {number} TTS_TIMEOUT_DURATION Duration in milliseconds to wait for TTS audio files before giving up for a specific call. */
+        const TTS_TIMEOUT_DURATION = 10000; // 10 seconds
+
+        // --- Critical Dependency Check ---
+        // Ensures that 'common.js' (providing UI_TEXT, sanitizeText, formatDisplayTime) is loaded before this script.
+        if (typeof UI_TEXT === 'undefined' || typeof sanitizeText === 'undefined' || typeof formatDisplayTime === 'undefined') {
+            console.error("SignageUI: CRITICAL - 'common.js' might not be loaded correctly or before 'signage_ui.js'. Some essential utilities are missing.");
+            alert("Signage UI cannot initialize fully. Please check browser console for errors related to common.js loading.");
+            return; // Stop further initialization if critical dependencies are missing.
+        }
+
+        // --- Audio Playback Logic ---
+
+        /**
+         * Initiates playback of the next audio file in the `audioPlaybackQueue`.
+         * This function is called recursively when a track ends or an error occurs,
+         * ensuring sequential playback. It also handles the TTS waiting logic with timeout.
+         * @private
+         */
+        function playNextAudioFileInSequence() {
         // Check if the dedicated audio queue for the current event is empty.
         if (audioPlaybackQueue.length === 0) {
             isAudioFilePlaying = false; // No audio from the queue is playing now.
-            console.log("SignageUI: Audio playback queue for current event is empty.");
+            debug("SignageUI: Audio playback queue for current event is empty.");
 
             // If the current event is a call, special conditions apply (chime, TTS).
             if (currentProcessingEvent && currentProcessingEvent.type === 'call') {
                 // Wait for the chime to finish playing before proceeding with TTS or completing the event.
                 if (!currentProcessingEvent.chimeFinished) {
-                    console.log(`SignageUI: Call event ${currentProcessingEvent.id}-${currentProcessingEvent.location} chime not yet finished, awaiting its completion.`);
+                    debug(`SignageUI: Call event ${currentProcessingEvent.id}-${currentProcessingEvent.location} chime not yet finished, awaiting its completion.`);
                     return; // Chime 'ended' event will recall this function.
                 }
                 // If TTS is required for this call and not all TTS files are ready.
                 if (currentProcessingEvent.requiredTts && currentProcessingEvent.requiredTts.length > 0 && !currentProcessingEvent.ttsReady) {
-                    console.log(`SignageUI: Call event ${currentProcessingEvent.id}-${currentProcessingEvent.location} chime finished, but TTS is not ready. Waiting for TTS data to arrive or timeout.`);
+                    debug(`SignageUI: Call event ${currentProcessingEvent.id}-${currentProcessingEvent.location} chime finished, but TTS is not ready. Waiting for TTS data to arrive or timeout.`);
                     // Start a timeout if one isn't already running for this call's TTS.
                     if (!currentProcessingEvent.ttsWaitTimeoutId) {
-                        console.log(`SignageUI: Starting ${TTS_TIMEOUT_DURATION / 1000}s TTS timeout for ${currentProcessingEvent.id}-${currentProcessingEvent.location}.`);
+                        debug(`SignageUI: Starting ${TTS_TIMEOUT_DURATION / 1000}s TTS timeout for ${currentProcessingEvent.id}-${currentProcessingEvent.location}.`);
                         currentProcessingEvent.ttsWaitTimeoutId = setTimeout(() => {
                             // Check if this timeout is still relevant when it fires.
                             if (currentProcessingEvent && // Is there still a current event?
@@ -137,10 +258,10 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
                     return; // Exit and wait for TTS data or for the timeout to fire.
                 }
-                console.log(`SignageUI: Call event ${currentProcessingEvent.id}-${currentProcessingEvent.location} all audio (chime and TTS if applicable) finished or TTS not required.`);
+                debug(`SignageUI: Call event ${currentProcessingEvent.id}-${currentProcessingEvent.location} all audio (chime and TTS if applicable) finished or TTS not required.`);
             } else if (currentProcessingEvent) {
                 // For non-call events (e.g., announcements), if queue is empty, audio is done.
-                console.log(`SignageUI: All audio finished for event type: ${currentProcessingEvent.type}.`);
+                debug(`SignageUI: All audio finished for event type: ${currentProcessingEvent.type}.`);
             }
 
             // --- Event Completion ---
@@ -161,7 +282,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 let eventDescription = currentProcessingEvent.type === 'call'
                     ? `call ${currentProcessingEvent.id}-${currentProcessingEvent.location}`
                     : currentProcessingEvent.type;
-                console.log(`SignageUI: Finished processing ALL audio for event:`, eventDescription, currentProcessingEvent);
+                debug(`SignageUI: Finished processing ALL audio for event:`, eventDescription, currentProcessingEvent);
             }
             currentProcessingEvent = null; // Clear the current event, making the system ready for the next one.
             processNextEventFromQueue(); // Attempt to process the next event from the main queue.
@@ -170,7 +291,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // Prevent multiple audio files from playing simultaneously if this function is called unexpectedly.
         if (isAudioFilePlaying) {
-            console.log("SignageUI: 'playNextAudioFileInSequence' called, but an audio file is already playing. Waiting for current track to finish.");
+            debug("SignageUI: 'playNextAudioFileInSequence' called, but an audio file is already playing. Waiting for current track to finish.");
             return;
         }
 
@@ -194,7 +315,7 @@ document.addEventListener('DOMContentLoaded', () => {
         player.addEventListener('ended', handleAudioFileEnded); // Calls playNextAudioFileInSequence on completion.
         player.addEventListener('error', handleAudioFileError); // Calls playNextAudioFileInSequence on error.
 
-        console.log(`SignageUI: Attempting to play audio file: ${nextAudio.src} using ${nextAudio.playerType} player.`);
+        debug(`SignageUI: Attempting to play audio file: ${nextAudio.src} using ${nextAudio.playerType} player.`);
         player.src = nextAudio.src; // Set the audio source.
         // Adjust playback rate for TTS and announcements for a "snappier" feel. Chime plays at normal speed.
         player.playbackRate = 1.05;
@@ -202,7 +323,7 @@ document.addEventListener('DOMContentLoaded', () => {
         // Attempt to play the audio. player.play() returns a Promise.
         player.play()
             .then(() => {
-                console.log(`SignageUI: Playback started successfully for ${nextAudio.src}`);
+                debug(`SignageUI: Playback started successfully for ${nextAudio.src}`);
             })
             .catch(e => {
                 // Catch errors that might occur if play() is interrupted or fails (e.g., browser restrictions).
@@ -218,7 +339,7 @@ document.addEventListener('DOMContentLoaded', () => {
      * @private
      */
     function handleAudioFileEnded(event) {
-        console.log(`SignageUI: Audio file ended: ${event.target.currentSrc}`);
+        debug(`SignageUI: Audio file ended: ${event.target.currentSrc}`);
         removeAudioEventListeners(event.target); // Clean up listeners for this specific playback.
         isAudioFilePlaying = false; // Reset playback flag.
 
@@ -226,7 +347,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (currentProcessingEvent && event.target === chimeAudio && currentProcessingEvent.type === 'call') {
             currentProcessingEvent.chimeFinished = true;
             let eventDescription = `call ${currentProcessingEvent.id}-${currentProcessingEvent.location}`;
-            console.log(`SignageUI: Chime finished for event ${eventDescription}.`);
+            debug(`SignageUI: Chime finished for event ${eventDescription}.`);
         }
         playNextAudioFileInSequence(); // Try to play the next audio file in the sequence.
     }
@@ -272,13 +393,13 @@ document.addEventListener('DOMContentLoaded', () => {
     function processNextEventFromQueue() {
         // Prevent processing if an event is already active or audio is playing from its sequence.
         if (currentProcessingEvent || isAudioFilePlaying) {
-            console.log("SignageUI: 'processNextEventFromQueue' called, but system is busy. Skipping.", { currentProcessingEvent: !!currentProcessingEvent, isAudioFilePlaying });
+            debug("SignageUI: 'processNextEventFromQueue' called, but system is busy. Skipping.", { currentProcessingEvent: !!currentProcessingEvent, isAudioFilePlaying });
             return;
         }
 
         // If the main event queue is empty, manage the display.
         if (eventQueue.length === 0) {
-            console.log("SignageUI: Main event queue is empty AND no event currently processing its audio.");
+            debug("SignageUI: Main event queue is empty AND no event currently processing its audio.");
             // If no call has ever been shown, or if the display is not already "----", clear it.
             if (!lastShownCallData) {
                 if (callIdElement.textContent !== '----') { // Avoid redundant DOM updates if already placeholder
@@ -293,7 +414,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // An event is available in the queue; dequeue and process it.
         currentProcessingEvent = eventQueue.shift();
-        console.log("SignageUI: Processing next event from main queue:", currentProcessingEvent);
+        debug("SignageUI: Processing next event from main queue:", currentProcessingEvent);
 
         audioPlaybackQueue = []; // Reset the dedicated audio queue for this new event.
         isAudioFilePlaying = false; // Ensure flag is reset for the new event's audio sequence.
@@ -321,7 +442,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         } else if (currentProcessingEvent.type === 'announcement') {
             // For announcement events, the current call display (if any) should persist on screen.
-            console.log("SignageUI: Processing announcement event. Current call display (if any) will persist.");
+            debug("SignageUI: Processing announcement event. Current call display (if any) will persist.");
             // Add all audio files specified for this announcement to its playback queue.
             currentProcessingEvent.audioSequence.forEach(audioItem => audioPlaybackQueue.push({ ...audioItem }));
         }
@@ -355,7 +476,7 @@ document.addEventListener('DOMContentLoaded', () => {
      * @private
      */
     async function initializeSignage() {
-        console.log("SignageUI: Initializing signage page...");
+        debug("SignageUI: Initializing signage page...");
         // Set page language for UI text (primarily for placeholders updated by this script).
         window.currentGlobalLanguage = document.documentElement.lang || 'en';
         updateStaticElementPlaceholders(); // Populate initial placeholders with correct language.
@@ -365,7 +486,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const response = await fetch(`${API_BASE_URL}/tts/ordered-languages`);
             if (response.ok) {
                 orderedTtsLangCodes = await response.json();
-                console.log("SignageUI: Fetched ordered TTS languages:", orderedTtsLangCodes);
+                debug("SignageUI: Fetched ordered TTS languages:", orderedTtsLangCodes);
             } else {
                 console.error("SignageUI: Failed to fetch ordered TTS languages:", response.status, response.statusText);
                 orderedTtsLangCodes = []; // Ensure it's an empty array on failure.
@@ -382,7 +503,9 @@ document.addEventListener('DOMContentLoaded', () => {
         document.addEventListener('sse_announcementstatus', handleAnnouncementStatusSSE);
         document.addEventListener('sse_ttscomplete', handleTTSCompleteSSE);
         document.addEventListener('sse_status', handleSSEStatusChange);
-        console.log("SignageUI: Initialization complete. Waiting for SSE events.");
+        debug("SignageUI: Initialization complete. Waiting for SSE events.");
+
+        signageClock.start();
     }
 
     /**
@@ -392,7 +515,7 @@ document.addEventListener('DOMContentLoaded', () => {
      * @private
      */
     async function fetchInitialStates() {
-        console.log("SignageUI: Fetching initial states (queue and announcements)...");
+        debug("SignageUI: Fetching initial states (queue and announcements)...");
         dispatchSseStatusToIndicator('connecting', UI_TEXT[window.currentGlobalLanguage].loading); // Show loading status.
         try {
             // Fetch both states concurrently.
@@ -513,7 +636,7 @@ document.addEventListener('DOMContentLoaded', () => {
      */
     function handleQueueUpdateSSE(event) {
         const queueState = event.detail;
-        console.log('SignageUI: SSE_QUEUEUPDATE received', queueState);
+        debug('SignageUI: SSE_QUEUEUPDATE received', queueState);
         updateQueueDisplayInternals(queueState); // Update the visual lists for history/skipped.
 
         const newCall = queueState.current_call;
@@ -529,17 +652,17 @@ document.addEventListener('DOMContentLoaded', () => {
             if (currentProcessingEvent && currentProcessingEvent.type === 'call' &&
                 currentProcessingEvent.id === newCall.id && currentProcessingEvent.location === newCall.location) {
                 isNewCallToBeQueued = false;
-                console.log("SignageUI: Queue update is for the call currently being processed. Not re-queueing.");
+                debug("SignageUI: Queue update is for the call currently being processed. Not re-queueing.");
             }
 
             // Avoid re-queueing if this newCall is already waiting in the eventQueue.
             if (isNewCallToBeQueued && eventQueue.some(evt => evt.type === 'call' && evt.id === newCall.id && evt.location === newCall.location)) {
                 isNewCallToBeQueued = false;
-                console.log("SignageUI: Queue update is for a call already in the event queue. Not re-queueing.");
+                debug("SignageUI: Queue update is for a call already in the event queue. Not re-queueing.");
             }
 
             if (isNewCallToBeQueued) {
-                console.log("SignageUI: New unique call event identified for queueing:", newCall.id, "-", newCall.location);
+                debug("SignageUI: New unique call event identified for queueing:", newCall.id, "-", newCall.location);
                 const callEvent = {
                     type: 'call', id: newCall.id, location: newCall.location, callData: { ...newCall },
                     requiredTts: [...orderedTtsLangCodes], receivedTtsUrls: [], // Changed to handle multiple URLs
@@ -547,13 +670,13 @@ document.addEventListener('DOMContentLoaded', () => {
                     // ttsWaitTimeoutId will be added dynamically if needed
                 };
                 eventQueue.push(callEvent);
-                console.log("SignageUI: Added call event to main event queue. Queue size:", eventQueue.length);
+                debug("SignageUI: Added call event to main event queue. Queue size:", eventQueue.length);
                 processNextEventFromQueue(); // Attempt to process if system is idle.
             } else {
-                console.log("SignageUI: Call update received, but it's for an already processing or queued call. No new event created.", newCall.id);
+                debug("SignageUI: Call update received, but it's for an already processing or queued call. No new event created.", newCall.id);
             }
         } else { // No current_call in the new queueState.
-            console.log("SignageUI: Queue update received with no current_call.");
+            debug("SignageUI: Queue update received with no current_call.");
             // If nothing is processing and the event queue is also empty,
             // processNextEventFromQueue will handle clearing the main display to "----".
             if (!currentProcessingEvent && eventQueue.length === 0) {
@@ -570,7 +693,7 @@ document.addEventListener('DOMContentLoaded', () => {
      */
     function handleAnnouncementStatusSSE(event) {
         const announcementStatus = event.detail;
-        console.log('SignageUI: SSE_ANNOUNCEMENTSTATUS received', announcementStatus);
+        debug('SignageUI: SSE_ANNOUNCEMENTSTATUS received', announcementStatus);
         updateAnnouncementDisplay(announcementStatus); // Update banner display.
 
         const announcementAudioFiles = announcementStatus.current_audio_playlist || [];
@@ -589,7 +712,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             if (isNewAnnouncementToBeQueued) {
-                console.log('SignageUI: New unique announcement event identified for queueing.');
+                debug('SignageUI: New unique announcement event identified for queueing.');
                 const audioItemsForSequence = [{ src: chimeAudio.src, playerType: 'chime' }]; // Prepend chime.
                 announcementAudioFiles.forEach(audioSrc => audioItemsForSequence.push({ src: audioSrc, playerType: 'announcement' }));
 
@@ -600,10 +723,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 eventQueue.push(announcementEvent);
                 processNextEventFromQueue(); // Attempt to process if system is idle.
             } else {
-                console.log('SignageUI: Announcement update received for an already processing or queued announcement.');
+                debug('SignageUI: Announcement update received for an already processing or queued announcement.');
             }
         } else {
-            console.log('SignageUI: Announcement status received, but no audio playlist. No announcement event created.');
+            debug('SignageUI: Announcement status received, but no audio playlist. No announcement event created.');
         }
     }
 
@@ -616,7 +739,7 @@ document.addEventListener('DOMContentLoaded', () => {
      */
     function handleTTSCompleteSSE(event) {
         const ttsData = event.detail; // Contains id, location, lang, audio_urls.
-        console.log('SignageUI: SSE_TTSCOMPLETE received:', ttsData);
+        debug('SignageUI: SSE_TTSCOMPLETE received:', ttsData);
 
         // Validate that audio_urls is an array
         if (!Array.isArray(ttsData.audio_urls) || ttsData.audio_urls.length === 0) {
@@ -639,12 +762,12 @@ document.addEventListener('DOMContentLoaded', () => {
             // Check if we already have TTS data for this language to avoid reprocessing
             const langIndex = targetEventForTTS.requiredTts.indexOf(ttsData.lang);
             if (langIndex === -1) {
-                console.log(`SignageUI: TTS data received for lang '${ttsData.lang}' but it's not in required languages for call ${targetEventForTTS.id}-${targetEventForTTS.location}. Ignoring.`);
+                debug(`SignageUI: TTS data received for lang '${ttsData.lang}' but it's not in required languages for call ${targetEventForTTS.id}-${targetEventForTTS.location}. Ignoring.`);
                 return;
             }
 
             // Store the TTS audio URLs for this language
-            console.log(`SignageUI: Storing TTS audio URLs (${ttsData.lang}) for call event ${targetEventForTTS.id}-${targetEventForTTS.location}. URLs: ${ttsData.audio_urls.length}`);
+            debug(`SignageUI: Storing TTS audio URLs (${ttsData.lang}) for call event ${targetEventForTTS.id}-${targetEventForTTS.location}. URLs: ${ttsData.audio_urls.length}`);
 
             // Remove this language from required list and store the URLs
             targetEventForTTS.requiredTts.splice(langIndex, 1);
@@ -660,18 +783,18 @@ document.addEventListener('DOMContentLoaded', () => {
 
             if (allRequiredTTSReceived && !targetEventForTTS.ttsReady) {
                 targetEventForTTS.ttsReady = true; // Mark the event's TTS as ready.
-                console.log(`SignageUI: TTS now ready for call event ${targetEventForTTS.id}-${targetEventForTTS.location} with ${targetEventForTTS.receivedTtsUrls.length} audio files.`);
+                debug(`SignageUI: TTS now ready for call event ${targetEventForTTS.id}-${targetEventForTTS.location} with ${targetEventForTTS.receivedTtsUrls.length} audio files.`);
 
                 // Clear any pending TTS timeout for this event as TTS has now completed.
                 if (targetEventForTTS.ttsWaitTimeoutId) {
-                    console.log(`SignageUI: Clearing TTS timeout for ${targetEventForTTS.id}-${targetEventForTTS.location} as TTS is now ready.`);
+                    debug(`SignageUI: Clearing TTS timeout for ${targetEventForTTS.id}-${targetEventForTTS.location} as TTS is now ready.`);
                     clearTimeout(targetEventForTTS.ttsWaitTimeoutId);
                     delete targetEventForTTS.ttsWaitTimeoutId;
                 }
 
                 // If the target event is the one currently being processed, add its TTS files to the live playback queue.
                 if (currentProcessingEvent === targetEventForTTS) {
-                    console.log("SignageUI: Adding newly ready TTS audio to live audioPlaybackQueue for CURRENT event.");
+                    debug("SignageUI: Adding newly ready TTS audio to live audioPlaybackQueue for CURRENT event.");
                     const ttsAudioItemsToAdd = [];
 
                     // Add all TTS audio URLs to the playback queue
@@ -702,7 +825,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             }
         } else {
-            console.log("SignageUI: Received TTS for an unknown or outdated call event (not current and not in queue). Ignoring:", ttsData);
+            debug("SignageUI: Received TTS for an unknown or outdated call event (not current and not in queue). Ignoring:", ttsData);
         }
     }
 
@@ -722,10 +845,7 @@ document.addEventListener('DOMContentLoaded', () => {
      * @private
      */
     function dispatchSseStatusToIndicator(statusKey, message = '') {
-        if (!sseStatusIndicator) return;
-        const normalizedStatus = statusKey || 'status';
-        sseStatusIndicator.textContent = message || normalizedStatus;
-        sseStatusIndicator.dataset.status = normalizedStatus;
+        updateSseIndicator({ status: statusKey, message });
     }
 
     // --- UI Update Helper Functions ---
@@ -752,35 +872,24 @@ document.addEventListener('DOMContentLoaded', () => {
      */
     function updateQueueDisplayInternals(queueState) {
         const lang = window.currentGlobalLanguage || 'en';
-        const labels = (UI_TEXT && UI_TEXT[lang]) ? UI_TEXT[lang] : (UI_TEXT.en || {});
+        const labels = (UI_TEXT && UI_TEXT[lang]) ? UI_TEXT[lang] : (UI_TEXT?.en || {});
 
-        // Update completed call history list.
-        listHistoryCalls.innerHTML = ''; // Clear previous items.
-        if (queueState && queueState.completed_history && queueState.completed_history.length > 0) {
-            queueState.completed_history.slice(0, MAX_HISTORY_ITEMS_DISPLAY).forEach(call => {
-                const li = document.createElement('li');
-                li.className = 'history-item flex justify-between items-center';
-                li.innerHTML = `<span><strong class="font-semibold id-part">${sanitizeText(call.id)}</strong>&rarr;<strong class="font-semibold id-part">${sanitizeText(call.location)}</strong></span>
-                                <span class="text-xs text-gray-400">${formatDisplayTime(call.timestamp)}</span>`;
-                listHistoryCalls.appendChild(li); // Appends: newest (from server) appears at top if server sends newest first.
-            });
-        } else {
-            listHistoryCalls.innerHTML = `<li class="history-item italic text-gray-500">${labels.historyPlaceholder || "Waiting for calls..."}</li>`;
-        }
+        renderCallListFn(listHistoryCalls, queueState?.completed_history, {
+            maxItems: MAX_HISTORY_ITEMS_DISPLAY,
+            placeholderText: labels?.historyPlaceholder || '----',
+            itemClass: 'history-item flex justify-between items-center',
+            placeholderClass: 'history-item italic text-gray-500',
+            timestampClass: 'text-xs text-gray-400',
+        });
 
-        // Update skipped call history list.
-        listSkippedCalls.innerHTML = ''; // Clear previous items.
-        if (queueState && queueState.skipped_history && queueState.skipped_history.length > 0) {
-            queueState.skipped_history.slice(0, MAX_SKIPPED_ITEMS_TO_DISPLAY).forEach(call => {
-                const li = document.createElement('li');
-                li.className = 'history-item flex justify-between items-center';
-                li.innerHTML = `<span><strong class="font-semibold id-part text-yellow-400">${sanitizeText(call.id)}</strong>&rarr;<strong class="font-semibold id-part text-yellow-400">${sanitizeText(call.location)}</strong></span>
-                                <span class="text-xs text-gray-400">${formatDisplayTime(call.timestamp)}</span>`;
-                listSkippedCalls.appendChild(li);
-            });
-        } else {
-            listSkippedCalls.innerHTML = `<li class="history-item italic text-gray-500">${labels.skippedPlaceholder || "No skipped calls."}</li>`;
-        }
+        renderCallListFn(listSkippedCalls, queueState?.skipped_history, {
+            maxItems: MAX_SKIPPED_ITEMS_TO_DISPLAY,
+            placeholderText: labels?.skippedPlaceholder || '----',
+            itemClass: 'history-item flex justify-between items-center',
+            placeholderClass: 'history-item italic text-gray-500',
+            highlightClass: 'text-yellow-400',
+            timestampClass: 'text-xs text-gray-400',
+        });
     }
 
     /**
@@ -886,6 +995,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // Start the initialization process once the DOM is fully loaded.
-    initializeSignage();
-});
+        // Start the initialization process once the DOM is fully loaded.
+        initializeSignage();
+    }
+})();
