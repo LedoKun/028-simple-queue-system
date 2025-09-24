@@ -1,34 +1,22 @@
 // src/api/routes.rs
 
-//! Defines the HTTP API routes for the Queue Calling System.
-//!
-//! This module uses Rocket to expose various endpoints for:
-//! - Triggering Text-to-Speech (TTS) generation.
-//! - Retrieving supported TTS languages.
-//! - Managing the call queue (adding, skipping, completing calls).
-//! - Force-skipping new calls.
-//! - Providing real-time updates via Server-Sent Events (SSE).
-//! - Checking announcement status and triggering manual advancements.
-//!
-//! Each route is associated with a specific HTTP method and path, handling
-//! request parsing, interaction with the application state (`AppState`),
-//! and sending appropriate responses.
+//! HTTP routes exposed by the backend server.
 
-use regex; // Import the regex crate for input validation
+use regex::Regex;
 use rocket::{
     get, http::Status, post, response::status, response::stream::EventStream, serde::json::Json,
     State,
 };
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::OnceLock};
 use tokio::sync::broadcast;
 use tokio::time as TokioTime;
-use tracing::{debug, error, info, trace, warn}; // Import tracing macros
+use tracing::{debug, error, info, trace, warn};
 
 use crate::announcements::{self, ManualTriggerError};
 use crate::queue::QueueState;
-use crate::sse::manager::SSEManager;
-use crate::{AppEvent, AppState}; // Ensure AppEvent and AppState are imported
+use crate::sse::format_app_event;
+use crate::{AppEvent, AppState};
 
 /// Request data structure for adding or updating a call in the queue.
 ///
@@ -79,6 +67,55 @@ pub struct ErrorResponse {
     error: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     remaining_seconds: Option<u64>,
+}
+
+const IDENTIFIER_FORMAT_MESSAGE: &str =
+    "Invalid Identifier format. Must be an uppercase letter followed by digits (e.g., A1, Z99).";
+const LOCATION_FORMAT_MESSAGE: &str = "Invalid Location format. Must be digits only (e.g., 5, 10).";
+
+fn identifier_pattern() -> &'static Regex {
+    static PATTERN: OnceLock<Regex> = OnceLock::new();
+    PATTERN.get_or_init(|| Regex::new(r"^[A-Z][0-9]+$").expect("identifier regex must compile"))
+}
+
+fn location_pattern() -> &'static Regex {
+    static PATTERN: OnceLock<Regex> = OnceLock::new();
+    PATTERN.get_or_init(|| Regex::new(r"^[0-9]+$").expect("location regex must compile"))
+}
+
+fn validate_identifier(original_id: &str) -> Result<(), String> {
+    if identifier_pattern().is_match(original_id) {
+        Ok(())
+    } else {
+        Err(format!(
+            "{} Received: {}",
+            IDENTIFIER_FORMAT_MESSAGE, original_id
+        ))
+    }
+}
+
+fn validate_location(location: &str) -> Result<(), String> {
+    if location_pattern().is_match(location) {
+        Ok(())
+    } else {
+        Err(format!(
+            "{} Received: {}",
+            LOCATION_FORMAT_MESSAGE, location
+        ))
+    }
+}
+
+fn broadcast_queue_update(state: &State<AppState>, queue_state: QueueState) {
+    info!("Broadcasting QueueUpdate: {:?}", queue_state);
+    if let Err(err) = state
+        .event_bus_sender
+        .send(AppEvent::QueueUpdate(queue_state))
+    {
+        debug!(
+            "Could not broadcast QueueUpdate (error: {}). No active listeners?",
+            err
+        );
+    }
 }
 
 /// Rocket route for manually triggering Text-to-Speech generation for a given call.
@@ -200,7 +237,7 @@ pub fn sse_events(state: &State<AppState>) -> EventStream![] {
                         Ok(event) => {
                              debug!("SSE: Received AppEvent for broadcast: {:?}", event);
                              // Format the AppEvent into a RocketEvent for the SSE stream.
-                             if let Some(rocket_event) = SSEManager::format_app_event(&event) {
+                             if let Some(rocket_event) = format_app_event(&event) {
                                  yield rocket_event; // Yield the formatted event to the client.
                              } else {
                                   error!("SSE: Failed to format AppEvent for SSE client (event was: {:?}).", event);
@@ -229,20 +266,6 @@ pub fn sse_events(state: &State<AppState>) -> EventStream![] {
     }
 }
 
-/// Rocket route for adding a new call or recalling/updating an existing one.
-///
-/// Expects a JSON payload with `original_id` and `location`.
-/// Performs validation on the input format.
-/// Updates the queue state, broadcasts a `QueueUpdate` event, and triggers TTS generation.
-///
-/// # Arguments
-/// - `state`: A Rocket `State` managed by the application, providing access to `AppState`.
-/// - `call_request_data`: A JSON payload deserialized into `AddCallRequest`.
-///
-/// # Returns
-/// - `status::Accepted` (202) with a confirmation message if the call is added/updated and TTS initiated.
-/// - `status::BadRequest` (400) with an error message if input validation fails or
-///   there's an unexpected issue with queue processing.
 #[post("/queue/add", data = "<call_request_data>")]
 pub async fn queue_call(
     state: &State<AppState>,
@@ -254,101 +277,62 @@ pub async fn queue_call(
         call_info.original_id, call_info.location
     );
 
-    // --- Input Validation ---
-    // Stricter Validation for Identifier (e.g., A1, Z99)
-    // Must be an uppercase letter followed by one or more digits.
-    let identifier_pattern = regex::Regex::new(r"^[A-Z][0-9]+$")
-        .expect("Failed to compile identifier regex pattern. This is a critical internal error.");
-    if !identifier_pattern.is_match(&call_info.original_id) {
+    if let Err(message) = validate_identifier(&call_info.original_id) {
         warn!(
-            "Invalid original_id format received: '{}'. Expected uppercase letter followed by digits.",
-            call_info.original_id
+            "Invalid original_id format received: '{}'. {}",
+            call_info.original_id, IDENTIFIER_FORMAT_MESSAGE
         );
-        return Err(status::BadRequest(format!("Invalid Identifier format. Must be an uppercase letter followed by digits (e.g., A1, Z99). Received: {}", call_info.original_id)));
+        return Err(status::BadRequest(message));
     }
 
-    // Stricter Validation for Location (e.g., 5, 10, 101)
-    // Must be digits only.
-    let location_pattern = regex::Regex::new(r"^[0-9]+$")
-        .expect("Failed to compile location regex pattern. This is a critical internal error.");
-    if !location_pattern.is_match(&call_info.location) {
+    if let Err(message) = validate_location(&call_info.location) {
         warn!(
-            "Invalid location format received: '{}'. Expected digits only.",
-            call_info.location
+            "Invalid location format received: '{}'. {}",
+            call_info.location, LOCATION_FORMAT_MESSAGE
         );
-        return Err(status::BadRequest(format!(
-            "Invalid Location format. Must be digits only (e.g., 5, 10). Received: {}",
-            call_info.location
-        )));
+        return Err(status::BadRequest(message));
     }
-    // --- End Input Validation ---
 
-    // Lock the queue manager to modify its state.
     let mut queue_manager = state.queue_manager.lock().await;
-    // Add the call, which handles moving the previous current call to history.
     if let Some(current_call_ref) =
         queue_manager.add_call(call_info.original_id.clone(), call_info.location.clone())
     {
-        // Clone the current call for broadcasting and TTS triggering,
-        // as the manager holds the canonical reference.
         let current_call_owned = current_call_ref.clone();
         info!(
             "/api/queue/add: Call '{}' (Original: '{}', Location: '{}') is now current.",
             current_call_owned.id, current_call_owned.original_id, current_call_owned.location
         );
 
-        // Create a snapshot of the current queue state.
-        let current_q_state = QueueState {
-            current_call: Some(current_call_owned.clone()),
-            completed_history: queue_manager.get_completed_history().clone(),
-            skipped_history: queue_manager.get_skipped_history().clone(),
-        };
-        // Release the queue_manager lock as soon as the state is captured.
+        let current_q_state = queue_manager.snapshot();
         drop(queue_manager);
 
-        info!(
-            "/api/queue/add: Broadcasting QueueUpdate: {:?}",
-            current_q_state
-        );
-        // Broadcast the updated queue state to all SSE clients.
-        if let Err(e) = state
-            .event_bus_sender
-            .send(AppEvent::QueueUpdate(current_q_state))
-        {
-            // Log as debug if send fails, as it might just mean no active listeners.
-            debug!("Could not broadcast QueueUpdate after add action (error: {}). No active listeners?", e);
-        }
+        broadcast_queue_update(state, current_q_state);
 
-        // Trigger TTS generation for the new current call.
-        // Lock the TTS manager.
-        let tts_manager_guard = state.tts_manager.lock().await;
         let ordered_langs = state.config.ordered_supported_language_codes();
-        if !ordered_langs.is_empty() {
+        let tts_manager_guard = state.tts_manager.lock().await;
+        if ordered_langs.is_empty() {
+            warn!(
+                "No supported languages configured for TTS for call ID: {}. No TTS will be generated.",
+                current_call_owned.id
+            );
+        } else {
             info!(
                 "Call {} is current. Triggering TTS for languages: {:?}",
                 current_call_owned.id, ordered_langs
             );
-            // Iterate through supported languages and trigger TTS for each.
             for lang_code in ordered_langs {
                 if let Err(e) = tts_manager_guard.trigger_tts_generation(
                     current_call_owned.id.clone(),
                     current_call_owned.location.clone(),
                     lang_code.clone(),
                 ) {
-                    // Log errors but don't fail the entire request if one TTS fails.
                     error!(
                         "Failed to trigger TTS generation task for lang '{}' (call ID {}): {}",
                         lang_code, current_call_owned.id, e
                     );
                 }
             }
-        } else {
-            warn!(
-                "No supported languages configured for TTS for call ID: {}. No TTS will be generated.",
-                current_call_owned.id
-            );
         }
-        // Release the TTS manager lock.
         drop(tts_manager_guard);
 
         Ok(status::Accepted(format!(
@@ -378,42 +362,21 @@ pub async fn queue_call(
 pub async fn skip_call(state: &State<AppState>) -> status::Accepted<String> {
     let mut queue_manager = state.queue_manager.lock().await;
     info!("/api/queue/skip: Attempting to skip current call.");
-    let message: String;
-    // Attempt to skip the current call.
-    if let Some(skipped_call) = queue_manager.skip_current_call() {
+    let message = if let Some(skipped_call) = queue_manager.skip_current_call() {
         info!("/api/queue/skip: Call '{}' was skipped.", skipped_call.id);
-        message = format!(
+        format!(
             "Call {} (Location {}) skipped successfully.",
             skipped_call.original_id, skipped_call.location
-        );
+        )
     } else {
         warn!("/api/queue/skip: No current call to skip. Request had no effect.");
-        message = "No current call to skip.".to_string();
-    }
-
-    // Create a snapshot of the current queue state.
-    let current_q_state = QueueState {
-        current_call: queue_manager.get_current_call().cloned(), // Clone `Option<Call>`
-        completed_history: queue_manager.get_completed_history().clone(),
-        skipped_history: queue_manager.get_skipped_history().clone(),
+        "No current call to skip.".to_string()
     };
-    // Release the queue_manager lock.
+
+    let current_q_state = queue_manager.snapshot();
     drop(queue_manager);
 
-    info!(
-        "/api/queue/skip: Broadcasting QueueUpdate after skip action: {:?}",
-        current_q_state
-    );
-    // Broadcast the updated queue state.
-    if let Err(e) = state
-        .event_bus_sender
-        .send(AppEvent::QueueUpdate(current_q_state))
-    {
-        debug!(
-            "Could not broadcast QueueUpdate after skip action (error: {}). No active listeners?",
-            e
-        );
-    }
+    broadcast_queue_update(state, current_q_state);
     status::Accepted(message)
 }
 
@@ -431,42 +394,24 @@ pub async fn skip_call(state: &State<AppState>) -> status::Accepted<String> {
 pub async fn complete_call(state: &State<AppState>) -> status::Accepted<String> {
     let mut queue_manager = state.queue_manager.lock().await;
     info!("/api/queue/complete: Attempting to complete current call.");
-    let message: String;
-    // Attempt to complete the current call.
-    if let Some(completed_call) = queue_manager.complete_current_call() {
+    let message = if let Some(completed_call) = queue_manager.complete_current_call() {
         info!(
             "/api/queue/complete: Call '{}' was completed.",
             completed_call.id
         );
-        message = format!(
+        format!(
             "Call {} (Location {}) completed successfully.",
             completed_call.original_id, completed_call.location
-        );
+        )
     } else {
         warn!("/api/queue/complete: No current call to complete. Request had no effect.");
-        message = "No current call to complete.".to_string();
-    }
-
-    // Create a snapshot of the current queue state.
-    let current_q_state = QueueState {
-        current_call: queue_manager.get_current_call().cloned(),
-        completed_history: queue_manager.get_completed_history().clone(),
-        skipped_history: queue_manager.get_skipped_history().clone(),
+        "No current call to complete.".to_string()
     };
-    // Release the queue_manager lock.
+
+    let current_q_state = queue_manager.snapshot();
     drop(queue_manager);
 
-    info!(
-        "/api/queue/complete: Broadcasting QueueUpdate after complete action: {:?}",
-        current_q_state
-    );
-    // Broadcast the updated queue state.
-    if let Err(e) = state
-        .event_bus_sender
-        .send(AppEvent::QueueUpdate(current_q_state))
-    {
-        debug!("Could not broadcast QueueUpdate after complete action (error: {}). No active listeners?", e);
-    }
+    broadcast_queue_update(state, current_q_state);
     status::Accepted(message)
 }
 
@@ -495,58 +440,30 @@ pub async fn force_skip_new_call(
         call_info.original_id, call_info.location
     );
 
-    // --- Input Validation ---
-    // Stricter Validation for Identifier (e.g., A1, Z99)
-    let identifier_pattern = regex::Regex::new(r"^[A-Z][0-9]+$")
-        .expect("Failed to compile identifier regex pattern. This is a critical internal error.");
-    if !identifier_pattern.is_match(&call_info.original_id) {
+    if let Err(message) = validate_identifier(&call_info.original_id) {
         warn!(
-            "Invalid original_id format received for force_skip: '{}'. Expected uppercase letter followed by digits.",
-            call_info.original_id
+            "Invalid original_id format received for force_skip: '{}'. {}",
+            call_info.original_id, IDENTIFIER_FORMAT_MESSAGE
         );
-        return Err(status::BadRequest(format!("Invalid Identifier format. Must be an uppercase letter followed by digits (e.g., A1, Z99). Received: {}", call_info.original_id)));
+        return Err(status::BadRequest(message));
     }
 
-    // Stricter Validation for Location (e.g., 5, 10)
-    let location_pattern = regex::Regex::new(r"^[0-9]+$")
-        .expect("Failed to compile location regex pattern. This is a critical internal error.");
-    if !location_pattern.is_match(&call_info.location) {
+    if let Err(message) = validate_location(&call_info.location) {
         warn!(
-            "Invalid location format received for force_skip: '{}'. Expected digits only.",
-            call_info.location
+            "Invalid location format received for force_skip: '{}'. {}",
+            call_info.location, LOCATION_FORMAT_MESSAGE
         );
-        return Err(status::BadRequest(format!(
-            "Invalid Location format. Must be digits only (e.g., 5, 10). Received: {}",
-            call_info.location
-        )));
+        return Err(status::BadRequest(message));
     }
-    // --- End Input Validation ---
 
     let mut queue_manager = state.queue_manager.lock().await;
-    // Add the call directly to the skipped history.
     if let Some(skipped_call_data) = queue_manager
         .add_to_skipped_directly(call_info.original_id.clone(), call_info.location.clone())
     {
-        // Create a snapshot of the current queue state.
-        let current_q_state = QueueState {
-            current_call: queue_manager.get_current_call().cloned(),
-            completed_history: queue_manager.get_completed_history().clone(),
-            skipped_history: queue_manager.get_skipped_history().clone(),
-        };
-        // Release the queue_manager lock.
+        let current_q_state = queue_manager.snapshot();
         drop(queue_manager);
 
-        info!(
-            "/api/queue/force_skip: Broadcasting QueueUpdate: {:?}",
-            current_q_state
-        );
-        // Broadcast the updated queue state.
-        if let Err(e) = state
-            .event_bus_sender
-            .send(AppEvent::QueueUpdate(current_q_state))
-        {
-            debug!("Could not broadcast QueueUpdate after force_skip action (error: {}). No active listeners?", e);
-        }
+        broadcast_queue_update(state, current_q_state);
         Ok(status::Accepted(format!(
             "Call {} with location {} added directly to skipped list.",
             skipped_call_data.original_id, skipped_call_data.location
@@ -575,13 +492,7 @@ pub async fn force_skip_new_call(
 pub async fn get_queue_state(state: &State<AppState>) -> Json<QueueState> {
     debug!("GET /api/queue/state: Fetching current queue state.");
     let queue_manager = state.queue_manager.lock().await;
-    // Construct the QueueState snapshot.
-    let q_state = QueueState {
-        current_call: queue_manager.get_current_call().cloned(), // Clone `Option<Call>`
-        completed_history: queue_manager.get_completed_history().clone(),
-        skipped_history: queue_manager.get_skipped_history().clone(),
-    };
-    // Release the queue_manager lock.
+    let q_state = queue_manager.snapshot();
     drop(queue_manager);
     trace!("GET /api/queue/state: Returning state: {:?}", q_state);
     Json(q_state)

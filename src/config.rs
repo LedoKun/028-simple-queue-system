@@ -11,9 +11,9 @@
 use envconfig::Envconfig;
 use std::env;
 use std::net::{IpAddr, SocketAddr};
-use std::path::PathBuf; // Import Path for potential use in docs
+use std::path::PathBuf;
 use std::time::Duration;
-use tracing::{debug, error, info}; // Import tracing macros
+use tracing::{debug, error, info};
 
 /// `AppConfig` represents the complete configuration for the Queue Calling System application.
 ///
@@ -230,16 +230,6 @@ impl AppConfig {
         full_path
     }
 
-    /// Converts the `banner_rotation_interval_seconds` into a `Duration`.
-    ///
-    /// # Returns
-    /// A `Duration` representing the banner rotation interval.
-    pub fn banner_rotation_interval(&self) -> Duration {
-        let duration = Duration::from_secs(self.banner_rotation_interval_seconds);
-        debug!("Banner rotation interval duration: {:?}", duration);
-        duration
-    }
-
     /// Combines the `server_address` and `server_port` into a `SocketAddr`.
     ///
     /// # Returns
@@ -299,7 +289,10 @@ impl AppConfig {
                     None // Skip empty parts (e.g., from "a,,b")
                 } else {
                     // Take only the code part (before the first ':')
-                    let code = lang_part.split(':').next().map(str::to_string);
+                    let code = lang_part
+                        .split(':')
+                        .next()
+                        .map(normalize_language_code);
                     debug!(
                         "Parsed language code '{}' from '{}'",
                         code.as_ref().unwrap_or(&"N/A".to_string()),
@@ -319,6 +312,14 @@ impl AppConfig {
 
         debug!("Extracted ordered language codes: {:?}", codes);
         codes
+    }
+}
+
+fn normalize_language_code(raw: &str) -> String {
+    if raw.eq_ignore_ascii_case("en-GB") {
+        "en-uk".to_string()
+    } else {
+        raw.to_string()
     }
 }
 
