@@ -1,238 +1,280 @@
-import asyncio
-import aiohttp
-import re
-from pathlib import Path
-from fake_useragent import UserAgent
-from itertools import product
-from pydub import AudioSegment  # Import pydub
+"""Utility for pre-generating Google Translate TTS stems and cache files.
 
-# --- Configuration ---
-OUTPUT_DIR = Path("./public/media/audio_stems")
-CACHE_DIR = Path("./public/media/audio_cache/multi")
-CONCURRENCY_LIMIT = 20
-REQUEST_TIMEOUT = 5
-MAX_RETRIES = 10
-GOOGLE_TTS_URL = "https://translate.google.com/translate_tts"
-# New: Set desired bitrate for compression (e.g., "64k", "48k")
-COMPRESSION_BITRATE = "32k"
-ua = UserAgent()
+The script fetches atomic audio "stems" (phrases, numbers, characters) and a
+handful of combined queue announcements used as fallbacks when the online TTS
+service is unavailable. Downloads are deduplicated, rate limited, retried on
+failure, and compressed in-place once written.
+"""
+
+from __future__ import annotations
+
+import argparse
+import asyncio
+import logging
+import re
+from dataclasses import dataclass
+from itertools import product
+from pathlib import Path
+from typing import Any, Awaitable, Callable, Iterable, Sequence
+
+import aiohttp
+from fake_useragent import UserAgent
+from pydub import AudioSegment
+
+LOGGER = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Configuration
+# ---------------------------------------------------------------------------
+
+@dataclass(frozen=True)
+class TTSConfig:
+    stems_output_dir: Path = Path("./public/media/audio_stems")
+    cache_output_dir: Path = Path("./public/media/audio_cache/multi")
+    concurrency_limit: int = 20
+    request_timeout: int = 5
+    max_retries: int = 10
+    compression_bitrate: str | None = "32k"
+    google_tts_url: str = "https://translate.google.com/translate_tts"
+
 
 THAI_PHRASE_FILENAME_MAP = {
     "หมายเลข": "phrase_number",
-    "เชิญช่อง": "phrase_to_counter"
+    "เชิญช่อง": "phrase_to_counter",
 }
 
-PARTS_TO_GENERATE = {
+LANGUAGE_PARTS: dict[str, dict[str, Sequence[str]]] = {
     "th": {
         "phrases": list(THAI_PHRASE_FILENAME_MAP.keys()),
         "numbers": [str(i) for i in range(0, 10)],
-        "characters": [chr(i) for i in range(ord('A'), ord('Z') + 1)]
+        "characters": [chr(i) for i in range(ord("A"), ord("Z") + 1)],
     },
     "en": {
         "phrases": ["Number", "to counter"],
         "numbers": [str(i) for i in range(0, 10)],
-        "characters": [chr(i) for i in range(ord('A'), ord('Z') + 1)]
-    }
+        "characters": [chr(i) for i in range(ord("A"), ord("Z") + 1)],
+    },
 }
 
+CACHE_COMBINATIONS: Sequence[tuple[str, int, int]] = tuple(
+    list(product(["A"], range(1, 101), range(1, 6)))
+    + list(product([chr(i) for i in range(ord("B"), ord("C") + 1)], range(1, 11), range(1, 6)))
+)
 
-def get_filename_for_text(text, lang):
-    """Generates a consistent, English-based filename for any text stem."""
+FILENAME_SANITIZER = re.compile(r"[\\/*?:\"<>|]")
+
+USER_AGENT = UserAgent()
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+@dataclass(frozen=True)
+class StemJob:
+    language: str
+    text: str
+    destination: Path
+
+
+@dataclass(frozen=True)
+class CacheJob:
+    prefix: str
+    number: int
+    counter: int
+    destination: Path
+
+    @property
+    def composed_number(self) -> str:
+        return f"{self.prefix}{self.number:02d}"
+
+
+def derive_stem_filename(text: str, lang: str) -> str:
     if lang == "th" and text in THAI_PHRASE_FILENAME_MAP:
         return f"{THAI_PHRASE_FILENAME_MAP[text]}.mp3"
 
-    sanitized = re.sub(r'[\\/*?:"<>|]', "", text).replace(" ", "_").lower()
-
+    sanitized = FILENAME_SANITIZER.sub("", text).replace(" ", "_").lower()
     if text.isnumeric():
         return f"number_{int(text):03d}.mp3"
-    elif text.isalpha() and len(text) == 1:
+    if text.isalpha() and len(text) == 1:
         return f"char_{sanitized}.mp3"
-    else:
-        return f"phrase_{sanitized}.mp3"
-
-# --- New: Function to compress an MP3 file ---
+    return f"phrase_{sanitized}.mp3"
 
 
-def compress_mp3_file(file_path):
-    """Compresses an MP3 file using pydub to the specified bitrate."""
-    if not COMPRESSION_BITRATE:
-        return  # Skip compression if bitrate is not set
-
-    try:
-        # pydub may need the file extension to correctly identify the format
-        audio = AudioSegment.from_file(str(file_path), format="mp3")
-        # Export over the original file with the new bitrate
-        audio.export(str(file_path), format="mp3", bitrate=COMPRESSION_BITRATE)
-        print(
-            f"      -> COMPRESSED: {file_path.name} to {COMPRESSION_BITRATE}")
-    except Exception as e:
-        print(
-            f"      -> WARN: Could not compress {file_path.name}. Error: {e}")
-        print("           Ensure FFmpeg is installed and accessible in your system's PATH.")
+def iter_stem_jobs(config: TTSConfig) -> Iterable[StemJob]:
+    for lang, parts in LANGUAGE_PARTS.items():
+        lang_dir = config.stems_output_dir / lang
+        lang_dir.mkdir(parents=True, exist_ok=True)
+        for text in (*parts["phrases"], *parts["numbers"], *parts["characters"]):
+            yield StemJob(language=lang, text=text, destination=lang_dir / derive_stem_filename(text, lang))
 
 
-async def fetch_tts(session, text, lang):
-    """
-    Fetches a single TTS audio file with timeout and retry logic.
-    Returns audio content as bytes on success, None on failure.
-    """
-    lang_code = 'en-gb' if lang == 'en' else lang
-    params = {'ie': 'UTF-8', 'q': text, 'tl': lang_code, 'client': 'tw-ob'}
-
-    for attempt in range(MAX_RETRIES):
-        try:
-            headers = {'User-Agent': ua.random}
-            print(
-                f"    Attempt {attempt+1}/{MAX_RETRIES}: Fetching '{text}' ({lang_code})...")
-            async with session.get(GOOGLE_TTS_URL, params=params, headers=headers, timeout=REQUEST_TIMEOUT) as response:
-                if response.status == 200:
-                    content = await response.read()
-                    if len(content) > 100:
-                        return content
-                    else:
-                        print(
-                            f"      -> WARN: Invalid or empty data for '{text}'. Retrying...")
-                else:
-                    print(
-                        f"      -> WARN: HTTP {response.status} for '{text}'. Retrying...")
-        except Exception as e:
-            print(
-                f"      -> WARN: FAILED on attempt {attempt+1} for '{text}': {e}")
-
-        if attempt < MAX_RETRIES - 1:
-            await asyncio.sleep(1)
-        else:
-            print(
-                f"    -> ERROR: GIVING UP on '{text}' after {MAX_RETRIES} attempts.")
-            return None
+def iter_cache_jobs(config: TTSConfig) -> Iterable[CacheJob]:
+    config.cache_output_dir.mkdir(parents=True, exist_ok=True)
+    for prefix, number, counter in CACHE_COMBINATIONS:
+        filename = f"{prefix}{number:02d}-{counter}.mp3"
+        yield CacheJob(prefix, number, counter, config.cache_output_dir / filename)
 
 
-async def fetch_and_save_tts(session, semaphore, text, lang, output_path):
-    """Fetches a single TTS audio file, saves it, and then compresses it."""
-    async with semaphore:
-        if output_path.exists():
-            print(f"  Skipping existing file: {output_path}")
-            return
-
-        content = await fetch_tts(session, text, lang)
-        if content:
-            output_path.write_bytes(content)
-            print(f"    -> SUCCESS: Saved {output_path}")
-            # --- Add compression step ---
-            compress_mp3_file(output_path)
-
-
-async def generate_and_save_combined_tts(session, semaphore, char, num, counter):
-    """
-    Generates a combined TTS file, saves it, and then compresses it.
-    """
-    async with semaphore:
-        number_str = f"{char}{num:02d}"
-        filename = f"{number_str}-{counter}.mp3"
-        output_path = CACHE_DIR / filename
-
-        if output_path.exists():
-            return
-
-        print(f"  Generating cache file: {filename}")
-
-        thai_phrase = f"หมายเลข {number_str} เชิญช่อง {counter}"
-        english_phrase = f"Number {number_str} to counter {counter}"
-
-        thai_bytes_task = fetch_tts(session, thai_phrase, 'th')
-        english_bytes_task = fetch_tts(session, english_phrase, 'en')
-        thai_bytes, english_bytes = await asyncio.gather(thai_bytes_task, english_bytes_task)
-
-        if thai_bytes and english_bytes:
-            combined_content = thai_bytes + english_bytes
-            CACHE_DIR.mkdir(parents=True, exist_ok=True)
-            output_path.write_bytes(combined_content)
-            print(f"    -> SUCCESS: Saved combined cache {output_path}")
-            # --- Add compression step ---
-            compress_mp3_file(output_path)
-        else:
-            print(
-                f"    -> ERROR: Failed to create combined file for {filename} due to fetch error.")
-
-
-async def generate_stems():
-    """Main function to orchestrate the INDIVIDUAL STEM generation process."""
-    print("--- Starting Audio Stem Generation ---")
-    semaphore = asyncio.Semaphore(CONCURRENCY_LIMIT)
-    tasks = []
-    async with aiohttp.ClientSession() as session:
-        for lang, parts in PARTS_TO_GENERATE.items():
-            lang_dir = OUTPUT_DIR / lang
-            lang_dir.mkdir(parents=True, exist_ok=True)
-            all_stems = parts["phrases"] + \
-                parts["numbers"] + parts["characters"]
-            for text in all_stems:
-                filename = get_filename_for_text(text, lang)
-                output_path = lang_dir / filename
-                if not output_path.exists():
-                    tasks.append(fetch_and_save_tts(
-                        session, semaphore, text, lang, output_path))
-                else:
-                    print(f"  Skipping existing stem file: {output_path}")
-        if tasks:
-            print(
-                f"\nFound {len(tasks)} new audio stems to generate. Starting workers...")
-            await asyncio.gather(*tasks)
-        else:
-            print("\nAll audio stem files already exist.")
-    print("\n--- Audio Stem Generation Complete ---")
-
-
-async def pregenerate_cache():
-    """Main function to orchestrate the COMBINED CACHE generation process."""
-    print("\n--- Starting TTS Cache Pre-generation ---")
-    CACHE_DIR.mkdir(parents=True, exist_ok=True)
-    semaphore = asyncio.Semaphore(CONCURRENCY_LIMIT)
-    tasks = []
-
-    # A
-    A_combinations = list(product(
-        ["A"],
-        list(range(1, 101)),
-        list(range(1, 6))
-    ))
-
-    # Other chars
-    X_combinations = list(product(
-        [chr(i) for i in range(ord('B'), ord('C') + 1)],
-        range(1, 11),  # 1 to 10
-        range(1, 6)    # 1 to 5
-    ))
-
-    all_combinations = A_combinations + X_combinations
-
-    tasks_to_create = []
-    print("Checking for existing cache files...")
-    for char, num, counter in all_combinations:
-        number_str = f"{char}{num:02d}"
-        filename = f"{number_str}-{counter}.mp3"
-        output_path = CACHE_DIR / filename
-        if not output_path.exists():
-            tasks_to_create.append((char, num, counter))
-
-    if not tasks_to_create:
-        print("\nAll cache files already exist.")
-        print("\n--- TTS Cache Pre-generation Complete ---")
+def compress_mp3_file(path: Path, config: TTSConfig) -> None:
+    if not config.compression_bitrate:
         return
 
-    print(
-        f"\nFound {len(tasks_to_create)} new cache files to generate. Starting workers...")
+    try:
+        audio = AudioSegment.from_file(path, format="mp3")
+        audio.export(path, format="mp3", bitrate=config.compression_bitrate)
+        LOGGER.debug("Compressed %s to %s", path.name, config.compression_bitrate)
+    except Exception as exc:  # noqa: BLE001
+        LOGGER.warning("Could not compress %s: %s", path.name, exc)
+        LOGGER.warning("Ensure FFmpeg is available in PATH if compression is required")
 
+
+async def fetch_tts(
+    session: aiohttp.ClientSession,
+    text: str,
+    lang: str,
+    config: TTSConfig,
+) -> bytes | None:
+    lang_code = "en-gb" if lang == "en" else lang
+    params = {"ie": "UTF-8", "q": text, "tl": lang_code, "client": "tw-ob"}
+
+    for attempt in range(1, config.max_retries + 1):
+        try:
+            headers = {"User-Agent": USER_AGENT.random}
+            async with session.get(
+                config.google_tts_url,
+                params=params,
+                headers=headers,
+                timeout=config.request_timeout,
+            ) as response:
+                if response.status != 200:
+                    LOGGER.debug("HTTP %s for '%s'", response.status, text)
+                    continue
+
+                content = await response.read()
+                if len(content) > 100:
+                    return content
+                LOGGER.debug("Empty payload for '%s'", text)
+        except Exception as exc:  # noqa: BLE001
+            LOGGER.debug("Attempt %s failed for '%s': %s", attempt, text, exc)
+
+        if attempt < config.max_retries:
+            await asyncio.sleep(1)
+
+    LOGGER.error("Giving up on '%s' after %s attempts", text, config.max_retries)
+    return None
+
+
+async def execute_stem_job(
+    session: aiohttp.ClientSession,
+    semaphore: asyncio.Semaphore,
+    job: StemJob,
+    config: TTSConfig,
+) -> None:
+    if job.destination.exists():
+        LOGGER.debug("Stem cached: %s", job.destination)
+        return
+
+    async with semaphore:
+        content = await fetch_tts(session, job.text, job.language, config)
+        if not content:
+            return
+        job.destination.write_bytes(content)
+        LOGGER.info("Created stem %s", job.destination)
+        compress_mp3_file(job.destination, config)
+
+
+async def execute_cache_job(
+    session: aiohttp.ClientSession,
+    semaphore: asyncio.Semaphore,
+    job: CacheJob,
+    config: TTSConfig,
+) -> None:
+    if job.destination.exists():
+        LOGGER.debug("Cache cached: %s", job.destination)
+        return
+
+    async with semaphore:
+        thai_phrase = f"หมายเลข {job.composed_number} เชิญช่อง {job.counter}"
+        english_phrase = f"Number {job.composed_number} to counter {job.counter}"
+        thai_bytes, english_bytes = await asyncio.gather(
+            fetch_tts(session, thai_phrase, "th", config),
+            fetch_tts(session, english_phrase, "en", config),
+        )
+        if not (thai_bytes and english_bytes):
+            LOGGER.error("Failed to build cache %s", job.destination)
+            return
+
+        job.destination.write_bytes(thai_bytes + english_bytes)
+        LOGGER.info("Created cache %s", job.destination)
+        compress_mp3_file(job.destination, config)
+
+
+WorkerFn = Callable[[aiohttp.ClientSession, asyncio.Semaphore, Any, TTSConfig], Awaitable[None]]
+
+
+async def run_jobs(jobs: Iterable[Any], worker_fn: WorkerFn, config: TTSConfig) -> None:
+    semaphore = asyncio.Semaphore(config.concurrency_limit)
     async with aiohttp.ClientSession() as session:
-        for char, num, counter in tasks_to_create:
-            task = generate_and_save_combined_tts(
-                session, semaphore, char, num, counter)
-            tasks.append(task)
-        await asyncio.gather(*tasks)
+        await asyncio.gather(*(worker_fn(session, semaphore, job, config) for job in jobs))
 
-    print("\n--- TTS Cache Pre-generation Complete ---")
+
+async def generate_stems(config: TTSConfig) -> None:
+    jobs = [job for job in iter_stem_jobs(config) if not job.destination.exists()]
+    if not jobs:
+        LOGGER.info("All stem files already exist")
+        return
+
+    LOGGER.info("Generating %s stem files", len(jobs))
+    await run_jobs(jobs, execute_stem_job, config)
+
+
+async def generate_cache(config: TTSConfig) -> None:
+    jobs = [job for job in iter_cache_jobs(config) if not job.destination.exists()]
+    if not jobs:
+        LOGGER.info("All cache files already exist")
+        return
+
+    LOGGER.info("Generating %s cache files", len(jobs))
+    await run_jobs(jobs, execute_cache_job, config)
+
+
+async def main(config: TTSConfig, *, stems: bool, cache: bool) -> None:
+    if stems:
+        await generate_stems(config)
+    if cache:
+        await generate_cache(config)
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Pre-generate TTS stems and cache audio")
+    parser.add_argument(
+        "--skip-stems",
+        action="store_true",
+        help="Skip individual stem generation",
+    )
+    parser.add_argument(
+        "--skip-cache",
+        action="store_true",
+        help="Skip combined cache generation",
+    )
+    parser.add_argument(
+        "--log-level",
+        default="INFO",
+        choices=["CRITICAL", "ERROR", "WARNING", "INFO", "DEBUG"],
+        help="Logging verbosity",
+    )
+    return parser.parse_args()
+
+
+def configure_logging(level: str) -> None:
+    logging.basicConfig(format="%(levelname)s %(message)s", level=getattr(logging, level))
 
 
 if __name__ == "__main__":
-    asyncio.run(generate_stems())
-    asyncio.run(pregenerate_cache())
+    cli_args = parse_args()
+    configure_logging(cli_args.log_level)
+
+    cfg = TTSConfig()
+    asyncio.run(main(cfg, stems=not cli_args.skip_stems, cache=not cli_args.skip_cache))
