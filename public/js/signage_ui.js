@@ -760,7 +760,7 @@ document.addEventListener('DOMContentLoaded', () => {
             queueState.completed_history.slice(0, MAX_HISTORY_ITEMS_DISPLAY).forEach(call => {
                 const li = document.createElement('li');
                 li.className = 'history-item flex justify-between items-center';
-                li.innerHTML = `<span><strong class="font-semibold id-part">${sanitizeText(call.id)}</strong> &rarr; <strong class="font-semibold id-part">${sanitizeText(call.location)}</strong></span>
+                li.innerHTML = `<span><strong class="font-semibold id-part">${sanitizeText(call.id)}</strong>&rarr;<strong class="font-semibold id-part">${sanitizeText(call.location)}</strong></span>
                                 <span class="text-xs text-gray-400">${formatDisplayTime(call.timestamp)}</span>`;
                 listHistoryCalls.appendChild(li); // Appends: newest (from server) appears at top if server sends newest first.
             });
@@ -774,7 +774,7 @@ document.addEventListener('DOMContentLoaded', () => {
             queueState.skipped_history.slice(0, MAX_SKIPPED_ITEMS_TO_DISPLAY).forEach(call => {
                 const li = document.createElement('li');
                 li.className = 'history-item flex justify-between items-center';
-                li.innerHTML = `<span><strong class="font-semibold id-part text-yellow-400">${sanitizeText(call.id)}</strong> &rarr; <strong class="font-semibold id-part text-yellow-400">${sanitizeText(call.location)}</strong></span>
+                li.innerHTML = `<span><strong class="font-semibold id-part text-yellow-400">${sanitizeText(call.id)}</strong>&rarr;<strong class="font-semibold id-part text-yellow-400">${sanitizeText(call.location)}</strong></span>
                                 <span class="text-xs text-gray-400">${formatDisplayTime(call.timestamp)}</span>`;
                 listSkippedCalls.appendChild(li);
             });

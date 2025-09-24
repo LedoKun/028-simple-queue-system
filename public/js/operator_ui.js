@@ -133,7 +133,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 queueState.completed_history.slice(0, MAX_LIST_ITEMS_OPERATOR).forEach(call => {
                     const li = document.createElement('li');
                     li.className = 'history-list-item flex justify-between items-center';
-                    li.innerHTML = `<span><strong class="font-semibold">${sanitizeText(call.id)}</strong> &rarr; <strong class="font-semibold">${sanitizeText(call.location)}</strong></span>
+                    li.innerHTML = `<span><strong class="font-semibold">${sanitizeText(call.id)}</strong>&rarr;<strong class="font-semibold">${sanitizeText(call.location)}</strong></span>
                                     <span class="text-xs text-gray-400">${formatDisplayTime(call.timestamp)}</span>`;
                     // Insert at the beginning to show newest entries first.
                     listHistoryCalls.insertBefore(li, listHistoryCalls.firstChild);
@@ -153,7 +153,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     const li = document.createElement('li');
                     li.className = 'history-list-item flex justify-between items-center';
                     // Use a different color for skipped calls for visual distinction.
-                    li.innerHTML = `<span><strong class="font-semibold text-yellow-400">${sanitizeText(call.id)}</strong> &rarr; <strong class="font-semibold text-yellow-400">${sanitizeText(call.location)}</strong></span>
+                    li.innerHTML = `<span><strong class="font-semibold text-yellow-400">${sanitizeText(call.id)}</strong>&rarr;<strong class="font-semibold text-yellow-400">${sanitizeText(call.location)}</strong></span>
                                     <span class="text-xs text-gray-400">${formatDisplayTime(call.timestamp)}</span>`;
                     // Insert at the beginning to show newest entries first.
                     listSkippedCalls.insertBefore(li, listSkippedCalls.firstChild);
