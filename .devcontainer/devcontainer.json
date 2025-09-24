@@ -34,7 +34,7 @@
 
 	// Use 'postCreateCommand' to run commands after the container is created.
 	// "postCreateCommand": "rustc --version",
-	"postCreateCommand": "sudo apt-get update && sudo apt-get install -y ffmpeg && sudo apt-get dist-upgrade -y && uv pip install --system --upgrade -r ./requirements.txt && npm install && cargo clean && cargo build",
+	"postCreateCommand": "sudo apt-get update && sudo apt-get install -y ffmpeg && sudo apt-get dist-upgrade -y && sudo uv pip install --system --break-system-packages --upgrade -r ./requirements.txt && npm install && cargo clean && cargo build",
 
 	"customizations": {
 		"vscode": {
