@@ -19,6 +19,7 @@
             width: 100vw;
             overflow: hidden;
             font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+            font-size: clamp(14px, 1vw, 18px);
             color: #e5e7eb;
             background: radial-gradient(120% 120% at 50% 20%, #1f2937 0%, #111827 60%, #0b1120 100%);
             -webkit-font-smoothing: antialiased;
@@ -28,8 +29,8 @@
         .signage-shell {
             display: flex;
             height: 100vh;
-            padding: 1.75rem 2rem;
-            gap: 1.75rem;
+            padding: clamp(1.25rem, 3vh, 2.5rem);
+            gap: clamp(1.25rem, 2.5vh, 2.5rem);
             backdrop-filter: blur(10px);
         }
 
@@ -43,41 +44,42 @@
             background: linear-gradient(145deg, rgba(55, 65, 81, 0.65), rgba(17, 24, 39, 0.85));
             border: 1px solid rgba(148, 163, 184, 0.15);
             box-shadow: 0 35px 60px -40px rgba(15, 23, 42, 0.9);
+            min-height: 0;
         }
 
         .now-serving-header {
             display: flex;
             flex-direction: column;
-            gap: 0.35rem;
+            gap: 0.25rem;
         }
 
         .main-label-text {
-            font-size: clamp(1.4rem, 4vw, 2.8rem);
+            font-size: clamp(2.5rem, 4.5vw, 3.8rem);
             font-weight: 600;
             color: rgba(224, 231, 255, 0.85);
         }
 
         .sub-label-text {
-            font-size: clamp(0.85rem, 2vw, 1.25rem);
+            font-size: clamp(1.1rem, 2vw, 1.7rem);
             color: rgba(148, 163, 184, 0.85);
             letter-spacing: 0.02em;
         }
 
         .token-display {
-            margin-top: clamp(1.5rem, 4vw, 2.5rem);
-            font-size: clamp(5rem, 18vw, 16rem);
+            margin-top: 0;
+            font-size: clamp(14rem, 40vh, 28rem);
             font-weight: 900;
             line-height: 0.95;
             letter-spacing: -0.04em;
             color: #fde68a;
-            text-shadow: 0 18px 45px rgba(250, 204, 21, 0.35);
+            text-shadow: 0 15px 40px rgba(250, 204, 21, 0.35);
         }
 
         .counter-panel {
-            margin-top: clamp(1.5rem, 4vw, 2.5rem);
+            margin-top: 0;
             display: grid;
-            gap: 0.5rem;
-            max-width: 26rem;
+            gap: 0.25rem;
+            max-width: 100%;
         }
 
         #location-sublabels {
@@ -85,45 +87,107 @@
         }
 
         .counter-display {
-            font-size: clamp(3.5rem, 12vw, 9rem);
+            font-size: clamp(8rem, 22vh, 15rem);
             font-weight: 800;
+            line-height: 1;
             color: #e2e8f0;
-            text-shadow: 0 10px 28px rgba(15, 23, 42, 0.55);
+            text-shadow: 0 8px 25px rgba(15, 23, 42, 0.55);
         }
 
         .side-panel {
             flex: 1.1;
             display: flex;
             flex-direction: column;
-            gap: 1.5rem;
+            gap: clamp(1.25rem, 2.5vh, 2rem);
         }
 
         .glass-card {
             background: rgba(17, 24, 39, 0.6);
             border-radius: 20px;
             border: 1px solid rgba(148, 163, 184, 0.12);
-            box-shadow: 0 25px 45px -35px rgba(15, 23, 42, 0.85);
+            box-shadow: 0 20px 40px -30px rgba(15, 23, 42, 0.85);
             overflow: hidden;
             display: flex;
             flex-direction: column;
         }
 
+        .bottom-row-wrapper {
+            display: flex;
+            flex-direction: row;
+            gap: clamp(1.25rem, 2.5vh, 2rem);
+            flex: 1;
+            min-height: 0;
+        }
+
+        .bottom-row-wrapper .list-card {
+            flex: 1;
+        }
+
+        .qr-card {
+            flex: 0 1 14rem;
+            justify-content: center;
+            align-items: center;
+            padding: clamp(0.75rem, 1.5vh, 1.25rem);
+        }
+
+        .qr-card figure {
+            margin: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 0.75rem;
+            color: rgba(226, 232, 240, 0.95);
+        }
+
+        .qr-card img {
+            width: 100%;
+            max-width: 10rem;
+            height: auto;
+            filter: drop-shadow(0 8px 20px rgba(15, 23, 42, 0.4));
+        }
+
+        .qr-card figcaption {
+            font-weight: 500;
+            text-align: center;
+            display: flex;
+            flex-direction: column;
+            gap: 0.2rem;
+            line-height: 1.3;
+        }
+
+        .figcaption-th {
+            font-size: clamp(0.8rem, 1.2vw, 1rem);
+            font-weight: 600;
+            color: #e2e8f0;
+        }
+
+        .figcaption-en {
+            font-size: clamp(0.7rem, 1vw, 0.85rem);
+            font-weight: 400;
+            color: #94a3b8;
+        }
+
         #announcement-area {
             flex: none;
-            min-height: clamp(9rem, 35vh, 15rem);
+            min-height: clamp(10rem, 35vh, 18rem);
             background: #ffffff;
-            padding: 0.85rem;
+            padding: clamp(0.75rem, 1.5vh, 1.25rem);
         }
 
         #announcement-banner-container {
             width: 100%;
             height: 100%;
-            border-radius: 16px;
+            border-radius: 14px;
             background: #ffffff;
             display: flex;
             justify-content: center;
             align-items: center;
             overflow: hidden;
+        }
+
+        #announcement-placeholder {
+            font-size: clamp(1.2rem, 2.5vw, 2.2rem);
+            font-weight: 600;
         }
 
         .banner-media {
@@ -140,12 +204,12 @@
         }
 
         .list-card header {
-            padding: 1rem 1.25rem 0.75rem;
+            padding: 1.2rem 1.5rem 0.9rem;
             border-bottom: 1px solid rgba(148, 163, 184, 0.12);
         }
 
         .list-title {
-            font-size: clamp(1rem, 2.2vw, 1.65rem);
+            font-size: clamp(1.3rem, 2.5vw, 2.1rem);
             font-weight: 600;
             letter-spacing: 0.015em;
             display: flex;
@@ -154,15 +218,23 @@
         }
 
         .list-title span {
-            font-size: 0.85rem;
+            font-size: 1rem;
             color: rgba(156, 163, 175, 0.8);
             font-weight: 500;
+        }
+
+        #missed-tokens-card .list-title {
+            font-size: clamp(1.1rem, 2vw, 1.8rem);
+        }
+
+        #missed-tokens-card .list-title span {
+            font-size: 0.85rem;
         }
 
         .list-scroll {
             flex: 1;
             overflow-y: auto;
-            padding: 1rem 1.25rem 1.75rem;
+            padding: 1rem 1.5rem 1.75rem;
         }
 
         #list-history-calls,
@@ -172,16 +244,16 @@
             margin: 0;
             display: flex;
             flex-direction: column;
-            gap: 0.75rem;
+            gap: 0.8rem;
         }
 
         .history-item {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            font-size: clamp(0.9rem, 2vw, 1.15rem);
-            padding: 0.75rem 0.9rem;
-            border-radius: 14px;
+            font-size: clamp(1.1rem, 2vw, 1.6rem);
+            padding: 0.9rem 1.1rem;
+            border-radius: 16px;
             background: rgba(30, 41, 59, 0.55);
             border: 1px solid rgba(148, 163, 184, 0.08);
         }
@@ -191,38 +263,38 @@
         }
 
         .history-item .id-part {
-            min-width: 4.25rem;
+            min-width: 5rem;
             display: inline-block;
             text-align: center;
         }
 
         .history-item .timestamp {
             color: rgba(148, 163, 184, 0.75);
-            font-size: 0.85em;
+            font-size: 0.9em;
         }
 
         @media (max-width: 768px) {
             .signage-shell {
-                padding: 1.25rem;
-                gap: 1.25rem;
+                padding: 1rem;
+                gap: 1rem;
                 flex-direction: column;
             }
 
             .now-serving {
-                padding: 1.5rem;
+                padding: 1.25rem;
             }
         }
 
         #sse-status-indicator {
             position: fixed;
-            right: 1.5rem;
-            bottom: 1.5rem;
-            padding: 0.45rem 0.9rem;
+            top: clamp(1.25rem, 3vh, 2.5rem);
+            left: clamp(1.25rem, 3vh, 2.5rem); /* MOVED to left */
+            padding: 0.5rem 1rem;
             border-radius: 999px;
-            font-size: 0.75rem;
+            font-size: 0.85rem;
             font-weight: 600;
             letter-spacing: 0.02em;
-            min-width: 9rem;
+            min-width: 10rem;
             text-align: center;
             background: rgba(59, 130, 246, 0.18);
             color: #dbeafe;
@@ -252,14 +324,14 @@
         <section class="now-serving">
             <div class="now-serving-header">
                 <div id="call-id-label" class="main-label-text">หมายเลข / TOKEN</div>
-                    <div id="call-id-sublabels" class="sub-label-text">Token / တိုကင် / 代幣 / 代币 / トークン / តូខិន / 토큰 / Thẻ Token</div>
-                </div>
-                <div id="current-call-id" class="token-display">----</div>
-                <div class="counter-panel">
-                    <div id="location-label" class="main-label-text">ช่อง / COUNTER</div>
-                    <div id="location-sublabels" class="sub-label-text">Loket / ကောင်တာ / 櫃檯 / 窗口 / 窓口 / កុងទ័រ / 창구 / Quầy</div>
-                    <div id="current-location" class="counter-display">----</div>
-                </div>
+                <div id="call-id-sublabels" class="sub-label-text">Token / တိုကင် / 代幣 / 代币 / トークン / តូខិន / 토큰 / Thẻ Token</div>
+            </div>
+            <div id="current-call-id" class="token-display">----</div>
+            <div class="counter-panel">
+                <div id="location-label" class="main-label-text">ช่อง / COUNTER</div>
+                <div id="location-sublabels" class="sub-label-text">Loket / ကောင်တာ / 櫃檯 / 窗口 / 窓口 / កុងទ័រ / 창구 / Quầy</div>
+                <div id="current-location" class="counter-display">----</div>
+            </div>
         </section>
 
         <aside class="side-panel">
@@ -278,12 +350,24 @@
                 </div>
             </div>
 
-            <div class="glass-card list-card">
-                <header class="list-title">เรียกไม่พบ <span>Missed Tokens</span></header>
-                <div class="list-scroll">
-                    <ul id="list-skipped-calls">
-                        <li class="history-item italic text-gray-400">No skipped tokens.</li>
-                    </ul>
+            <div class="bottom-row-wrapper">
+                <div id="missed-tokens-card" class="glass-card list-card">
+                    <header class="list-title">เรียกไม่พบ <span>Missed Tokens</span></header>
+                    <div class="list-scroll">
+                        <ul id="list-skipped-calls">
+                            <li class="history-item italic text-gray-400">No skipped tokens.</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="glass-card qr-card">
+                    <figure>
+                        <img src="media/new-028-map.svg" alt="Map to temporary location of Public Health Center 28" loading="lazy">
+                        <figcaption>
+                            <span class="figcaption-th">แผนที่ศูนย์ฯ 28 (ชั่วคราวหลัง ม.ค. 2568)</span>
+                            <span class="figcaption-en">Map to PHC 28 (Temp. after Jan 2025)</span>
+                        </figcaption>
+                    </figure>
                 </div>
             </div>
         </aside>
