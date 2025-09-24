@@ -58,16 +58,51 @@ The system can be configured using the following environment variables. You can 
 | `SERVE_DIR_PATH` | `./public` | Path to the directory containing static web files. |
 | `ANNOUNCEMENTS_AUDIO_SUB_PATH` | `media/announcements` | Sub-path within SERVE_DIR_PATH where announcement audio files are located. |
 | `BANNERS_SUB_PATH` | `media/banners` | Sub-path within SERVE_DIR_PATH where banner media is stored. |
-| `ANNOUNCEMENT_AUTO_CYCLE_INTERVAL_SECONDS` | `600` | Interval (in seconds) for automatically cycling announcements. Set to 0 to disable. |
+| `ANNOUNCEMENT_AUTO_CYCLE_INTERVAL_SECONDS` | `1200` | Interval (in seconds) for automatically cycling announcements. Set to 0 to disable. |
 | `ANNOUNCEMENT_MANUAL_TRIGGER_COOLDOWN_SECONDS` | `5` | Cooldown period (in seconds) after manually triggering an announcement. |
 | `BANNER_ROTATION_INTERVAL_SECONDS` | `10` | Interval (in seconds) for rotating banners on the signage display. |
 | `GTTS_CACHE_BASE_PATH` | `/tmp/gtts_audio_cache` | Base path for caching generated TTS audio files. |
 | `TTS_CACHE_MAXIMUM_FILES` | `500` | Maximum number of TTS audio files to keep in the cache. |
-| `TTS_EXTERNAL_SERVICE_TIMEOUT_SECONDS` | `15` | Timeout (in seconds) for external TTS service requests. |
-| `TTS_SUPPORTED_LANGUAGES` | `th:Thai,en-uk:British English` | Comma-separated list of supported languages for TTS (format: code:Name). |
+| `TTS_EXTERNAL_SERVICE_TIMEOUT_SECONDS` | `30` | Timeout (in seconds) for external TTS service requests. |
+| `TTS_SUPPORTED_LANGUAGES` | `th:Thai,en-GB:British English` | Comma-separated list of supported languages for TTS (format: code:Name). |
 | `SSE_KEEP_ALIVE_INTERVAL_SECONDS` | `15` | Interval (in seconds) for sending SSE keep-alive messages. |
 | `SSE_EVENT_BUFFER_SIZE` | `200` | Size of the buffer for SSE events. |
 | `TTS_CACHE_WEB_PATH` | `/tts_cache` | Web path where the TTS cache is accessible. |
+
+### Generating Text-to-Speech Assets
+
+The frontend falls back to pre-generated Google Translate audio when the live TTS
+service cannot be reached. The helper script `generate_stems_google_translate.py`
+creates both the individual "stems" (phrases, numbers, characters) and a cache of
+combined queue announcements.
+
+Prerequisites:
+
+- Python 3.10+
+- FFmpeg available on your PATH (required for MP3 recompression)
+
+Install the minimal dependencies:
+
+```bash
+pip install -r requirements.txt
+```
+
+Then run the script. By default it generates both stem and cache audio, skipping
+files that already exist:
+
+```bash
+python generate_stems_google_translate.py
+```
+
+Useful flags:
+
+- `--skip-stems` – only refresh the combined cache files
+- `--skip-cache` – only refresh individual stem files
+- `--log-level DEBUG` – surface detailed fetch/compression diagnostics
+
+Outputs are written beneath `public/media/audio_stems/` and
+`public/media/audio_cache/multi/` respectively. You can safely re-run the script;
+completed files are detected and left untouched unless they are removed first.
 
 ## Automated Docker Image Builds
 
