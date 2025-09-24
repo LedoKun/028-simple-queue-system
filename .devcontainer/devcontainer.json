@@ -24,6 +24,8 @@
 
 	"containerEnv": {
 		"PIP_BREAK_SYSTEM_PACKAGES": "true",
+		"UV_BREAK_SYSTEM_PACKAGES": "true",
+		"UV_SYSTEM_PYTHON": "true",
 		"PIP_ROOT_USER_ACTION": "ignore",
 		"PIP_USER": "true",
 		"RUST_LOG": "debug"
@@ -34,7 +36,7 @@
 
 	// Use 'postCreateCommand' to run commands after the container is created.
 	// "postCreateCommand": "rustc --version",
-	"postCreateCommand": "sudo apt-get update && sudo apt-get install -y ffmpeg && sudo apt-get dist-upgrade -y && sudo pip install --upgrade --root-user-action --break-system-packages -r ./requirements.txt && npm install && cargo clean && cargo build",
+	"postCreateCommand": "sudo /bin/bash .devcontainer/postCreateCommand.sh && /bin/bash .devcontainer/postCreateCommandUser.sh",
 
 	"customizations": {
 		"vscode": {
