@@ -289,10 +289,7 @@ impl AppConfig {
                     None // Skip empty parts (e.g., from "a,,b")
                 } else {
                     // Take only the code part (before the first ':')
-                    let code = lang_part
-                        .split(':')
-                        .next()
-                        .map(normalize_language_code);
+                    let code = lang_part.split(':').next().map(normalize_language_code);
                     debug!(
                         "Parsed language code '{}' from '{}'",
                         code.as_ref().unwrap_or(&"N/A".to_string()),

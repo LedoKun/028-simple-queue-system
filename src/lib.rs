@@ -16,6 +16,7 @@
 // Declare public modules, making their contents accessible to users of this crate.
 pub mod announcements;
 pub mod api;
+pub mod application;
 pub mod config;
 pub mod queue;
 pub mod sse;
@@ -81,6 +82,7 @@ pub enum AppEvent {
 // Re-export key structs for easier access when using the crate.
 // This allows users to import `AppConfig` directly from `queue_calling_system`
 // instead of `queue_calling_system::config::AppConfig`.
+pub use application::{AnnouncementService, QueueService, TtsService};
 pub use config::AppConfig;
 pub use queue::QueueState;
 pub use state::AppState;

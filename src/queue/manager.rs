@@ -618,10 +618,7 @@ mod tests {
             "Completed history should still have 2 calls"
         ); // A102 and A101 are there
         assert!(
-            completed
-                .iter()
-                .find(|c| c.original_id == "A100")
-                .is_none(),
+            completed.iter().find(|c| c.original_id == "A100").is_none(),
             "A100 should no longer be in completed history"
         );
         assert_eq!(
@@ -714,28 +711,14 @@ mod tests {
         manager.add_call("A101".to_string(), "4".to_string()); // A101 current, A100 completed
         manager.add_call("A102".to_string(), "4".to_string()); // A102 current, A101 completed, A100 still completed
 
-        assert_eq!(
-            manager
-                .get_current_call()
-                .unwrap()
-                .original_id,
-            "A102"
-        );
+        assert_eq!(manager.get_current_call().unwrap().original_id, "A102");
         assert_eq!(manager.get_completed_history().len(), 2); // A100, A101 (oldest to newest)
         assert_eq!(
-            manager
-                .get_completed_history()
-                .front()
-                .unwrap()
-                .original_id,
+            manager.get_completed_history().front().unwrap().original_id,
             "A100"
         );
         assert_eq!(
-            manager
-                .get_completed_history()
-                .back()
-                .unwrap()
-                .original_id,
+            manager.get_completed_history().back().unwrap().original_id,
             "A101"
         );
         assert!(manager.get_skipped_history().is_empty());
@@ -743,10 +726,7 @@ mod tests {
         info!("Adding A104 directly to skipped history (should not affect current or completed).");
         manager.add_to_skipped_directly("A104".to_string(), "4".to_string());
         assert_eq!(
-            manager
-                .get_current_call()
-                .unwrap()
-                .original_id,
+            manager.get_current_call().unwrap().original_id,
             "A102",
             "Current call should remain A102"
         );
@@ -758,8 +738,7 @@ mod tests {
         let skipped = manager.get_skipped_history();
         assert_eq!(skipped.len(), 1, "Skipped history should have 1 call");
         assert_eq!(
-            skipped[0].original_id,
-            "A104",
+            skipped[0].original_id, "A104",
             "The skipped call should be A104"
         );
 
@@ -811,15 +790,11 @@ mod tests {
             "Skipped history should respect the configured max size"
         );
         assert!(
-            skipped
-                .iter()
-                .any(|c| c.original_id == "A102"),
+            skipped.iter().any(|c| c.original_id == "A102"),
             "A102 should remain in skipped history"
         );
         assert!(
-            skipped
-                .iter()
-                .any(|c| c.original_id == "A100"),
+            skipped.iter().any(|c| c.original_id == "A100"),
             "A100 should be in skipped history after direct add"
         );
         assert!(

@@ -7,7 +7,7 @@
 //! sets up the Rocket web framework with API routes and file servers,
 //! and launches the Rocket server.
 
-use queue_calling_system::api::routes;
+use queue_calling_system::api;
 use queue_calling_system::config::AppConfig;
 use queue_calling_system::setup_logging;
 use queue_calling_system::state::AppState;
@@ -153,18 +153,18 @@ async fn main() -> Result<(), rocket::Error> {
         .mount(
             "/api", // Mount all API routes under the "/api" base path.
             rocket::routes![
-                routes::sse_events,              // Server-Sent Events for real-time updates.
-                routes::trigger_tts,             // Endpoint to trigger TTS generation.
-                routes::get_supported_languages, // Get list of supported TTS languages.
-                routes::get_ordered_supported_languages, // Get ordered list of supported TTS languages.
-                routes::queue_call,                      // Add a new call to the queue.
-                routes::skip_call,     // Skip the current call without completing.
-                routes::complete_call, // Mark the current call as complete.
-                routes::force_skip_new_call, // Force-skip the next incoming call.
-                routes::get_queue_state, // Get the current state of the call queue.
-                routes::get_announcement_status, // Get status of ongoing announcements.
-                routes::manual_advance_announcement, // Manually advance announcement playback.
-                routes::manual_trigger_specific_announcement, // Trigger a specific announcement slot.
+                api::sse_events,                      // Server-Sent Events for real-time updates.
+                api::trigger_tts,                     // Endpoint to trigger TTS generation.
+                api::get_supported_languages,         // Get list of supported TTS languages.
+                api::get_ordered_supported_languages, // Get ordered list of supported TTS languages.
+                api::queue_call,                      // Add a new call to the queue.
+                api::skip_call,                       // Skip the current call without completing.
+                api::complete_call,                   // Mark the current call as complete.
+                api::force_skip_new_call,             // Force-skip the next incoming call.
+                api::get_queue_state,                 // Get the current state of the call queue.
+                api::get_announcement_status,         // Get status of ongoing announcements.
+                api::manual_advance_announcement,     // Manually advance announcement playback.
+                api::manual_trigger_specific_announcement, // Trigger a specific announcement slot.
             ],
         )
         // Mount the TTS cache FileServer at its configured web path.

@@ -1,13 +1,13 @@
-// src/api/mod.rs
+//! Public-facing HTTP API routes grouped by domain.
 
-//! This module defines the public-facing HTTP API for the Queue Calling System.
-//!
-//! It serves as the entry point for all API routes, encapsulating them within
-//! the `routes` submodule. This structure promotes a clean separation of concerns,
-//! keeping API endpoint definitions distinct from the core business logic.
+pub mod announcements;
+pub mod events;
+pub mod queue;
+pub mod tts;
 
-// Declare the `routes` submodule.
-// This line makes the code within `src/api/routes.rs` available
-// as the `routes` submodule of the `api` module. It's where all
-// your Rocket route handlers are defined.
-pub mod routes;
+pub use announcements::{
+    get_announcement_status, manual_advance_announcement, manual_trigger_specific_announcement,
+};
+pub use events::sse_events;
+pub use queue::{complete_call, force_skip_new_call, get_queue_state, queue_call, skip_call};
+pub use tts::{get_ordered_supported_languages, get_supported_languages, trigger_tts};
