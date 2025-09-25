@@ -537,6 +537,7 @@ class SignagePage {
     player.pause();
     player.currentTime = 0;
     player.src = nextItem.src;
+    player.playbackRate = nextItem.playerType === 'chime' ? 1 : 1.1;
     this.attachAudioListeners(player);
 
     player.play()
