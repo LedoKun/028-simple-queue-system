@@ -1,7 +1,9 @@
-use std::sync::OnceLock;
+use std::sync::{Arc, OnceLock};
 
+use axum::extract::State;
+use axum::http::StatusCode;
+use axum::Json;
 use regex::Regex;
-use rocket::{get, post, response::status, serde::json::Json, State};
 use serde::Deserialize;
 use tracing::{debug, error, info, warn};
 
@@ -9,7 +11,6 @@ use crate::{AppState, QueueState};
 
 /// Request data structure for adding or updating a call in the queue.
 #[derive(Deserialize, Debug)]
-#[serde(crate = "rocket::serde")]
 pub struct AddCallRequest {
     /// Human readable identifier (e.g. "A1", "B123").
     pub original_id: String,
@@ -19,7 +20,6 @@ pub struct AddCallRequest {
 
 /// Request data structure for forcing a call into the skipped history.
 #[derive(Deserialize, Debug)]
-#[serde(crate = "rocket::serde")]
 pub struct ForceSkipRequest {
     pub original_id: String,
     pub location: String,
@@ -61,12 +61,10 @@ fn validate_location(location: &str) -> Result<(), String> {
     }
 }
 
-#[post("/queue/add", data = "<call_request_data>")]
 pub async fn queue_call(
-    state: &State<AppState>,
-    call_request_data: Json<AddCallRequest>,
-) -> Result<status::Accepted<String>, status::BadRequest<String>> {
-    let call_info = call_request_data.into_inner();
+    State(state): State<Arc<AppState>>,
+    Json(call_info): Json<AddCallRequest>,
+) -> Result<(StatusCode, String), (StatusCode, String)> {
     info!(
         "/api/queue/add: Received call data: original_id='{}', location='{}'",
         call_info.original_id, call_info.location
@@ -77,7 +75,7 @@ pub async fn queue_call(
             "Invalid original_id format received: '{}'. {}",
             call_info.original_id, IDENTIFIER_FORMAT_MESSAGE
         );
-        return Err(status::BadRequest(message));
+        return Err((StatusCode::BAD_REQUEST, message));
     }
 
     if let Err(message) = validate_location(&call_info.location) {
@@ -85,7 +83,7 @@ pub async fn queue_call(
             "Invalid location format received: '{}'. {}",
             call_info.location, LOCATION_FORMAT_MESSAGE
         );
-        return Err(status::BadRequest(message));
+        return Err((StatusCode::BAD_REQUEST, message));
     }
 
     match state
@@ -98,26 +96,29 @@ pub async fn queue_call(
                 "/api/queue/add: Call '{}' (Original: '{}', Location: '{}') is now current.",
                 current_call.id, current_call.original_id, current_call.location
             );
-            Ok(status::Accepted(format!(
-                "Call {} with location {} is now current. TTS initiated.",
-                current_call.original_id, current_call.location
-            )))
+            Ok((
+                StatusCode::ACCEPTED,
+                format!(
+                    "Call {} with location {} is now current. TTS initiated.",
+                    current_call.original_id, current_call.location
+                ),
+            ))
         }
         Err(err) => {
             error!(
                 "/api/queue/add: Queue service failed for original_id='{}': {}",
                 call_info.original_id, err
             );
-            Err(status::BadRequest(
+            Err((
+                StatusCode::BAD_REQUEST,
                 "Failed to process the call. An unexpected server error occurred.".to_string(),
             ))
         }
     }
 }
 
-/// Rocket route for skipping the `current_call`.
-#[post("/queue/skip")]
-pub async fn skip_call(state: &State<AppState>) -> status::Accepted<String> {
+/// Axum route for skipping the `current_call`.
+pub async fn skip_call(State(state): State<Arc<AppState>>) -> (StatusCode, String) {
     info!("/api/queue/skip: Attempting to skip current call.");
     let message = if let Some(skipped_call) = state.queue.skip_current_call().await {
         info!("/api/queue/skip: Call '{}' was skipped.", skipped_call.id);
@@ -130,12 +131,11 @@ pub async fn skip_call(state: &State<AppState>) -> status::Accepted<String> {
         "No current call to skip.".to_string()
     };
 
-    status::Accepted(message)
+    (StatusCode::ACCEPTED, message)
 }
 
-/// Rocket route for marking the `current_call` as completed.
-#[post("/queue/complete")]
-pub async fn complete_call(state: &State<AppState>) -> status::Accepted<String> {
+/// Axum route for marking the `current_call` as completed.
+pub async fn complete_call(State(state): State<Arc<AppState>>) -> (StatusCode, String) {
     info!("/api/queue/complete: Attempting to complete current call.");
     let message = if let Some(completed_call) = state.queue.complete_current_call().await {
         info!(
@@ -151,16 +151,14 @@ pub async fn complete_call(state: &State<AppState>) -> status::Accepted<String> 
         "No current call to complete.".to_string()
     };
 
-    status::Accepted(message)
+    (StatusCode::ACCEPTED, message)
 }
 
-/// Rocket route for adding a new call directly to the skipped history.
-#[post("/queue/force_skip", data = "<request_data>")]
+/// Axum route for adding a new call directly to the skipped history.
 pub async fn force_skip_new_call(
-    state: &State<AppState>,
-    request_data: Json<ForceSkipRequest>,
-) -> Result<status::Accepted<String>, status::BadRequest<String>> {
-    let call_info = request_data.into_inner();
+    State(state): State<Arc<AppState>>,
+    Json(call_info): Json<ForceSkipRequest>,
+) -> Result<(StatusCode, String), (StatusCode, String)> {
     info!(
         "/api/queue/force_skip: Received data for direct skip: original_id='{}', location='{}'",
         call_info.original_id, call_info.location
@@ -171,7 +169,7 @@ pub async fn force_skip_new_call(
             "Invalid original_id format received for force_skip: '{}'. {}",
             call_info.original_id, IDENTIFIER_FORMAT_MESSAGE
         );
-        return Err(status::BadRequest(message));
+        return Err((StatusCode::BAD_REQUEST, message));
     }
 
     if let Err(message) = validate_location(&call_info.location) {
@@ -179,7 +177,7 @@ pub async fn force_skip_new_call(
             "Invalid location format received for force_skip: '{}'. {}",
             call_info.location, LOCATION_FORMAT_MESSAGE
         );
-        return Err(status::BadRequest(message));
+        return Err((StatusCode::BAD_REQUEST, message));
     }
 
     match state
@@ -192,27 +190,32 @@ pub async fn force_skip_new_call(
                 "/api/queue/force_skip: Call '{}' added to skipped history.",
                 skipped_call.id
             );
-            Ok(status::Accepted(format!(
-                "Call {} with location {} added directly to skipped list.",
-                skipped_call.original_id, skipped_call.location
-            )))
+            Ok((
+                StatusCode::ACCEPTED,
+                format!(
+                    "Call {} with location {} added directly to skipped list.",
+                    skipped_call.original_id, skipped_call.location
+                ),
+            ))
         }
         Err(err) => {
             error!(
                 "/api/queue/force_skip: queue service failed for original_id='{}': {}",
                 call_info.original_id, err
             );
-            Err(status::BadRequest(format!(
-                "Failed to add call {} to skipped list. An unexpected server error occurred.",
-                call_info.original_id
-            )))
+            Err((
+                StatusCode::BAD_REQUEST,
+                format!(
+                    "Failed to add call {} to skipped list. An unexpected server error occurred.",
+                    call_info.original_id
+                ),
+            ))
         }
     }
 }
 
-/// Rocket route for retrieving the current state of the call queue.
-#[get("/queue/state")]
-pub async fn get_queue_state(state: &State<AppState>) -> Json<QueueState> {
+/// Axum route for retrieving the current state of the call queue.
+pub async fn get_queue_state(State(state): State<Arc<AppState>>) -> Json<QueueState> {
     debug!("GET /api/queue/state: Fetching current queue state.");
     let q_state = state.queue.snapshot().await;
     debug!("GET /api/queue/state: Returning state: {:?}", q_state);

@@ -282,7 +282,7 @@ impl TTSManager {
         let task_lang = lang;
 
         // Spawn a new asynchronous task to perform the TTS generation.
-        // This prevents blocking the main thread/Rocket handler.
+        // This prevents blocking the main thread/Axum handler.
         debug!("Trigger TTS Generation: Spawning async task for TTS generation.");
         task::spawn(async move {
             Self::perform_tts_task_with_fallback(

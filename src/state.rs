@@ -1,6 +1,6 @@
 // src/state.rs
 
-//! Shared application state wiring for Rocket routes.
+//! Shared application state wiring for Axum routes.
 
 use std::sync::Arc;
 use tokio::sync::broadcast;

@@ -1,4 +1,8 @@
-use rocket::{get, http::Status, post, response::status, serde::json::Json, State};
+use std::sync::Arc;
+
+use axum::extract::{Path, State};
+use axum::http::StatusCode;
+use axum::Json;
 use serde::Serialize;
 use tracing::{debug, info, warn};
 
@@ -7,16 +11,14 @@ use crate::AppState;
 
 /// Standard error response payload for announcement endpoints.
 #[derive(Serialize, Debug)]
-#[serde(crate = "rocket::serde")]
 pub struct ErrorResponse {
     error: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     remaining_seconds: Option<u64>,
 }
 
-#[get("/announcements/status")]
 pub async fn get_announcement_status(
-    state: &State<AppState>,
+    State(state): State<Arc<AppState>>,
 ) -> Json<announcements::manager::AnnouncementStatus> {
     info!("GET /api/announcements/status: Fetching announcement status.");
     let status = state.announcements.current_status().await;
@@ -24,15 +26,15 @@ pub async fn get_announcement_status(
     Json(status)
 }
 
-#[post("/announcements/next")]
 pub async fn manual_advance_announcement(
-    state: &State<AppState>,
-) -> Result<status::Accepted<String>, status::Custom<Json<ErrorResponse>>> {
+    State(state): State<Arc<AppState>>,
+) -> Result<(StatusCode, String), (StatusCode, Json<ErrorResponse>)> {
     info!("POST /api/announcements/next: Triggering manual announcement advancement.");
     match state.announcements.manual_advance().await {
         Ok(_) => {
             debug!("Manual announcement advancement triggered successfully.");
-            Ok(status::Accepted(
+            Ok((
+                StatusCode::ACCEPTED,
                 "Announcement advancement triggered".to_string(),
             ))
         }
@@ -43,25 +45,24 @@ pub async fn manual_advance_announcement(
     }
 }
 
-#[post("/announcements/trigger/<slot_id>")]
 pub async fn manual_trigger_specific_announcement(
-    state: &State<AppState>,
-    slot_id: &str,
-) -> Result<status::Accepted<String>, status::Custom<Json<ErrorResponse>>> {
+    State(state): State<Arc<AppState>>,
+    Path(slot_id): Path<String>,
+) -> Result<(StatusCode, String), (StatusCode, Json<ErrorResponse>)> {
     info!(
         "POST /api/announcements/trigger/{}: Triggering manual announcement by slot ID.",
         slot_id
     );
-    match state.announcements.manual_trigger(slot_id).await {
+    match state.announcements.manual_trigger(&slot_id).await {
         Ok(_) => {
             debug!(
                 "Manual announcement trigger succeeded for slot '{}'.",
                 slot_id
             );
-            Ok(status::Accepted(format!(
-                "Announcement '{}' triggered",
-                slot_id
-            )))
+            Ok((
+                StatusCode::ACCEPTED,
+                format!("Announcement '{}' triggered", slot_id),
+            ))
         }
         Err(err) => {
             warn!(
@@ -73,26 +74,24 @@ pub async fn manual_trigger_specific_announcement(
     }
 }
 
-fn manual_trigger_error_to_response(
-    err: &ManualTriggerError,
-) -> status::Custom<Json<ErrorResponse>> {
+fn manual_trigger_error_to_response(err: &ManualTriggerError) -> (StatusCode, Json<ErrorResponse>) {
     match err {
-        ManualTriggerError::CooldownActive { remaining_seconds } => status::Custom(
-            Status::TooManyRequests,
+        ManualTriggerError::CooldownActive { remaining_seconds } => (
+            StatusCode::TOO_MANY_REQUESTS,
             Json(ErrorResponse {
                 error: err.to_string(),
                 remaining_seconds: Some(*remaining_seconds),
             }),
         ),
-        ManualTriggerError::SlotNotFound(_) => status::Custom(
-            Status::NotFound,
+        ManualTriggerError::SlotNotFound(_) => (
+            StatusCode::NOT_FOUND,
             Json(ErrorResponse {
                 error: err.to_string(),
                 remaining_seconds: None,
             }),
         ),
-        ManualTriggerError::NoSlotsAvailable => status::Custom(
-            Status::ServiceUnavailable,
+        ManualTriggerError::NoSlotsAvailable => (
+            StatusCode::SERVICE_UNAVAILABLE,
             Json(ErrorResponse {
                 error: err.to_string(),
                 remaining_seconds: None,

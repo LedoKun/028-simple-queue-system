@@ -4,17 +4,22 @@
 //!
 //! This module initializes the logging system, loads application configuration,
 //! ensures necessary directories for caching and announcements exist,
-//! sets up the Rocket web framework with API routes and file servers,
-//! and launches the Rocket server.
+//! sets up the Axum web framework with API routes and file servers,
+//! and launches the Axum server.
 
+use axum::{serve, Router};
 use queue_calling_system::api;
 use queue_calling_system::config::AppConfig;
 use queue_calling_system::setup_logging;
 use queue_calling_system::state::AppState;
-use rocket::{fs::FileServer, Build, Rocket};
 use std::fs;
+use std::sync::Arc;
+use tokio::net::TcpListener;
+use tower_http::services::ServeDir;
 
-/// The asynchronous main function that bootstraps and runs the Rocket web server.
+type AppResult<T> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
+
+/// The asynchronous main function that bootstraps and runs the Axum web server.
 ///
 /// This function performs the following steps:
 /// 1. Initializes the `tracing` logging system.
@@ -24,14 +29,14 @@ use std::fs;
 ///    cannot be created as they are essential for operation.
 /// 4. Initializes the shared application state (`AppState`), which holds common resources
 ///    like the queue management system.
-/// 5. Configures Rocket to serve API routes, the GTTS cache files, and static public files.
-/// 6. Launches the Rocket server, binding to the configured address and port.
+/// 5. Configures Axum to serve API routes, the GTTS cache files, and static public files.
+/// 6. Launches the Axum server, binding to the configured address and port.
 ///
 /// # Returns
 /// - `Ok(())` if the server starts and runs successfully.
-/// - `Err(rocket::Error)` if there's an error during Rocket's launch process.
-#[rocket::main]
-async fn main() -> Result<(), rocket::Error> {
+/// - `Err` if there's an error while starting the Axum server.
+#[tokio::main]
+async fn main() -> AppResult<()> {
     // Initialize the tracing subscriber. This should be done as early as possible.
     setup_logging();
     tracing::info!("Starting Queue Calling System backend...");
@@ -111,13 +116,12 @@ async fn main() -> Result<(), rocket::Error> {
     // --- End of directory creation ---
 
     // Initialize the shared application state.
-    // This state will be managed by Rocket and made available to route handlers.
-    let app_state = AppState::new(config.clone()).await;
+    // This state will be managed by Axum and made available to route handlers.
+    let app_state = Arc::new(AppState::new(config.clone()).await);
     tracing::info!("Application state initialized.");
-    tracing::debug!("AppState created with config: {:?}", config); // Log AppState details if needed
+    tracing::debug!("AppState created with config: {:?}", config);
 
-    // Prepare paths for FileServers.
-    // Rocket's `FileServer` serves static files from a specified directory.
+    // Prepare static services served by Axum.
 
     // Path for serving cached TTS audio files.
     let tts_cache_base_path_for_fileserver = config.gtts_cache_base_path.clone();
@@ -130,67 +134,36 @@ async fn main() -> Result<(), rocket::Error> {
             tts_cache_web_mount_point
         );
     }
+    if tts_cache_web_mount_point.is_empty() {
+        tracing::warn!("TTS cache web mount point was empty; defaulting to '/tts_cache'.");
+        tts_cache_web_mount_point = "/tts_cache".to_string();
+    }
 
-    // Configure FileServer for GTTS cache.
-    // `rank(5)` gives it a higher precedence than the public fileserver for overlapping paths.
-    let tts_fileserver = FileServer::from(&tts_cache_base_path_for_fileserver).rank(5);
+    let tts_cache_service = ServeDir::new(tts_cache_base_path_for_fileserver.clone());
     tracing::info!(
-        "Configured TTS cache FileServer from {:?} at mount point '{}'",
+        "Configured TTS cache static service from {:?} at mount point '{}'",
         tts_cache_base_path_for_fileserver,
         tts_cache_web_mount_point
     );
 
-    // Configure FileServer for general public static files (e.g., frontend assets, announcements).
-    // `rank(10)` gives it lower precedence than the TTS fileserver.
-    let public_fileserver = FileServer::from(&config.serve_dir_path).rank(10);
+    let public_files_service = ServeDir::new(&config.serve_dir_path);
     tracing::info!(
-        "Configured Public FileServer from {:?} at mount point '/'",
+        "Configured public static service from {:?} at mount point '/'",
         config.serve_dir_path
     );
 
-    // Build the Rocket instance with all routes, file servers, and managed state.
-    let rocket_build = rocket::build()
-        .mount(
-            "/api", // Mount all API routes under the "/api" base path.
-            rocket::routes![
-                api::sse_events,                      // Server-Sent Events for real-time updates.
-                api::trigger_tts,                     // Endpoint to trigger TTS generation.
-                api::get_supported_languages,         // Get list of supported TTS languages.
-                api::get_ordered_supported_languages, // Get ordered list of supported TTS languages.
-                api::queue_call,                      // Add a new call to the queue.
-                api::skip_call,                       // Skip the current call without completing.
-                api::complete_call,                   // Mark the current call as complete.
-                api::force_skip_new_call,             // Force-skip the next incoming call.
-                api::get_queue_state,                 // Get the current state of the call queue.
-                api::get_announcement_status,         // Get status of ongoing announcements.
-                api::manual_advance_announcement,     // Manually advance announcement playback.
-                api::manual_trigger_specific_announcement, // Trigger a specific announcement slot.
-            ],
-        )
-        // Mount the TTS cache FileServer at its configured web path.
-        .mount(&tts_cache_web_mount_point, tts_fileserver)
-        // Mount the public FileServer to serve static assets from the root.
-        .mount("/", public_fileserver)
-        // Make the AppState available to all request handlers.
-        .manage(app_state);
-
-    tracing::info!("Launching Rocket server...");
     let server_address = config.server_socket_addr();
     tracing::info!("Server binding to {}", server_address);
 
-    // Final Rocket instance for launch.
-    let rocket_instance: Rocket<Build> = rocket_build;
+    let api_router = api::router().with_state(app_state.clone());
 
-    // Configure and launch the Rocket server.
-    // The `configure` method is used to apply runtime configuration like address and port.
-    rocket_instance
-        .configure(rocket::Config {
-            address: server_address.ip(), // Set the binding IP address.
-            port: server_address.port(),  // Set the binding port.
-            ..rocket::Config::default()   // Use default values for other configuration options.
-        })
-        .launch() // Asynchronously launch the server.
-        .await
-        // Map the result to `()` as we only care about success or an error.
-        .map(|_rocket_ignited_instance| ())
+    let app = Router::new()
+        .nest("/api", api_router)
+        .nest_service(tts_cache_web_mount_point.as_str(), tts_cache_service)
+        .nest_service("/", public_files_service);
+
+    tracing::info!("Launching Axum server...");
+    let listener = TcpListener::bind(server_address).await?;
+    serve(listener, app.into_make_service()).await?;
+    Ok(())
 }

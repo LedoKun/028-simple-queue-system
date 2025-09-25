@@ -1,6 +1,9 @@
 use std::collections::HashMap;
+use std::sync::Arc;
 
-use rocket::{get, post, response::status, serde::json::Json, State};
+use axum::extract::State;
+use axum::http::StatusCode;
+use axum::Json;
 use serde::Deserialize;
 use tracing::{debug, error, info};
 
@@ -8,19 +11,16 @@ use crate::AppState;
 
 /// Request data structure for manually triggering Text-to-Speech generation.
 #[derive(Deserialize, Debug)]
-#[serde(crate = "rocket::serde")]
 pub struct TriggerTTSRequest {
     id: String,
     location: String,
     lang: String,
 }
 
-#[post("/tts/trigger", data = "<request>")]
 pub async fn trigger_tts(
-    state: &State<AppState>,
-    request: Json<TriggerTTSRequest>,
-) -> Result<status::Accepted<String>, status::BadRequest<String>> {
-    let request = request.into_inner();
+    State(state): State<Arc<AppState>>,
+    Json(request): Json<TriggerTTSRequest>,
+) -> Result<(StatusCode, String), (StatusCode, String)> {
     info!(
         "Manual TTS trigger request received for ID: {}, Location: {}, Lang: {}",
         request.id, request.location, request.lang
@@ -34,28 +34,30 @@ pub async fn trigger_tts(
                 "TTS generation successfully triggered for ID: {}, Lang: {}",
                 id, lang
             );
-            Ok(status::Accepted("TTS generation triggered".to_string()))
+            Ok((StatusCode::ACCEPTED, "TTS generation triggered".to_string()))
         }
         Err(e) => {
             error!(
                 "Failed to trigger TTS generation for ID: {}, Lang: {}: {}",
                 id, lang, e
             );
-            Err(status::BadRequest(e))
+            Err((StatusCode::BAD_REQUEST, e))
         }
     }
 }
 
-#[get("/tts/languages")]
-pub async fn get_supported_languages(state: &State<AppState>) -> Json<HashMap<String, String>> {
+pub async fn get_supported_languages(
+    State(state): State<Arc<AppState>>,
+) -> Json<HashMap<String, String>> {
     info!("Received request for supported languages map.");
     let languages = state.tts.supported_languages_map();
     debug!("Returning supported languages: {:?}", languages);
     Json(languages)
 }
 
-#[get("/tts/ordered-languages")]
-pub fn get_ordered_supported_languages(state: &State<AppState>) -> Json<Vec<String>> {
+pub async fn get_ordered_supported_languages(
+    State(state): State<Arc<AppState>>,
+) -> Json<Vec<String>> {
     info!("Received request for ordered supported languages.");
     let ordered_langs = state.config.ordered_supported_language_codes();
     debug!("Returning ordered supported languages: {:?}", ordered_langs);

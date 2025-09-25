@@ -24,14 +24,14 @@ use tracing::{debug, error, info};
 /// and `Envconfig` (for automatic environment variable parsing).
 #[derive(Envconfig, Debug, Clone)]
 pub struct AppConfig {
-    /// The IP address on which the Rocket server will bind.
+    /// The IP address on which the HTTP server will bind.
     ///
     /// Corresponds to the `SERVER_ADDRESS` environment variable.
     /// Default: `0.0.0.0` (binds to all available network interfaces).
     #[envconfig(from = "SERVER_ADDRESS", default = "0.0.0.0")]
     pub server_address: IpAddr,
 
-    /// The port on which the Rocket server will listen.
+    /// The port on which the HTTP server will listen.
     ///
     /// Corresponds to the `SERVER_PORT` environment variable.
     /// Default: `3000`.
@@ -53,7 +53,7 @@ pub struct AppConfig {
     pub max_skipped_history_size: usize,
 
     /// The base directory from which static files (e.g., frontend assets, custom announcements)
-    /// will be served by Rocket.
+    /// will be served by the HTTP layer.
     ///
     /// Corresponds to the `SERVE_DIR_PATH` environment variable.
     /// Default: `./public`.
@@ -151,7 +151,7 @@ pub struct AppConfig {
     pub sse_event_buffer_size: usize,
 
     /// The web-accessible path for serving cached TTS audio files.
-    /// This path is mounted by Rocket's `FileServer`.
+    /// This path is mounted by the static file service.
     ///
     /// Corresponds to the `TTS_CACHE_WEB_PATH` environment variable.
     /// Default: `/tts_cache`.
