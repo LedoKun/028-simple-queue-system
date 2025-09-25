@@ -1,12 +1,12 @@
 # Simple Queue System
 
-This is a simple, robust queue management system built with Rust. It provides an operator interface for managing a queue, a public-facing signage display for real-time status, and text-to-speech (TTS) functionality for announcements. The system is designed for easy deployment using Docker or Podman.
+This is a simple, robust queue management system built with Rust and the Axum web framework. It provides an operator interface for managing a queue, a public-facing signage display for real-time status, and text-to-speech (TTS) functionality for announcements. The system is designed for easy deployment using Docker or Podman.
 
 ## Features
 
 - **Operator Interface**: A web-based panel for operators to add new calls to the queue, skip calls, and manually trigger announcements.
 - **Signage Display**: A public display that shows the currently served call number and location, along with histories of recent and skipped calls.
-- **Text-to-Speech (TTS)**: Automatically generates audio announcements for calls in multiple languages. It includes a caching mechanism to improve performance and reduce external API calls.
+- **Text-to-Speech (TTS)**: Automatically generates audio announcements for calls in multiple languages. It includes a caching mechanism to improve performance and reduce external API calls, and signage playback runs at 1.1× speed (while the chime remains at 1×) to keep announcements brisk without losing cues.
 - **Announcement Management**: Supports automated and manual cycling of pre-recorded audio and banner announcements, with configurable cooldowns to prevent spamming.
 - **Real-time Updates**: Uses Server-Sent Events (SSE) to provide instant updates to all connected clients (operators and signage displays) without needing to refresh the page.
 - **Docker/Podman Support**: Containerized for easy, consistent, and isolated deployment across different environments.
@@ -17,6 +17,32 @@ This is a simple, robust queue management system built with Rust. It provides an
 ### Prerequisites
 
 Docker or Podman must be installed on your system.
+
+### Local Development
+
+You can run the stack directly on your machine without containers:
+
+```bash
+# Install JavaScript dependencies for the frontend (once)
+npm install
+
+# Install Python tooling for audio helpers
+pip install -r requirements.txt
+
+# Start the Axum backend
+cargo run
+
+# Rebuild frontend assets when needed
+npm run build    # or `npm run dev` for watch mode
+
+# Watch TailwindCSS during development
+npx @tailwindcss/cli -i ./tailwind.css -o ./public/css/styles.css -w -m
+
+# Run the Rust test suite
+cargo test
+```
+
+The server listens on `SERVER_ADDRESS:SERVER_PORT` (defaults to `0.0.0.0:3000`). Static assets under `public/` are served by Axum, so HTML/JS/CSS edits take effect on reload.
 
 ### Deployment
 
