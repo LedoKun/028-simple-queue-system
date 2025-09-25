@@ -312,7 +312,7 @@ impl AppConfig {
     }
 }
 
-fn normalize_language_code(raw: &str) -> String {
+pub(crate) fn normalize_language_code(raw: &str) -> String {
     if raw.eq_ignore_ascii_case("en-GB") {
         "en-uk".to_string()
     } else {

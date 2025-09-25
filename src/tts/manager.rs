@@ -28,7 +28,10 @@ use tokio::{fs as tokio_fs, io::AsyncWriteExt, task, time::sleep}; // Import sle
 use tracing::{debug, error, info, trace, warn}; // Import tracing macros
 use urlencoding::encode as url_encode;
 
-use crate::{config::AppConfig, AppEvent};
+use crate::{
+    config::{normalize_language_code, AppConfig},
+    AppEvent,
+};
 
 /// Base URL for the Google Translate Text-to-Speech API.
 const GOOGLE_TTS_URL_BASE: &str = "https://translate.google.com/translate_tts";
@@ -104,18 +107,39 @@ impl TTSManager {
         let supported_languages_map: HashMap<String, String> = config
             .tts_supported_languages
             .split(',') // Split by comma-separated entries
-            .filter_map(|s| {
-                let parts: Vec<&str> = s.trim().split(':').collect(); // Split into code and display name
-                if parts.len() == 2 {
-                    trace!("TTSManager new: Parsing language pair: {:?}", parts); // Trace language parsing
-                    Some((parts[0].to_string(), parts[1].to_string()))
-                } else if parts.len() == 1 && !parts[0].is_empty() {
-                    trace!("TTSManager new: Parsing single language code: {:?}", parts); // Trace language parsing (e.g., "es" without display name)
-                    Some((parts[0].to_string(), parts[0].to_string())) // Use code as display name if not provided
-                } else {
-                    trace!("TTSManager new: Skipping invalid language entry: {:?}", s); // Trace invalid language entry
-                    None // Skip malformed or empty entries
+            .filter_map(|entry| {
+                let trimmed_entry = entry.trim();
+                if trimmed_entry.is_empty() {
+                    trace!("TTSManager new: Skipping empty language entry");
+                    return None;
                 }
+
+                let mut parts = trimmed_entry.splitn(2, ':');
+                let code_raw = parts.next().map(str::trim).unwrap_or("");
+                if code_raw.is_empty() {
+                    trace!(
+                        "TTSManager new: Skipping language entry with empty code: {:?}",
+                        entry
+                    );
+                    return None;
+                }
+
+                let normalized_code = normalize_language_code(code_raw);
+
+                let display_name = parts
+                    .next()
+                    .map(str::trim)
+                    .filter(|name| !name.is_empty())
+                    .map(str::to_string)
+                    .unwrap_or_else(|| code_raw.to_string());
+
+                trace!(
+                    "TTSManager new: Parsed language '{}' (display '{}')",
+                    normalized_code,
+                    display_name
+                );
+
+                Some((normalized_code, display_name))
             })
             .collect();
         info!(
