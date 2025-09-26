@@ -6,11 +6,11 @@ use axum::response::sse::{Event, Sse};
 use tokio::time::{self, MissedTickBehavior};
 use tokio_stream::wrappers::errors::BroadcastStreamRecvError;
 use tokio_stream::wrappers::{BroadcastStream, IntervalStream};
-use tokio_stream::{Stream, StreamExt};
+use tokio_stream::{iter, Stream, StreamExt};
 use tracing::{debug, error, info, warn};
 
 use crate::sse::format_app_event;
-use crate::AppState;
+use crate::{AppEvent, AppState};
 
 /// Axum route for establishing a Server-Sent Events (SSE) connection.
 pub async fn sse_events(
@@ -52,12 +52,16 @@ pub async fn sse_events(
 
     let event_stream = event_stream.map(|event| Ok::<Event, Infallible>(event));
 
+    let initial_status = state.announcements.current_status().await;
+    let initial_event = format_app_event(&AppEvent::AnnouncementStatus(initial_status));
+    let initial_stream = iter(initial_event.into_iter().map(Ok::<Event, Infallible>));
+
     let keep_alive_stream = IntervalStream::new(interval).map(|_| {
         debug!("SSE: Sending keep-alive comment.");
         Ok::<Event, Infallible>(Event::default().comment("keep-alive"))
     });
 
-    let combined_stream = event_stream.merge(keep_alive_stream);
+    let combined_stream = initial_stream.chain(event_stream).merge(keep_alive_stream);
 
     Sse::new(combined_stream)
 }

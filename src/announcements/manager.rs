@@ -16,10 +16,10 @@ use std::{
     time::{Duration, Instant},
 };
 use tokio::{
-    fs,                               // Async file system operations
-    sync::{broadcast, Mutex},         // Async synchronization primitives
-    task::JoinHandle,                 // For managing the auto-cycle background task
-    time::{self, MissedTickBehavior}, // For asynchronous timers
+    fs,                                      // Async file system operations
+    sync::{broadcast, Mutex},                // Async synchronization primitives
+    task::JoinHandle,                        // For managing the auto-cycle background task
+    time::{self, sleep, MissedTickBehavior}, // For asynchronous timers
 };
 use tracing::{debug, error, info, trace, warn}; // Import tracing macros
 
@@ -133,6 +133,8 @@ pub struct AnnouncementManager {
 }
 
 impl AnnouncementManager {
+    const INITIAL_STATUS_BROADCAST_DELAY_SECS: u64 = 30;
+
     /// Creates a new `AnnouncementManager` instance.
     ///
     /// This asynchronous function scans for announcement slots, sorts them,
@@ -223,8 +225,17 @@ impl AnnouncementManager {
             }
         }
 
-        // Broadcast the initial status after initialization.
-        manager_arc_mutex.lock().await.broadcast_status().await;
+        // Broadcast the initial status after a short delay so SSE clients have
+        // a chance to subscribe before the first event is emitted.
+        let initial_broadcast_manager = Arc::clone(&manager_arc_mutex);
+        tokio::spawn(async move {
+            sleep(Duration::from_secs(
+                Self::INITIAL_STATUS_BROADCAST_DELAY_SECS,
+            ))
+            .await;
+            let manager = initial_broadcast_manager.lock().await;
+            manager.broadcast_status().await;
+        });
 
         manager_arc_mutex
     }

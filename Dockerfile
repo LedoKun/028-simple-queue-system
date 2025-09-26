@@ -27,26 +27,6 @@ LABEL org.opencontainers.image.created=$BUILD_DATE
 LABEL org.opencontainers.image.revision=$VCS_REF
 LABEL org.opencontainers.image.source="https://github.com/${GH_REPO}"
 
-# Application runtime environment variables
-ENV RUST_LOG=info \
-    SERVER_ADDRESS=0.0.0.0 \
-    SERVER_PORT=3000 \
-    MAX_HISTORY_SIZE=5 \
-    MAX_SKIPPED_HISTORY_SIZE=5 \
-    SERVE_DIR_PATH=./public \
-    ANNOUNCEMENTS_AUDIO_SUB_PATH=media/announcements \
-    BANNERS_SUB_PATH=media/banners \
-    ANNOUNCEMENT_AUTO_CYCLE_INTERVAL_SECONDS=600 \
-    ANNOUNCEMENT_MANUAL_TRIGGER_COOLDOWN_SECONDS=5 \
-    BANNER_ROTATION_INTERVAL_SECONDS=10 \
-    GTTS_CACHE_BASE_PATH=/tmp/gtts_audio_cache \
-    TTS_CACHE_MAXIMUM_FILES=500 \
-    TTS_EXTERNAL_SERVICE_TIMEOUT_SECONDS=5 \
-    TTS_SUPPORTED_LANGUAGES="th:Thai,en-GB:British English" \
-    SSE_KEEP_ALIVE_INTERVAL_SECONDS=15 \
-    SSE_EVENT_BUFFER_SIZE=200 \
-    TTS_CACHE_WEB_PATH=/tts_cache
-
 WORKDIR /
 
 # Copy tini from the helper stage and set execute permissions

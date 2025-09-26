@@ -74,8 +74,16 @@ Once running, you can access the interfaces at:
 
 Pre-built deployment helpers live under `deploy/`:
 
-- `deploy/server/queue-app.service` — traditional systemd unit for Podman. Copy it to `/etc/systemd/system/`, adjust any environment overrides, then run `sudo systemctl daemon-reload` followed by `sudo systemctl enable --now queue-app`. The unit pulls `ghcr.io/ledokun/028-simple-queue-system:latest` before each start (falling back to the cached image if offline) and keeps the container restarted on failure. The backend now exposes a simple `/health` endpoint for kiosks and monitors.
+- `deploy/server/queue-app.service` — traditional systemd unit for Podman. Copy it to `/etc/systemd/system/`, then run `sudo systemctl daemon-reload` followed by `sudo systemctl enable --now queue-app`. The unit pulls `ghcr.io/ledokun/028-simple-queue-system:latest` before each start (falling back to the cached image if offline), keeps the container restarted on failure, and reads runtime overrides from `/etc/default/queue-app` (touched automatically if missing). Populate that file with `KEY=value` lines to pass configuration into the container.
 - `deploy/kiosk/rpi-kiosk-launch.sh` — Raspberry Pi kiosk launcher that waits for the API, mirrors displays at 1080p, sets PulseAudio volume, and starts Chromium in fullscreen. Review the header comment for required packages, `/etc/environment` variables, and the LXDE autostart entry (e.g. `@/srv/rpi-kiosk-launch.sh`).
+
+#### Health Checks
+
+Every build exposes `GET /health`, which returns `{"status":"ok"}` when the backend is up. The kiosk launcher and any external monitors can rely on this liveness probe before attempting SSE subscriptions.
+
+#### Server Environment Overrides
+
+With the systemd unit in place, adjust backend behaviour by editing `/etc/default/queue-app` on the host. Each line should follow `VARIABLE=value` (for example `RUST_LOG=debug` or `ANNOUNCEMENT_AUTO_CYCLE_INTERVAL_SECONDS=900`). The service forwards those variables into the Podman container at start-up.
 
 ## Environment Variables
 
