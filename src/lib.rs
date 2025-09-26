@@ -18,6 +18,7 @@ pub mod announcements;
 pub mod api;
 pub mod application;
 pub mod config;
+pub mod health;
 pub mod queue;
 pub mod sse;
 pub mod state;

@@ -7,11 +7,11 @@
 //! sets up the Axum web framework with API routes and file servers,
 //! and launches the Axum server.
 
-use axum::{serve, Router};
-use queue_calling_system::api;
+use axum::{routing::get, serve, Router};
 use queue_calling_system::config::AppConfig;
 use queue_calling_system::setup_logging;
 use queue_calling_system::state::AppState;
+use queue_calling_system::{api, health};
 use std::fs;
 use std::sync::Arc;
 use tokio::net::TcpListener;
@@ -158,6 +158,7 @@ async fn main() -> AppResult<()> {
     let api_router = api::router().with_state(app_state.clone());
 
     let app = Router::new()
+        .route("/health", get(health::check))
         .nest("/api", api_router)
         .nest_service(tts_cache_web_mount_point.as_str(), tts_cache_service)
         .nest_service("/", public_files_service);
