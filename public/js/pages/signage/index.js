@@ -488,6 +488,14 @@ class SignagePage {
       if (this.lastShownCallData) {
         this.updateCurrentCallDisplay(this.lastShownCallData);
       }
+      if (this.dom.chimeAudio?.src) {
+        const alreadyHasChime = this.currentProcessingEvent.audioSequence?.some(
+          (item) => item.playerType === 'chime' || item.src === this.dom.chimeAudio.src,
+        );
+        if (!alreadyHasChime) {
+          this.audioPlaybackQueue.push({ src: this.dom.chimeAudio.src, playerType: 'chime' });
+        }
+      }
       this.currentProcessingEvent.audioSequence.forEach((item) => this.audioPlaybackQueue.push({ ...item }));
     }
 
