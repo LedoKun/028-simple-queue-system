@@ -1,15 +1,4 @@
-# Stage 1: Install npm dependencies and rebuild Tailwind assets
-FROM node:20-slim AS frontend-build
-WORKDIR /app
-
-COPY package.json package-lock.json ./
-RUN npm ci --omit=dev
-
-COPY tailwind.css ./tailwind.css
-COPY public ./public
-RUN mkdir -p ./public/css && npx @tailwindcss/cli -i ./tailwind.css -o ./public/css/styles.css -m
-
-# Stage 2: Helper to get tini static binary from a slim Debian image
+# Stage 1: Helper to get tini static binary from a slim Debian image
 FROM debian:bookworm-slim AS build-env
 # tini is a lightweight init system that reaps zombie processes
 RUN apt-get update && \
@@ -19,7 +8,7 @@ RUN apt-get update && \
     # Clean up apt cache to keep this layer small
     rm -rf /var/lib/apt/lists/*
 
-# Stage 3: Final application image using distroless for a minimal footprint
+# Stage 2: Final application image using distroless for a minimal footprint
 FROM gcr.io/distroless/cc-debian12:nonroot
 
 LABEL org.opencontainers.image.authors="LedoKun <romamp100@gmail.com>"
@@ -46,8 +35,8 @@ COPY --from=build-env --chmod=755 /tini-static /tini-static
 # Copy certs from the build-env
 COPY --from=build-env /etc/ssl/certs /etc/ssl/certs
 
-# Copy static assets (including freshly built Tailwind CSS)
-COPY --from=frontend-build --chown=nonroot:nonroot /app/public /public
+# Copy static assets
+COPY --chown=nonroot:nonroot public /public
 
 # Copy the pre-compiled, platform-specific Rust binary and set execute permissions
 COPY --chmod=755 staging_binaries/${TARGETPLATFORM}/queue-calling-system /queue-calling-system
