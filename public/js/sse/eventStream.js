@@ -95,7 +95,7 @@ class EventStream {
       this.lastActivityAt = Date.now();
       this.reconnectionAttempts = 0;
       this.currentRetryDelay = SHORT_RETRY_DELAY_MS;
-      this.setStatus('connected');
+      this.markActivity();
     };
 
     this.eventSource.onmessage = this.handleOnMessage;
@@ -187,7 +187,7 @@ class EventStream {
       return;
     }
 
-    this.lastActivityAt = Date.now();
+    this.markActivity();
     this.emit(eventKey, parsedPayload);
   }
 
@@ -242,14 +242,7 @@ class EventStream {
       return;
     }
     this.heartbeatTimerId = setInterval(() => {
-      const now = Date.now();
-      const idleFor = now - this.lastActivityAt;
-      if (!this.eventSource) {
-        return;
-      }
-      if (this.eventSource.readyState === EventSource.OPEN && idleFor > this.heartbeatMs) {
-        this.setStatus('connecting', { message: this.labelProvider().connecting || 'Reconnecting…' });
-      }
+      this.syncStatusWithReadyState();
     }, Math.max(2000, Math.floor(this.heartbeatMs / 2)));
   }
 
@@ -280,6 +273,37 @@ class EventStream {
   normalizeType(type) {
     if (!type) return '';
     return String(type).toLowerCase().replace(/[^a-z0-9]+/g, '');
+  }
+
+  markActivity() {
+    this.lastActivityAt = Date.now();
+    if (this.eventSource?.readyState === EventSource.OPEN) {
+      this.setStatus('connected');
+    }
+  }
+
+  syncStatusWithReadyState() {
+    if (!this.eventSource) {
+      return;
+    }
+
+    const readyState = this.eventSource.readyState;
+    if (readyState === EventSource.OPEN) {
+      this.setStatus('connected');
+      return;
+    }
+
+    if (readyState === EventSource.CONNECTING) {
+      this.setStatus('connecting');
+      return;
+    }
+
+    if (readyState === EventSource.CLOSED) {
+      this.setStatus('disconnected');
+      if (!this.retryTimeoutId) {
+        this.scheduleReconnect();
+      }
+    }
   }
 }
 
