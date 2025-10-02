@@ -295,7 +295,15 @@
       var text = message || fallbackMessage || normalizedStatus;
       element.textContent = text;
       if (setDataset) {
-        element.dataset.status = normalizedStatus;
+        // Keep attribute updated for older browsers that lack proper dataset setters
+        try {
+          if (element && typeof element.setAttribute === 'function') {
+            element.setAttribute('data-status', normalizedStatus);
+          }
+        } catch (e) {}
+        if (element.dataset) {
+          element.dataset.status = normalizedStatus;
+        }
       }
       if (!keepClasses) {
         var mappedClass = Object.prototype.hasOwnProperty.call(classMap, normalizedStatus) ? classMap[normalizedStatus] : classMap.default;
