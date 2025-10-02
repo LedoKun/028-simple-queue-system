@@ -545,19 +545,41 @@ class SignagePage {
     player.pause();
     player.currentTime = 0;
     player.src = nextItem.src;
-    player.playbackRate = nextItem.playerType === 'chime' ? 1 : 1.1;
+    if (typeof player.load === 'function') {
+      player.load();
+    }
+    if ('playbackRate' in player) {
+      player.playbackRate = nextItem.playerType === 'chime' ? 1 : 1.1;
+    }
     this.attachAudioListeners(player);
 
-    player.play()
-      .then(() => {
-        if (nextItem.playerType === 'chime' && this.currentProcessingEvent) {
-          this.currentProcessingEvent.chimeFinished = false;
-        }
-      })
-      .catch((error) => {
-        console.error('SignageUI', 'Error during audio playback', nextItem, error);
-        this.handleAudioFileError({ target: player });
-      });
+    const markChimeAsPlaying = () => {
+      if (nextItem.playerType === 'chime' && this.currentProcessingEvent) {
+        this.currentProcessingEvent.chimeFinished = false;
+      }
+    };
+
+    let playResult;
+    try {
+      playResult = player.play();
+    } catch (error) {
+      console.error('SignageUI', 'Error during audio playback', nextItem, error);
+      this.handleAudioFileError({ target: player });
+      return;
+    }
+
+    if (playResult && typeof playResult.then === 'function') {
+      playResult
+        .then(() => {
+          markChimeAsPlaying();
+        })
+        .catch((error) => {
+          console.error('SignageUI', 'Error during audio playback', nextItem, error);
+          this.handleAudioFileError({ target: player });
+        });
+    } else {
+      markChimeAsPlaying();
+    }
   }
 
   handleAudioFileEnded = (event) => {

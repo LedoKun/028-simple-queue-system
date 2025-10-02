@@ -1340,18 +1340,40 @@
       player.pause();
       player.currentTime = 0;
       player.src = nextItem.src;
-      player.playbackRate = nextItem.playerType === 'chime' ? 1 : 1.1;
+      if (typeof player.load === 'function') {
+        player.load();
+      }
+      if ('playbackRate' in player) {
+        player.playbackRate = nextItem.playerType === 'chime' ? 1 : 1.1;
+      }
       this.attachAudioListeners(player);
-      player.play().then(function () {
+      var markChimeAsPlaying = function markChimeAsPlaying() {
         if (nextItem.playerType === 'chime' && _this7.currentProcessingEvent) {
           _this7.currentProcessingEvent.chimeFinished = false;
         }
-      }).catch(function (error) {
+      };
+      var playResult;
+      try {
+        playResult = player.play();
+      } catch (error) {
         console.error('SignageUI', 'Error during audio playback', nextItem, error);
-        _this7.handleAudioFileError({
+        this.handleAudioFileError({
           target: player
         });
-      });
+        return;
+      }
+      if (playResult && typeof playResult.then === 'function') {
+        playResult.then(function () {
+          markChimeAsPlaying();
+        }).catch(function (error) {
+          console.error('SignageUI', 'Error during audio playback', nextItem, error);
+          _this7.handleAudioFileError({
+            target: player
+          });
+        });
+      } else {
+        markChimeAsPlaying();
+      }
     };
     _proto.attachAudioListeners = function attachAudioListeners(player) {
       if (!player) return;
