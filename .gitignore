@@ -102,6 +102,9 @@ out
 # Nuxt.js build / generate output
 .nuxt
 dist
+!/public/dist/
+!/public/dist/*.js
+!/public/dist/*.js.map
 
 # Gatsby files
 .cache/
@@ -161,6 +164,9 @@ __pycache__/
 build/
 develop-eggs/
 dist/
+!public/dist/
+!public/dist/*.js
+!public/dist/*.js.map
 downloads/
 eggs/
 .eggs/

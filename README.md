@@ -44,6 +44,29 @@ cargo test
 
 The server listens on `SERVER_ADDRESS:SERVER_PORT` (defaults to `0.0.0.0:3000`). Static assets under `public/` are served by Axum, so HTML/JS/CSS edits take effect on reload.
 
+### Legacy Browser Support
+
+Some kiosks (older Samsung Tizen and LG webOS TVs) ship browsers without native support for
+modern ECMAScript features such as ES modules, optional chaining, and `fetch`. The frontend now
+ships a polyfilled, ES5-compatible bundle that loads automatically on browsers that do not
+understand `<script type="module">`.
+
+Whenever you touch files under `public/js/`, rebuild the legacy bundles:
+
+```bash
+npm run build:legacy
+```
+
+This generates the following assets which are served via `<script nomodule>`:
+
+- `public/dist/polyfills.legacy.js` – language/runtime shims (`Promise`, `Map`, `fetch`,
+  `EventSource`, DOM helpers, etc.).
+- `public/dist/operator.legacy.js` and `public/dist/signage.legacy.js` – transpiled versions of
+  the main operator/signage modules.
+
+Modern browsers continue to load the original ES modules, while legacy ones fall back to the
+transpiled output without additional configuration.
+
 ### Deployment
 
 You can run the system using a single command. The container image is publicly available on the GitHub Container Registry.
