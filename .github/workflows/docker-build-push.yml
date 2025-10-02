@@ -9,9 +9,40 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  prepare-frontend-assets:
+    name: Prepare Frontend Assets
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build frontend assets
+        run: npm run build:assets
+
+      - name: Upload frontend assets
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-assets
+          path: |
+            public/css/styles.css
+            public/dist
+
   build-rust-binaries:
     name: Build Rust Binary (${{ matrix.target_info.name }})
     runs-on: ubuntu-latest
+    needs: prepare-frontend-assets
     permissions:
       contents: read  # For actions/checkout
       actions: write  # For Swatinem/rust-cache (read and write)
@@ -34,15 +65,14 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
+      - name: Download frontend assets
+        uses: actions/download-artifact@v4
         with:
-          node-version: 20
-          cache: 'npm'
-          cache-dependency-path: package-lock.json
+          name: frontend-assets
+          path: ./frontend-assets
 
-      - name: Install frontend dependencies
-        run: npm ci --omit=dev
+      - name: Restore frontend assets
+        run: cp -a ./frontend-assets/public/. ./public/
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -82,7 +112,9 @@ jobs:
   build-and-push-docker:
     name: Build and Push Docker Image
     runs-on: ubuntu-latest
-    needs: build-rust-binaries
+    needs:
+      - prepare-frontend-assets
+      - build-rust-binaries
     permissions:
       contents: read    # For actions/checkout
       packages: write   # To push to GitHub Container Registry (GHCR)
@@ -90,6 +122,15 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+
+      - name: Download frontend assets
+        uses: actions/download-artifact@v4
+        with:
+          name: frontend-assets
+          path: ./frontend-assets
+
+      - name: Restore frontend assets
+        run: cp -a ./frontend-assets/public/. ./public/
 
       - name: Download all compiled binary artifacts
         uses: actions/download-artifact@v4

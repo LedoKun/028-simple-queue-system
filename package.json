@@ -1,6 +1,8 @@
 {
   "scripts": {
-    "build:legacy": "rollup -c"
+    "build:css": "tailwindcss -i ./tailwind.css -o ./public/css/styles.css -m",
+    "build:legacy": "rollup -c",
+    "build:assets": "npm run build:css && npm run build:legacy"
   },
   "dependencies": {
     "@tailwindcss/cli": "^4.1",

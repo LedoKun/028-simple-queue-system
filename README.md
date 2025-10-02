@@ -32,8 +32,14 @@ pip install -r requirements.txt
 # Start the Axum backend
 cargo run
 
-# Rebuild frontend assets when needed
-npm run build    # or `npm run dev` for watch mode
+# Build Tailwind CSS once (production output)
+npm run build:css
+
+# Build legacy-compatible JS bundles
+npm run build:legacy
+
+# Or build both in a single step (used by CI)
+npm run build:assets
 
 # Watch TailwindCSS during development
 npx @tailwindcss/cli -i ./tailwind.css -o ./public/css/styles.css -w -m
@@ -65,7 +71,8 @@ This generates the following assets which are served via `<script nomodule>`:
   the main operator/signage modules.
 
 Modern browsers continue to load the original ES modules, while legacy ones fall back to the
-transpiled output without additional configuration.
+transpiled output without additional configuration. Running `npm run build:assets` rebuilds both the
+CSS and the legacy JS in one command (matching the GitHub workflow).
 
 ### Deployment
 
