@@ -72,7 +72,13 @@ jobs:
           path: ./frontend-assets
 
       - name: Restore frontend assets
-        run: cp -a ./frontend-assets/public/. ./public/
+        run: |
+          if [ -d ./frontend-assets/public ]; then
+            cp -a ./frontend-assets/public/. ./public/
+          else
+            # Some artifact layouts flatten paths; handle that gracefully
+            cp -a ./frontend-assets/. ./public/
+          fi
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -130,7 +136,13 @@ jobs:
           path: ./frontend-assets
 
       - name: Restore frontend assets
-        run: cp -a ./frontend-assets/public/. ./public/
+        run: |
+          if [ -d ./frontend-assets/public ]; then
+            cp -a ./frontend-assets/public/. ./public/
+          else
+            # Some artifact layouts flatten paths; handle that gracefully
+            cp -a ./frontend-assets/. ./public/
+          fi
 
       - name: Download all compiled binary artifacts
         uses: actions/download-artifact@v4
