@@ -6,7 +6,8 @@
   },
   "dependencies": {
     "@tailwindcss/cli": "^4.1",
-    "tailwindcss": "^4.1"
+    "tailwindcss": "^4.1",
+    "css-vars-ponyfill": "^2.4.9"
   },
   "devDependencies": {
     "@babel/core": "^7.24.0",

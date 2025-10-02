@@ -4,6 +4,7 @@ import 'core-js/stable';
 import 'regenerator-runtime/runtime';
 import 'whatwg-fetch';
 import 'eventsource-polyfill';
+import cssVars from 'css-vars-ponyfill';
 
 // Element.closest polyfill for very old WebKit browsers.
 if (typeof Element !== 'undefined' && !Element.prototype.closest) {
@@ -72,3 +73,10 @@ if (typeof Element !== 'undefined' && !('textContent' in Element.prototype)) {
 }
 
 export default {};
+
+if (typeof window !== 'undefined') {
+  const supportsCssVariables = window.CSS && typeof window.CSS.supports === 'function' && window.CSS.supports('--tw-test', 0);
+  if (!supportsCssVariables) {
+    cssVars({ onlyLegacy: true, silent: true });
+  }
+}

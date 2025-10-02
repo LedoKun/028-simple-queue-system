@@ -66,7 +66,7 @@ npm run build:legacy
 This generates the following assets which are served via `<script nomodule>`:
 
 - `public/dist/polyfills.legacy.js` – language/runtime shims (`Promise`, `Map`, `fetch`,
-  `EventSource`, DOM helpers, etc.).
+  `EventSource`, DOM helpers, CSS custom property ponyfill, etc.).
 - `public/dist/operator.legacy.js` and `public/dist/signage.legacy.js` – transpiled versions of
   the main operator/signage modules.
 
