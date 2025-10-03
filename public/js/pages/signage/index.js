@@ -109,6 +109,7 @@ class SignagePage {
     this.eventStream.on('queueupdate', ({ detail }) => this.handleQueueUpdate(detail));
     this.eventStream.on('announcementstatus', ({ detail }) => this.handleAnnouncementStatus(detail));
     this.eventStream.on('ttscomplete', ({ detail }) => this.handleTtsComplete(detail));
+    this.eventStream.on('translatorcall', ({ detail }) => this.handleTranslatorCall(detail));
     this.eventStream.on('status', ({ detail }) => this.updateSseIndicator(detail));
     this.eventStream.connect();
   }
@@ -383,6 +384,47 @@ class SignagePage {
     };
 
     this.eventQueue.push(announcementEvent);
+    this.processNextEventFromQueue();
+  }
+
+  handleTranslatorCall(payload) {
+    if (!payload || !Array.isArray(payload.audio_urls) || payload.audio_urls.length === 0) {
+      console.warn('SignageUI', 'Translator call payload missing audio URLs', payload);
+      return;
+    }
+
+    const playlist = payload.audio_urls.filter(Boolean);
+    if (playlist.length === 0) {
+      return;
+    }
+
+    const dedupKey = `${payload.location || 'translator'}::${playlist[0]}`;
+
+    const isDuplicateActive =
+      this.currentProcessingEvent?.type === 'announcement' &&
+      this.currentProcessingEvent?.source === 'translator' &&
+      this.currentProcessingEvent?.dedupKey === dedupKey;
+
+    if (isDuplicateActive) {
+      return;
+    }
+
+    const isDuplicateQueued = this.eventQueue.some(
+      (evt) => evt.type === 'announcement' && evt.source === 'translator' && evt.dedupKey === dedupKey,
+    );
+
+    if (isDuplicateQueued) {
+      return;
+    }
+
+    const translatorEvent = {
+      type: 'announcement',
+      source: 'translator',
+      dedupKey,
+      audioSequence: playlist.map((src) => ({ src, playerType: 'announcement' })),
+    };
+
+    this.eventQueue.push(translatorEvent);
     this.processNextEventFromQueue();
   }
 

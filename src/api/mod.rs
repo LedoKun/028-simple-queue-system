@@ -8,6 +8,7 @@ use axum::Router;
 pub mod announcements;
 pub mod events;
 pub mod queue;
+pub mod translator;
 pub mod tts;
 
 use announcements::{
@@ -15,6 +16,7 @@ use announcements::{
 };
 use events::sse_events;
 use queue::{complete_call, force_skip_new_call, get_queue_state, queue_call, skip_call};
+use translator::{call_translator, get_translator_status};
 use tts::{get_ordered_supported_languages, get_supported_languages, trigger_tts};
 
 use crate::AppState;
@@ -40,4 +42,6 @@ pub fn router() -> Router<Arc<AppState>> {
             "/announcements/trigger/:slot_id",
             post(manual_trigger_specific_announcement),
         )
+        .route("/translator/status", get(get_translator_status))
+        .route("/translator/call", post(call_translator))
 }

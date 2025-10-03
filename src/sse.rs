@@ -14,6 +14,7 @@ pub fn format_app_event(event: &AppEvent) -> Option<Event> {
             let event_name = match event {
                 AppEvent::QueueUpdate(_) => "queue_update",
                 AppEvent::AnnouncementStatus(_) => "announcement_status",
+                AppEvent::TranslatorCall { .. } => "translator_call",
                 AppEvent::TTSComplete { .. } => "tts_complete",
             };
 

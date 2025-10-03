@@ -6,7 +6,7 @@ use std::sync::Arc;
 use tokio::sync::broadcast;
 use tracing::{debug, info};
 
-use crate::application::{AnnouncementService, QueueService, TtsService};
+use crate::application::{AnnouncementService, QueueService, TranslatorService, TtsService};
 use crate::config::AppConfig;
 use crate::AppEvent;
 
@@ -17,6 +17,7 @@ pub struct AppState {
     pub queue: QueueService,
     pub announcements: AnnouncementService,
     pub tts: TtsService,
+    pub translator: TranslatorService,
     pub event_bus_sender: broadcast::Sender<AppEvent>,
 }
 
@@ -51,11 +52,16 @@ impl AppState {
             AnnouncementService::new(Arc::clone(&config_arc), event_bus_sender.clone()).await;
         info!("Announcement service initialised.");
 
+        let translator_service =
+            TranslatorService::new(Arc::clone(&config_arc), event_bus_sender.clone());
+        info!("Translator service initialised.");
+
         AppState {
             config: config_arc,
             queue: queue_service,
             announcements: announcement_service,
             tts: tts_service,
+            translator: translator_service,
             event_bus_sender,
         }
     }

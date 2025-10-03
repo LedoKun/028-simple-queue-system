@@ -19,6 +19,9 @@ class OperatorPage {
     this.cooldownIntervalId = null;
     this.lastAnnouncementStatus = null;
     this.autoRefreshCleanup = () => {};
+    this.translatorCooldownIntervalId = null;
+    this.translatorCooldownState = { active: false, remainingSeconds: 0, totalSeconds: 0 };
+    this.lastLocationValid = false;
 
     this.renderHistoryList = (container, items, options = {}) => {
       renderCallList(container, items, {
@@ -48,6 +51,7 @@ class OperatorPage {
       locationInput: byId('call-location'),
       btnCall: byId('btn-call'),
       btnSkip: byId('btn-skip'),
+      btnCallTranslator: byId('btn-call-translator'),
       statusCurrentCallId: byId('status-current-call-id'),
       statusCurrentCallLocation: byId('status-current-call-location'),
       listHistoryCalls: byId('list-history-calls'),
@@ -57,6 +61,8 @@ class OperatorPage {
       statusAnnouncementCooldownTimer: byId('status-announcement-cooldown-timer'),
       btnNextAnnouncement: byId('btn-next-announcement'),
       announcementSlotList: byId('announcement-slot-list'),
+      statusTranslatorCooldown: byId('status-translator-cooldown'),
+      statusTranslatorCooldownTimer: byId('status-translator-cooldown-timer'),
       sseStatusIndicator: byId('sse-status-indicator'),
       feedbackArea: byId('feedback-area'),
     };
@@ -161,7 +167,7 @@ class OperatorPage {
   }
 
   attachEventHandlers() {
-    const { callForm, btnSkip, btnNextAnnouncement, originalIdInput, locationInput } = this.dom;
+    const { callForm, btnSkip, btnNextAnnouncement, btnCallTranslator, originalIdInput, locationInput } = this.dom;
 
     if (callForm) {
       callForm.addEventListener('submit', (event) => this.handleCallFormSubmit(event));
@@ -173,6 +179,10 @@ class OperatorPage {
 
     if (btnNextAnnouncement) {
       btnNextAnnouncement.addEventListener('click', () => this.handleNextAnnouncement());
+    }
+
+    if (btnCallTranslator) {
+      btnCallTranslator.addEventListener('click', (event) => this.handleCallTranslator(event));
     }
 
     if (originalIdInput) {
@@ -197,6 +207,10 @@ class OperatorPage {
       console.debug('OperatorUI', 'TTS complete event received', detail);
     });
 
+    this.eventStream.on('translatorcall', ({ detail }) => {
+      this.handleTranslatorCallEvent(detail);
+    });
+
     this.eventStream.on('status', ({ detail }) => {
       this.updateSseIndicator(detail);
     });
@@ -214,9 +228,10 @@ class OperatorPage {
     const labels = getLabels();
     this.feedback.show(labels.loading, { type: 'info', duration: 0 });
 
-    const [queueResult, announcementResult] = await Promise.allSettled([
+    const [queueResult, announcementResult, translatorResult] = await Promise.allSettled([
       this.apiClient.getQueueState(),
       this.apiClient.getAnnouncementStatus(),
+      this.apiClient.getTranslatorStatus(),
     ]);
 
     this.feedback.clear();
@@ -234,6 +249,13 @@ class OperatorPage {
       this.feedback.show('Failed to load announcement status. Waiting for live updates.', { type: 'warning', duration: 5000 });
       this.updateAnnouncementStatusDisplay(null);
     }
+
+    if (translatorResult.status === 'fulfilled' && translatorResult.value) {
+      this.updateTranslatorStatusDisplay(translatorResult.value);
+    } else {
+      console.warn('OperatorUI', 'Failed to load translator status initially');
+      this.updateTranslatorStatusDisplay(null);
+    }
   }
 
   validateInputs() {
@@ -249,6 +271,9 @@ class OperatorPage {
     if (this.dom.btnSkip) {
       this.dom.btnSkip.disabled = !(isIdValid && isLocationValid);
     }
+
+    this.lastLocationValid = isLocationValid;
+    this.updateTranslatorButtonState();
   }
 
   updateQueueStatusDisplay(queueState) {
@@ -419,6 +444,112 @@ class OperatorPage {
     this.renderAnnouncementSlotButtons(announcementStatus);
   }
 
+  updateTranslatorStatusDisplay(status) {
+    if (this.translatorCooldownIntervalId) {
+      clearInterval(this.translatorCooldownIntervalId);
+      this.translatorCooldownIntervalId = null;
+    }
+
+    if (!status) {
+      if (this.dom.statusTranslatorCooldown) {
+        this.dom.statusTranslatorCooldown.textContent = 'Unknown';
+      }
+      if (this.dom.statusTranslatorCooldownTimer) {
+        this.dom.statusTranslatorCooldownTimer.textContent = '';
+      }
+      this.translatorCooldownState = { active: false, remainingSeconds: 0, totalSeconds: 0 };
+      this.updateTranslatorButtonState();
+      return;
+    }
+
+    const totalSeconds = Number(status.cooldown_seconds) || 0;
+    let remaining = Number(status.cooldown_remaining_seconds) || 0;
+    const active = Boolean(status.cooldown_active && remaining > 0);
+
+    if (this.dom.statusTranslatorCooldown) {
+      this.dom.statusTranslatorCooldown.textContent = active ? 'On Cooldown' : 'Ready';
+    }
+    if (this.dom.statusTranslatorCooldownTimer) {
+      this.dom.statusTranslatorCooldownTimer.textContent = active ? `(${remaining}s)` : '';
+    }
+
+    this.translatorCooldownState = {
+      active,
+      remainingSeconds: active ? remaining : 0,
+      totalSeconds,
+    };
+
+    if (active && remaining > 0) {
+      this.translatorCooldownIntervalId = window.setInterval(() => {
+        remaining -= 1;
+        if (remaining > 0) {
+          if (this.dom.statusTranslatorCooldownTimer) {
+            this.dom.statusTranslatorCooldownTimer.textContent = `(${remaining}s)`;
+          }
+          this.translatorCooldownState.remainingSeconds = remaining;
+        } else {
+          clearInterval(this.translatorCooldownIntervalId);
+          this.translatorCooldownIntervalId = null;
+          this.translatorCooldownState = {
+            active: false,
+            remainingSeconds: 0,
+            totalSeconds,
+          };
+          if (this.dom.statusTranslatorCooldown) {
+            this.dom.statusTranslatorCooldown.textContent = 'Ready';
+          }
+          if (this.dom.statusTranslatorCooldownTimer) {
+            this.dom.statusTranslatorCooldownTimer.textContent = '';
+          }
+          this.updateTranslatorButtonState();
+        }
+      }, 1000);
+    }
+
+    this.updateTranslatorButtonState();
+  }
+
+  updateTranslatorButtonState() {
+    if (!this.dom.btnCallTranslator) {
+      return;
+    }
+
+    const isCooldownActive = Boolean(this.translatorCooldownState?.active);
+    const hasRemaining = (this.translatorCooldownState?.remainingSeconds || 0) > 0;
+    const onCooldown = isCooldownActive && hasRemaining;
+    const shouldDisable = !this.lastLocationValid || onCooldown;
+    this.dom.btnCallTranslator.disabled = shouldDisable;
+
+    if (shouldDisable) {
+      this.dom.btnCallTranslator.classList.add('opacity-50', 'cursor-not-allowed');
+    } else {
+      this.dom.btnCallTranslator.classList.remove('opacity-50', 'cursor-not-allowed');
+    }
+  }
+
+  handleTranslatorCallEvent(eventData) {
+    if (!eventData || typeof eventData !== 'object') {
+      return;
+    }
+
+    const fallbackRemaining = this.translatorCooldownState?.remainingSeconds || 0;
+    const remainingSeconds = Number(eventData.cooldown_remaining_seconds ?? fallbackRemaining) || 0;
+    const statusPayload = {
+      cooldown_seconds: Number(eventData.cooldown_seconds ?? this.translatorCooldownState?.totalSeconds) || 0,
+      cooldown_remaining_seconds: remainingSeconds,
+      cooldown_active: remainingSeconds > 0,
+    };
+
+    this.updateTranslatorStatusDisplay(statusPayload);
+
+    if (eventData.location) {
+      this.feedback.show(
+        `Translator request broadcasting for counter ${sanitizeText(eventData.location)}.`,
+        { type: 'info', duration: 4000 },
+      );
+    }
+  }
+
   async handleCallFormSubmit(event) {
     event.preventDefault();
     this.feedback.clear();
@@ -520,6 +651,52 @@ class OperatorPage {
     }
 
     this.validateInputs();
+  }
+
+  async handleCallTranslator(event) {
+    if (event) {
+      event.preventDefault();
+    }
+
+    this.feedback.clear();
+
+    const locationValue = this.dom.locationInput?.value?.trim() || '';
+    if (!Validation.isValidCallLocation(locationValue)) {
+      this.feedback.show('Location must be digits only (e.g., 5, 10).', { type: 'error' });
+      this.dom.locationInput?.focus();
+      return;
+    }
+
+    if (this.dom.btnCallTranslator) {
+      this.dom.btnCallTranslator.disabled = true;
+      this.dom.btnCallTranslator.textContent = 'Calling translator...';
+      this.dom.btnCallTranslator.classList.add('opacity-50', 'cursor-not-allowed');
+    }
+
+    const response = await this.apiClient.callTranslator(locationValue);
+
+    if (response && typeof response === 'object') {
+      if (response.status) {
+        this.updateTranslatorStatusDisplay(response.status);
+      }
+      if (response.message) {
+        this.feedback.show(response.message, { type: 'info' });
+      } else {
+        this.feedback.show(`Translator request sent for counter ${sanitizeText(locationValue)}.`, { type: 'info' });
+      }
+    } else {
+      console.warn('OperatorUI', 'Translator call response missing payload. Forcing status refresh.');
+      const status = await this.apiClient.getTranslatorStatus();
+      if (status) {
+        this.updateTranslatorStatusDisplay(status);
+      }
+    }
+
+    if (this.dom.btnCallTranslator) {
+      this.dom.btnCallTranslator.textContent = 'Call Translator';
+    }
+
+    this.updateTranslatorButtonState();
   }
 
   async handleManualAnnouncementTrigger(slotId, button) {

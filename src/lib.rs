@@ -64,6 +64,18 @@ pub enum AppEvent {
     /// An event indicating a change in the status of the announcement system.
     /// Contains the current `AnnouncementStatus`.
     AnnouncementStatus(AnnouncementStatus),
+    /// An event indicating that a dedicated translator call has been requested.
+    /// Carries the counter location and audio playlist that should be played.
+    TranslatorCall {
+        /// Counter location where the translator is requested.
+        location: String,
+        /// Ordered audio URLs that should be played for the translator call.
+        audio_urls: Vec<String>,
+        /// Configured cooldown duration in seconds.
+        cooldown_seconds: u64,
+        /// Remaining cooldown duration in seconds at the time of broadcast.
+        cooldown_remaining_seconds: u64,
+    },
     /// An event signaling that a Text-to-Speech audio generation is complete.
     /// Includes details about the generated audio file(s).
     TTSComplete {
@@ -83,7 +95,7 @@ pub enum AppEvent {
 // Re-export key structs for easier access when using the crate.
 // This allows users to import `AppConfig` directly from `queue_calling_system`
 // instead of `queue_calling_system::config::AppConfig`.
-pub use application::{AnnouncementService, QueueService, TtsService};
+pub use application::{AnnouncementService, QueueService, TranslatorService, TtsService};
 pub use config::AppConfig;
 pub use queue::QueueState;
 pub use state::AppState;

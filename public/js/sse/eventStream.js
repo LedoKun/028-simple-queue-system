@@ -102,6 +102,7 @@ class EventStream {
     this.eventSource.addEventListener('queue_update', this.handleNamedEvent);
     this.eventSource.addEventListener('announcement_status', this.handleNamedEvent);
     this.eventSource.addEventListener('tts_complete', this.handleNamedEvent);
+    this.eventSource.addEventListener('translator_call', this.handleNamedEvent);
     this.eventSource.onerror = this.handleError;
   }
 

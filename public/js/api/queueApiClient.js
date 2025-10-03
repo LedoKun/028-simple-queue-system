@@ -144,6 +144,14 @@ class QueueApiClient {
   getAnnouncementStatus() {
     return this.get('/announcements/status');
   }
+
+  callTranslator(location) {
+    return this.post('/translator/call', { location });
+  }
+
+  getTranslatorStatus() {
+    return this.get('/translator/status');
+  }
 }
 
 export { QueueApiClient };
