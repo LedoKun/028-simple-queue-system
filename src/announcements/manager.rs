@@ -16,10 +16,10 @@ use std::{
     time::{Duration, Instant},
 };
 use tokio::{
-    fs,                                      // Async file system operations
-    sync::{broadcast, Mutex},                // Async synchronization primitives
-    task::JoinHandle,                        // For managing the auto-cycle background task
-    time::{self, sleep, MissedTickBehavior}, // For asynchronous timers
+    fs,                       // Async file system operations
+    sync::{broadcast, Mutex}, // Async synchronization primitives
+    task::JoinHandle,         // For managing the auto-cycle background task
+    time::sleep,              // For asynchronous timers
 };
 use tracing::{debug, error, info, trace, warn}; // Import tracing macros
 
@@ -125,6 +125,8 @@ pub struct AnnouncementManager {
     current_slot_index: usize,
     /// The `Instant` when the last manual announcement trigger occurred, used for cooldown.
     last_manual_trigger: Instant,
+    /// Tracks when the auto-cycle timer was most recently reset.
+    last_auto_cycle_reset: Instant,
     /// Sender for the application-wide event bus, used to broadcast `AnnouncementStatus` updates.
     event_bus_sender: broadcast::Sender<AppEvent>,
     /// Handle to the background task responsible for automatically cycling through announcement slots.
@@ -191,6 +193,7 @@ impl AnnouncementManager {
                     now.checked_sub(cooldown_duration).unwrap_or(now)
                 }
             },
+            last_auto_cycle_reset: Instant::now(),
             event_bus_sender,
             _auto_cycle_task: None, // Will be set if auto-cycling is enabled.
         };
@@ -491,6 +494,7 @@ impl AnnouncementManager {
             return;
         }
         self.current_slot_index = (self.current_slot_index + 1) % self.slots.len();
+        self.last_auto_cycle_reset = Instant::now();
         info!(
             "Advanced announcement slot to index {} (ID: {:?}).",
             self.current_slot_index,
@@ -558,6 +562,7 @@ impl AnnouncementManager {
 
         self.last_manual_trigger = Instant::now();
         self.current_slot_index = target_index;
+        self.last_auto_cycle_reset = Instant::now();
         info!(
             "Manual trigger activated slot {} (index {}).",
             slot_id, target_index
@@ -664,20 +669,55 @@ impl AnnouncementManager {
             info!("Auto-cycle interval is 0, task will not run.");
             return;
         }
-        let mut interval = time::interval(Duration::from_secs(interval_seconds));
-        // Skip missed ticks to avoid "catching up" if the system is overloaded.
-        interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
+        let interval_duration = Duration::from_secs(interval_seconds);
 
         loop {
-            // Wait for the next tick of the interval timer.
-            interval.tick().await;
-            debug!("Auto-cycle timer ticked, acquiring manager lock.");
-            // Acquire a lock on the manager to advance the slot.
+            // Determine how long to sleep based on when the timer was last reset.
+            let sleep_duration = {
+                let manager = manager_arc.lock().await;
+                if manager.slots.is_empty() {
+                    debug!(
+                        "Auto-cycle task found no announcement slots; sleeping for the configured interval."
+                    );
+                    interval_duration
+                } else {
+                    let elapsed = manager.last_auto_cycle_reset.elapsed();
+                    interval_duration.saturating_sub(elapsed)
+                }
+            };
+
+            if !sleep_duration.is_zero() {
+                trace!(
+                    "Auto-cycle timer sleeping for {:?} before checking announcements again.",
+                    sleep_duration
+                );
+                sleep(sleep_duration).await;
+                continue;
+            }
+
+            debug!("Auto-cycle interval elapsed; attempting to advance announcement slot.");
             let mut manager = manager_arc.lock().await;
+
+            if manager.slots.is_empty() {
+                debug!(
+                    "Auto-cycle wake found no available slots; sleeping for the configured interval."
+                );
+                drop(manager);
+                sleep(interval_duration).await;
+                continue;
+            }
+
+            if manager.last_auto_cycle_reset.elapsed() < interval_duration {
+                trace!(
+                    "Auto-cycle timer was reset by a manual action after waking; restarting wait."
+                );
+                drop(manager);
+                continue;
+            }
+
             manager.advance_slot().await;
-            // Explicitly drop the lock as soon as the operation is done.
+            debug!("Auto-cycle advanced announcement slot and reset timer.");
             drop(manager);
-            debug!("Manager lock released by auto-cycle task.");
         }
     }
 
