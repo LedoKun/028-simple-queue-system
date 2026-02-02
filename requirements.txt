@@ -1,3 +1,4 @@
 aiohttp
 fake-useragent
 pydub
+audioop-lts
