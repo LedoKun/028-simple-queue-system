@@ -171,9 +171,10 @@ Useful flags:
 - `--skip-cache` – only refresh individual stem files
 - `--log-level DEBUG` – surface detailed fetch/compression diagnostics
 
-Outputs are written beneath `public/media/audio_stems/` and
-`public/media/audio_cache/multi/` respectively. You can safely re-run the script;
-completed files are detected and left untouched unless they are removed first.
+Outputs are written beneath `public/media/audio_stems/` (locale folders such as
+`th` and `en-GB`) and `public/media/audio_cache/multi/` (combined cache files
+named like `A01-1_th_en-GB.mp3`). You can safely re-run the script; completed
+files are detected and left untouched unless they are removed first.
 
 ## Automated Docker Image Builds
 

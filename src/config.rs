@@ -498,4 +498,73 @@ mod tests {
 
         info!("All `test_ordered_supported_language_codes` test cases passed.");
     }
+
+    /// Test case for the raw language code ordering (no normalization).
+    #[test]
+    fn test_ordered_supported_language_codes_raw() {
+        let mut config = AppConfig {
+            server_address: "0.0.0.0".parse().unwrap(),
+            server_port: 3000,
+            max_history_size: 5,
+            max_skipped_history_size: 5,
+            serve_dir_path: PathBuf::from("./public"),
+            announcements_audio_sub_path: PathBuf::from("media"),
+            banners_sub_path: PathBuf::from("media"),
+            banner_rotation_interval_seconds: 10,
+            announcement_auto_cycle_interval_seconds: 1200,
+            announcement_manual_trigger_cooldown_seconds: 60,
+            gtts_cache_base_path: PathBuf::from("/tmp/cache"),
+            tts_cache_maximum_files: 100,
+            tts_external_service_timeout_seconds: 15,
+            tts_supported_languages: String::new(),
+            sse_keep_alive_interval_seconds: 15,
+            sse_event_buffer_size: 200,
+            tts_cache_web_path: String::from("/tts_cache"),
+        };
+
+        config.tts_supported_languages = "th:Thai,en-GB:British English,fr:French".to_string();
+        assert_eq!(
+            config.ordered_supported_language_codes_raw(),
+            vec!["th".to_string(), "en-GB".to_string(), "fr".to_string()]
+        );
+
+        config.tts_supported_languages = " ,, ja:Japanese, ".to_string();
+        assert_eq!(
+            config.ordered_supported_language_codes_raw(),
+            vec!["ja".to_string()]
+        );
+    }
+
+    /// Test case for the language suffix used in cache filenames.
+    #[test]
+    fn test_tts_language_suffix_for_filename() {
+        let mut config = AppConfig {
+            server_address: "0.0.0.0".parse().unwrap(),
+            server_port: 3000,
+            max_history_size: 5,
+            max_skipped_history_size: 5,
+            serve_dir_path: PathBuf::from("./public"),
+            announcements_audio_sub_path: PathBuf::from("media"),
+            banners_sub_path: PathBuf::from("media"),
+            banner_rotation_interval_seconds: 10,
+            announcement_auto_cycle_interval_seconds: 1200,
+            announcement_manual_trigger_cooldown_seconds: 60,
+            gtts_cache_base_path: PathBuf::from("/tmp/cache"),
+            tts_cache_maximum_files: 100,
+            tts_external_service_timeout_seconds: 15,
+            tts_supported_languages: String::new(),
+            sse_keep_alive_interval_seconds: 15,
+            sse_event_buffer_size: 200,
+            tts_cache_web_path: String::from("/tts_cache"),
+        };
+
+        config.tts_supported_languages = "th:Thai,en-GB:British English".to_string();
+        assert_eq!(config.tts_language_suffix_for_filename(), "th_en-GB");
+
+        config.tts_supported_languages = "fr-CA:French (Canada)".to_string();
+        assert_eq!(config.tts_language_suffix_for_filename(), "fr-CA");
+
+        config.tts_supported_languages = "".to_string();
+        assert_eq!(config.tts_language_suffix_for_filename(), "");
+    }
 }

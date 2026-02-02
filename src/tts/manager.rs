@@ -439,7 +439,6 @@ impl TTSManager {
             // filesystem base and an empty string for the web path segment to achieve this.
             if let Some(audio_url) = Self::get_web_accessible_audio_url(
                 &pregen_file_path,
-                &config.serve_dir_path,
                 &config.serve_dir_path, // Base for stripping is the entire public dir
                 "",                     // Web path segment is empty (root)
             ) {
@@ -499,7 +498,6 @@ impl TTSManager {
             // If cached, get its web-accessible URL and broadcast a completion event.
             if let Some(audio_url) = Self::get_web_accessible_audio_url(
                 &cache_file_path,
-                &config.serve_dir_path,
                 &config.gtts_cache_base_path,
                 &config.tts_cache_web_path,
             ) {
@@ -719,7 +717,6 @@ impl TTSManager {
         // Get web-accessible URL
         Self::get_web_accessible_audio_url(
             &cache_file_path,
-            &config.serve_dir_path,
             &config.gtts_cache_base_path,
             &config.tts_cache_web_path,
         )
@@ -1307,7 +1304,6 @@ impl TTSManager {
     ///
     /// # Arguments
     /// - `cache_file_path`: The absolute path to the cached audio file on the file system.
-    /// - `_serve_dir_path`: The root directory from which static files are served (currently unused in logic).
     /// - `cache_base_fs_path`: The file system base path for the TTS cache.
     /// - `cache_web_path_segment`: The URL path segment where the TTS cache is exposed (e.g., "/tts_cache").
     ///
@@ -1315,7 +1311,6 @@ impl TTSManager {
     /// An `Option<String>` containing the web-accessible URL if successful, otherwise `None`.
     fn get_web_accessible_audio_url(
         cache_file_path: &Path,
-        _serve_dir_path: &Path, // This parameter is currently not used in the logic.
         cache_base_fs_path: &Path,
         cache_web_path_segment: &str,
     ) -> Option<String> {
