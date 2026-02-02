@@ -311,6 +311,41 @@ impl AppConfig {
         codes
     }
 
+    /// Returns the configured language codes in order without normalization.
+    ///
+    /// This is useful when a locale-specific folder name is required, such as
+    /// generating or referencing TTS stem assets on disk.
+    pub fn ordered_supported_language_codes_raw(&self) -> Vec<String> {
+        if self.tts_supported_languages.is_empty() {
+            debug!("tts_supported_languages is empty, returning empty Vec (raw).");
+            return Vec::new();
+        }
+
+        let codes: Vec<String> = self
+            .tts_supported_languages
+            .split(',')
+            .filter_map(|s_pair| {
+                let lang_part = s_pair.trim();
+                if lang_part.is_empty() {
+                    None
+                } else {
+                    let code = lang_part.split(':').next().map(|s| s.trim().to_string());
+                    code
+                }
+            })
+            .filter(|s_code| {
+                let is_not_empty = !s_code.is_empty();
+                if !is_not_empty {
+                    debug!("Filtering out empty language code after parsing (raw).");
+                }
+                is_not_empty
+            })
+            .collect();
+
+        debug!("Extracted ordered language codes (raw): {:?}", codes);
+        codes
+    }
+
     /// Returns a filename suffix representing the configured TTS language order.
     ///
     /// This uses the raw language codes as defined in `tts_supported_languages`

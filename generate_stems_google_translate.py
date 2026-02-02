@@ -52,7 +52,7 @@ LANGUAGE_PARTS: dict[str, dict[str, Sequence[str]]] = {
         "numbers": [str(i) for i in range(0, 10)],
         "characters": [chr(i) for i in range(ord("A"), ord("Z") + 1)],
     },
-    "en": {
+    "en-GB": {
         "phrases": ["Number", "to counter"],
         "numbers": [str(i) for i in range(0, 10)],
         "characters": [chr(i) for i in range(ord("A"), ord("Z") + 1)],
@@ -152,7 +152,9 @@ async def fetch_tts(
     lang: str,
     config: TTSConfig,
 ) -> bytes | None:
-    lang_code = "en-gb" if lang == "en" else lang
+    lang_code = lang.lower()
+    if lang_code == "en-uk":
+        lang_code = "en-gb"
     params = {"ie": "UTF-8", "q": text, "tl": lang_code, "client": "tw-ob"}
 
     for attempt in range(1, config.max_retries + 1):
@@ -216,7 +218,7 @@ async def execute_cache_job(
         english_phrase = f"Number {job.composed_number} to counter {job.counter}"
         thai_bytes, english_bytes = await asyncio.gather(
             fetch_tts(session, thai_phrase, "th", config),
-            fetch_tts(session, english_phrase, "en", config),
+            fetch_tts(session, english_phrase, "en-GB", config),
         )
         if not (thai_bytes and english_bytes):
             LOGGER.error("Failed to build cache %s", job.destination)

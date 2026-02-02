@@ -468,7 +468,7 @@ impl TTSManager {
         );
 
         // Get all supported languages in order.
-        let ordered_lang_codes = config.ordered_supported_language_codes();
+        let ordered_lang_codes = config.ordered_supported_language_codes_raw();
         if ordered_lang_codes.is_empty() {
             warn!("No supported languages configured, falling back to stem audio");
             Self::fallback_to_stem_audio(&config, &sender, &id, &location, &lang).await;
@@ -912,12 +912,12 @@ impl TTSManager {
     /// - /media/audio_stems/th/number_001.mp3
     /// - /media/audio_stems/th/phrase_to_counter.mp3
     /// - /media/audio_stems/th/number_004.mp3
-    /// - /media/audio_stems/en/phrase_number.mp3
-    /// - /media/audio_stems/en/char_a.mp3  
-    /// - /media/audio_stems/en/number_000.mp3
-    /// - /media/audio_stems/en/number_001.mp3
-    /// - /media/audio_stems/en/phrase_to_counter.mp3
-    /// - /media/audio_stems/en/number_004.mp3
+    /// - /media/audio_stems/en-GB/phrase_number.mp3
+    /// - /media/audio_stems/en-GB/char_a.mp3  
+    /// - /media/audio_stems/en-GB/number_000.mp3
+    /// - /media/audio_stems/en-GB/number_001.mp3
+    /// - /media/audio_stems/en-GB/phrase_to_counter.mp3
+    /// - /media/audio_stems/en-GB/number_004.mp3
     fn build_stem_audio_urls_for_all_languages(
         config: &Arc<AppConfig>,
         id: &str,
@@ -966,14 +966,14 @@ impl TTSManager {
 
         // Map language codes to stem directory names
         let stem_lang_dir = match lang.to_lowercase().as_str() {
-            "th" => "th",
-            "en-uk" | "en-us" | "en-gb" | "en" => "en",
+            "th" | "th-th" => "th",
+            "en-uk" | "en-us" | "en-gb" | "en" => "en-GB",
             _ => {
                 warn!(
-                    "Unsupported language '{}' for stem audio, defaulting to 'en'",
+                    "Unsupported language '{}' for stem audio, defaulting to 'en-GB'",
                     lang
                 );
-                "en"
+                "en-GB"
             }
         };
 
