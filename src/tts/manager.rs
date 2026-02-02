@@ -420,7 +420,8 @@ impl TTSManager {
             id, lang, location
         );
 
-        let call_filename = Self::get_sanitized_call_filename(&id, &location);
+        let lang_suffix = config.tts_language_suffix_for_filename();
+        let call_filename = Self::get_sanitized_call_filename(&id, &location, &lang_suffix);
 
         // --- 1. PRE-GENERATED CACHE CHECK ---
         // The pre-generated path is inside the public serving directory, as requested.
@@ -477,7 +478,12 @@ impl TTSManager {
         // --- 2. DYNAMIC CACHE CHECK ---
         // Determine the expected path for the dynamically cached concatenated audio file.
         let cache_file_path =
-            Self::get_multi_language_cache_file_path(&config.gtts_cache_base_path, &id, &location);
+            Self::get_multi_language_cache_file_path(
+                &config.gtts_cache_base_path,
+                &id,
+                &location,
+                &lang_suffix,
+            );
 
         debug!(
             "TTS task: for call_id='{}', checking dynamic cache path='{:?}'",
@@ -533,6 +539,7 @@ impl TTSManager {
                 id.clone(),
                 location.clone(),
                 ordered_lang_codes,
+                lang_suffix,
             ),
         )
         .await;
@@ -576,9 +583,15 @@ impl TTSManager {
         id: String,
         location: String,
         ordered_lang_codes: Vec<String>,
+        lang_suffix: String,
     ) -> Result<String, String> {
         let cache_file_path =
-            Self::get_multi_language_cache_file_path(&config.gtts_cache_base_path, &id, &location);
+            Self::get_multi_language_cache_file_path(
+                &config.gtts_cache_base_path,
+                &id,
+                &location,
+                &lang_suffix,
+            );
 
         let mut all_audio_bytes: Vec<u8> = Vec::new();
         let mut uas_this_task: HashSet<String> = HashSet::new();
@@ -719,8 +732,12 @@ impl TTSManager {
     }
 
     /// Generates a sanitized filename for a multi-language TTS call.
-    /// e.g., "A01", "Counter 1" -> "A01-Counter_1.mp3"
-    fn get_sanitized_call_filename(call_id: &str, call_location: &str) -> String {
+    /// e.g., "A01", "1", "th_en-GB" -> "A01-1_th_en-GB.mp3"
+    fn get_sanitized_call_filename(
+        call_id: &str,
+        call_location: &str,
+        lang_suffix: &str,
+    ) -> String {
         let sanitize = |s: &str| {
             s.chars()
                 .map(|c| {
@@ -734,7 +751,15 @@ impl TTSManager {
         };
         let call_id_sanitized = sanitize(call_id);
         let call_location_sanitized = sanitize(call_location);
-        format!("{}-{}.mp3", call_id_sanitized, call_location_sanitized)
+        let suffix_sanitized = sanitize(lang_suffix);
+        if suffix_sanitized.is_empty() {
+            format!("{}-{}.mp3", call_id_sanitized, call_location_sanitized)
+        } else {
+            format!(
+                "{}-{}_{}.mp3",
+                call_id_sanitized, call_location_sanitized, suffix_sanitized
+            )
+        }
     }
 
     /// Generates a cache file path for multi-language TTS audio.
@@ -742,8 +767,9 @@ impl TTSManager {
         cache_base_path: &Path,
         call_id: &str,
         call_location: &str,
+        lang_suffix: &str,
     ) -> PathBuf {
-        let filename = Self::get_sanitized_call_filename(call_id, call_location);
+        let filename = Self::get_sanitized_call_filename(call_id, call_location, lang_suffix);
         // Store multi-language files in a "multi" subdirectory
         cache_base_path.join("multi").join(filename)
     }

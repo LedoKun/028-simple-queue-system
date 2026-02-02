@@ -32,6 +32,7 @@ LOGGER = logging.getLogger(__name__)
 class TTSConfig:
     stems_output_dir: Path = Path("./public/media/audio_stems")
     cache_output_dir: Path = Path("./public/media/audio_cache/multi")
+    cache_language_suffix: str = "th_en-GB"
     concurrency_limit: int = 20
     request_timeout: int = 5
     max_retries: int = 10
@@ -113,7 +114,8 @@ def iter_stem_jobs(config: TTSConfig) -> Iterable[StemJob]:
 def iter_cache_jobs(config: TTSConfig) -> Iterable[CacheJob]:
     config.cache_output_dir.mkdir(parents=True, exist_ok=True)
     for prefix, number, counter in CACHE_COMBINATIONS:
-        filename = f"{prefix}{number:02d}-{counter}.mp3"
+        suffix = config.cache_language_suffix
+        filename = f"{prefix}{number:02d}-{counter}_{suffix}.mp3" if suffix else f"{prefix}{number:02d}-{counter}.mp3"
         yield CacheJob(prefix, number, counter, config.cache_output_dir / filename)
 
 

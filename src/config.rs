@@ -310,6 +310,37 @@ impl AppConfig {
         debug!("Extracted ordered language codes: {:?}", codes);
         codes
     }
+
+    /// Returns a filename suffix representing the configured TTS language order.
+    ///
+    /// This uses the raw language codes as defined in `tts_supported_languages`
+    /// (before normalization) and joins them with underscores. This keeps
+    /// pre-generated cache filenames explicit and consistent with configuration.
+    pub fn tts_language_suffix_for_filename(&self) -> String {
+        if self.tts_supported_languages.is_empty() {
+            return String::new();
+        }
+
+        let codes: Vec<String> = self
+            .tts_supported_languages
+            .split(',')
+            .filter_map(|entry| {
+                let trimmed = entry.trim();
+                if trimmed.is_empty() {
+                    None
+                } else {
+                    let code = trimmed.split(':').next().unwrap_or("").trim();
+                    if code.is_empty() {
+                        None
+                    } else {
+                        Some(code.to_string())
+                    }
+                }
+            })
+            .collect();
+
+        codes.join("_")
+    }
 }
 
 pub(crate) fn normalize_language_code(raw: &str) -> String {
