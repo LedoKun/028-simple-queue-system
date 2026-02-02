@@ -127,6 +127,8 @@ pub struct AnnouncementManager {
     last_manual_trigger: Instant,
     /// Tracks when the auto-cycle timer was most recently reset.
     last_auto_cycle_reset: Instant,
+    /// Tracks whether announcements have been activated yet (auto-cycle tick or manual trigger).
+    auto_cycle_started: bool,
     /// Sender for the application-wide event bus, used to broadcast `AnnouncementStatus` updates.
     event_bus_sender: broadcast::Sender<AppEvent>,
     /// Handle to the background task responsible for automatically cycling through announcement slots.
@@ -194,6 +196,7 @@ impl AnnouncementManager {
                 }
             },
             last_auto_cycle_reset: Instant::now(),
+            auto_cycle_started: false,
             event_bus_sender,
             _auto_cycle_task: None, // Will be set if auto-cycling is enabled.
         };
@@ -493,6 +496,7 @@ impl AnnouncementManager {
             warn!("Cannot advance slot, no announcement slots available.");
             return;
         }
+        self.auto_cycle_started = true;
         self.current_slot_index = (self.current_slot_index + 1) % self.slots.len();
         self.last_auto_cycle_reset = Instant::now();
         info!(
@@ -563,6 +567,7 @@ impl AnnouncementManager {
         self.last_manual_trigger = Instant::now();
         self.current_slot_index = target_index;
         self.last_auto_cycle_reset = Instant::now();
+        self.auto_cycle_started = true;
         info!(
             "Manual trigger activated slot {} (index {}).",
             slot_id, target_index
@@ -580,7 +585,11 @@ impl AnnouncementManager {
     /// An `AnnouncementStatus` struct representing the current state.
     pub async fn get_current_status(&self) -> AnnouncementStatus {
         debug!("Getting current announcement status.");
-        let current_slot = self.slots.get(self.current_slot_index);
+        let current_slot = if self.auto_cycle_started {
+            self.slots.get(self.current_slot_index)
+        } else {
+            None
+        };
         let serve_dir_path = &self.config.serve_dir_path; // Path for static file serving.
 
         let current_slot_id = current_slot.map(|s| s.id.clone());
@@ -671,6 +680,12 @@ impl AnnouncementManager {
         }
         let interval_duration = Duration::from_secs(interval_seconds);
 
+        // Reset the timer when the background task starts so the first cycle waits a full interval.
+        {
+            let mut manager = manager_arc.lock().await;
+            manager.last_auto_cycle_reset = Instant::now();
+        }
+
         loop {
             // Determine how long to sleep based on when the timer was last reset.
             let sleep_duration = {
@@ -711,6 +726,15 @@ impl AnnouncementManager {
                 trace!(
                     "Auto-cycle timer was reset by a manual action after waking; restarting wait."
                 );
+                drop(manager);
+                continue;
+            }
+
+            if !manager.auto_cycle_started {
+                manager.auto_cycle_started = true;
+                manager.last_auto_cycle_reset = Instant::now();
+                manager.broadcast_status().await;
+                debug!("Auto-cycle started; broadcasting initial announcement slot.");
                 drop(manager);
                 continue;
             }

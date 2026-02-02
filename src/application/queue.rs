@@ -151,26 +151,27 @@ impl QueueService {
 
     fn trigger_tts_for_call(&self, call: &Call) {
         let ordered_languages = self.config.ordered_supported_language_codes();
-        if ordered_languages.is_empty() {
+        let Some(primary_lang) = ordered_languages.first() else {
             warn!(
                 "QueueService: no supported languages configured; skipping TTS trigger for call '{}'.",
                 call.id
             );
             return;
-        }
+        };
 
         info!(
-            "QueueService: triggering TTS for call '{}' across languages {:?}.",
-            call.id, ordered_languages
+            "QueueService: triggering multi-language TTS for call '{}' (primary lang '{}', ordered languages {:?}).",
+            call.id, primary_lang, ordered_languages
         );
 
-        for lang in ordered_languages {
-            if let Err(err) = self.tts.trigger_generation(&call.id, &call.location, &lang) {
-                error!(
-                    "QueueService: failed to trigger TTS for call '{}' (lang '{}'): {}",
-                    call.id, lang, err
-                );
-            }
+        if let Err(err) = self
+            .tts
+            .trigger_generation(&call.id, &call.location, primary_lang)
+        {
+            error!(
+                "QueueService: failed to trigger TTS for call '{}' (lang '{}'): {}",
+                call.id, primary_lang, err
+            );
         }
     }
 }

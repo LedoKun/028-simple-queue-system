@@ -180,66 +180,7 @@ impl TTSManager {
         }
     }
 
-    /// Splits a long text into shorter chunks suitable for the TTS API.
-    /// This function is ported from the logic in `splitLongText.ts`.
-    ///
-    /// # Arguments
-    /// - `text`: The input string to be split.
-    /// - `max_length`: The maximum length of each chunk.
-    ///
-    /// # Returns
-    /// A `Result<Vec<String>, String>` containing a vector of text chunks or an error.
-    fn split_long_text(&self, text: &str, max_length: usize) -> Result<Vec<String>, String> {
-        // This regex combines whitespace and default punctuation from the TS source.
-        // It uses correct Rust string escapes: \u{...} for Unicode, \" for quotes, and \\\\ for a literal backslash.
-        let space_and_punct_regex =
-            Regex::new("[\u{FEFF}\u{A0}\\s!\"#$%&'()*+,-./:;<=>?@\\\\^_`{|}~]+")
-                .expect("Failed to compile punctuation regex");
-
-        let is_space_or_punct =
-            |c: char| -> bool { space_and_punct_regex.is_match(&c.to_string()) };
-
-        let last_index_of_space_or_punct = |s: &str, left: usize, right: usize| -> Option<usize> {
-            s[left..=right].rfind(is_space_or_punct)
-        };
-
-        let mut result: Vec<String> = Vec::new();
-        let mut start = 0;
-
-        while start < text.len() {
-            if text.len() - start <= max_length {
-                result.push(text[start..].to_string());
-                break;
-            }
-
-            let mut end = start + max_length - 1;
-
-            if let (Some(char_at_end), Some(char_after_end)) =
-                (text.chars().nth(end), text.chars().nth(end + 1))
-            {
-                if is_space_or_punct(char_at_end) || is_space_or_punct(char_after_end) {
-                    result.push(text[start..=end].to_string());
-                    start = end + 1;
-                    continue;
-                }
-            }
-
-            if let Some(split_pos) = last_index_of_space_or_punct(text, start, end) {
-                end = start + split_pos;
-                result.push(text[start..=end].to_string());
-                start = end + 1;
-            } else {
-                return Err(format!(
-                    "The word is too long to split into a short text: '{}...'",
-                    &text[start..start + max_length]
-                ));
-            }
-        }
-
-        Ok(result)
-    }
-
-    /// Triggers the asynchronous generation of TTS audio for a given call ID, location, and language.
+    /// Triggers the asynchronous generation of TTS audio for a given call ID and location.
     ///
     /// This function performs initial validation (language support) and then spawns a separate
     /// Tokio task to handle the actual audio fetching, caching, and event broadcasting.
@@ -247,7 +188,7 @@ impl TTSManager {
     /// # Arguments
     /// - `id`: The unique ID of the call (e.g., a queue number).
     /// - `location`: The location associated with the call (e.g., "Counter 1").
-    /// - `lang`: The language code for the TTS audio (e.g., "th", "en-uk").
+    /// - `lang`: The language code used for validation and event metadata (e.g., "th", "en-uk").
     ///
     /// # Returns
     /// - `Ok(())` if the TTS generation task is successfully spawned.
@@ -281,25 +222,6 @@ impl TTSManager {
         let sender_clone = self.event_bus_sender.clone();
         let last_call_uas_clone = Arc::clone(&self.last_call_uas);
 
-        // Build the full text to be spoken for the call.
-        let text_for_this_lang = Self::build_speak_text(&id, &location, &lang);
-        debug!(
-            "Trigger TTS Generation: Constructed speak text: '{}'",
-            text_for_this_lang
-        );
-        // Tokenize the text into smaller parts.
-        let tokenized_parts = match self.split_long_text(&text_for_this_lang, MAX_CHARS_PER_CHUNK) {
-            Ok(parts) => parts,
-            Err(e) => {
-                error!("Failed to tokenize text: {}", e);
-                return Err(e);
-            }
-        };
-        debug!(
-            "Trigger TTS Generation: Tokenized text into {} parts.",
-            tokenized_parts.len()
-        );
-
         // Capture parameters for the spawned task.
         let task_id = id;
         let task_location = location;
@@ -317,63 +239,11 @@ impl TTSManager {
                 task_id,
                 task_location,
                 task_lang,
-                tokenized_parts,
             )
             .await;
         });
 
         Ok(())
-    }
-
-    /// Generates a cache file path for a given TTS audio.
-    ///
-    /// The path is constructed from the base cache directory, language, and sanitized
-    /// call ID and location.
-    ///
-    /// # Arguments
-    /// - `cache_base_path`: The root directory for the TTS cache.
-    /// - `lang`: The language code.
-    /// - `call_id`: The ID of the call.
-    /// - `call_location`: The location of the call.
-    ///
-    /// # Returns
-    /// A `PathBuf` representing the full path to the cached audio file.
-    fn _get_cache_file_path(
-        cache_base_path: &Path,
-        lang: &str,
-        call_id: &str,
-        call_location: &str,
-    ) -> PathBuf {
-        trace!(
-            "Get Cache File Path: Building path for lang: '{}', id: '{}', loc: '{}'",
-            lang,
-            call_id,
-            call_location
-        );
-        // Helper closure to sanitize strings for use in file names.
-        let sanitize = |s: &str| {
-            s.chars()
-                .map(|c| {
-                    // Allow alphanumeric, hyphen, and dot; replace others with underscore.
-                    if c.is_alphanumeric() || c == '-' || c == '.' {
-                        c
-                    } else {
-                        '_'
-                    }
-                })
-                .collect::<String>()
-        };
-        let lang_sanitized = sanitize(lang);
-        let call_id_sanitized = sanitize(call_id);
-        let call_location_sanitized = sanitize(call_location);
-
-        // Construct the full path: `cache_base_path / lang / {id}-{location}.mp3`
-        let path = cache_base_path.join(lang_sanitized).join(format!(
-            "{}-{}.mp3",
-            call_id_sanitized, call_location_sanitized
-        ));
-        trace!("Get Cache File Path: Generated path: {:?}", path);
-        path
     }
 
     /// Performs a single TTS API request with retry logic.
@@ -535,8 +405,7 @@ impl TTSManager {
     /// - `last_call_uas_lock`: Mutex-protected HashSet for recent user agents.
     /// - `id`: Call ID.
     /// - `location`: Call location.
-    /// - `lang`: Language code (used for event response, but we generate for all languages).
-    /// - `_text_parts`: Pre-tokenized text chunks (not used for multi-lang generation).
+    /// - `lang`: Language code (used for event metadata; generation uses all configured languages).
     async fn perform_tts_task_with_fallback(
         config: Arc<AppConfig>,
         http_client: ReqwestClient,
@@ -545,7 +414,6 @@ impl TTSManager {
         id: String,
         location: String,
         lang: String,
-        _text_parts: Vec<String>, // Not used in multi-language mode
     ) {
         debug!(
             "Perform TTS Task with Fallback: Starting for call_id='{}', lang='{}', location='{}'",
@@ -962,215 +830,6 @@ impl TTSManager {
         }
 
         Ok(result)
-    }
-
-    /// Performs online TTS generation without fallback.
-    /// This is extracted from the main task to allow for timeout handling.
-    async fn _perform_online_tts_generation(
-        config: Arc<AppConfig>,
-        http_client: ReqwestClient,
-        last_call_uas_lock: Arc<Mutex<HashSet<String>>>,
-        id: String,
-        location: String,
-        lang: String,
-        text_parts: Vec<String>,
-    ) -> Result<String, String> {
-        let cache_file_path =
-            Self::_get_cache_file_path(&config.gtts_cache_base_path, &lang, &id, &location);
-
-        // Handle cases where tokenization resulted in no valid parts.
-        if text_parts.is_empty() {
-            return Err(format!(
-                "Tokenization resulted in no text parts for call id '{}', lang '{}'",
-                id, lang
-            ));
-        }
-        debug!(
-            "Processing {} pre-tokenized parts for online TTS (call id '{}', lang {}).",
-            text_parts.len(),
-            id,
-            lang
-        );
-
-        let mut all_audio_bytes: Vec<u8> = Vec::new();
-        let total_parts = text_parts.len();
-        // `uas_this_task` keeps track of UAs used within this specific TTS generation task
-        // to avoid immediate repetition for subsequent chunks.
-        let mut uas_this_task: HashSet<String> = HashSet::new();
-
-        // Iterate through each tokenized part to fetch audio.
-        for (idx, part_text) in text_parts.iter().enumerate() {
-            debug!(
-                "Perform Online TTS: Processing part {}/{} (text: '{}')",
-                idx + 1,
-                total_parts,
-                part_text
-            );
-            // Build the specific TTS URL for the current chunk.
-            let tts_url = Self::static_build_google_tts_url(part_text, &lang, idx, total_parts);
-            trace!("Perform Online TTS: TTS URL for part: {}", tts_url);
-
-            let user_agent_str: String;
-            let mut attempts = 0;
-
-            // Loop to generate a user agent that hasn't been recently used.
-            loop {
-                trace!(
-                    "Perform Online TTS: UA generation attempt {} for part {}/{}",
-                    attempts + 1,
-                    idx + 1,
-                    total_parts
-                );
-                let candidate_ua_slice: &str = get_rua(); // Get a random user agent.
-
-                let last_call_uas_guard = last_call_uas_lock.lock().await; // Acquire lock for shared UA history.
-
-                // Check if the candidate UA is new for this task AND not in the globally shared recent UAs.
-                if !uas_this_task.contains(candidate_ua_slice)
-                    && !last_call_uas_guard.contains(candidate_ua_slice)
-                {
-                    user_agent_str = candidate_ua_slice.to_string();
-                    uas_this_task.insert(user_agent_str.clone()); // Add to current task's used UAs.
-                    drop(last_call_uas_guard); // Release lock as soon as possible.
-                    debug!("Perform Online TTS: Selected new UA: '{}'", user_agent_str);
-                    break; // Found a good UA, exit loop.
-                }
-                drop(last_call_uas_guard); // Release lock even if not found.
-
-                attempts += 1;
-                // If max attempts reached, accept the last generated UA, even if it's a repeat.
-                if attempts >= MAX_UA_GENERATION_ATTEMPTS {
-                    warn!(
-                        "Max UA generation attempts reached for part {}/{}. Using last generated UA ('{}'), which might be a repeat.",
-                        idx + 1, total_parts, candidate_ua_slice
-                    );
-                    user_agent_str = candidate_ua_slice.to_string();
-                    if !uas_this_task.contains(candidate_ua_slice) {
-                        uas_this_task.insert(user_agent_str.clone());
-                    }
-                    break;
-                }
-                trace!(
-                    "UA '{}' was recently used, retrying generation...",
-                    candidate_ua_slice
-                );
-            }
-
-            // Fetch audio with retry logic
-            match Self::fetch_tts_with_retry(
-                &http_client,
-                &tts_url,
-                &user_agent_str,
-                idx,
-                total_parts,
-                &lang,
-            )
-            .await
-            {
-                Ok(bytes) => {
-                    trace!(
-                        "Perform Online TTS: Received {} bytes for part {}/{}",
-                        bytes.len(),
-                        idx + 1,
-                        total_parts
-                    );
-                    all_audio_bytes.extend_from_slice(&bytes); // Append audio bytes.
-                }
-                Err(e) => {
-                    return Err(format!(
-                        "Failed to fetch TTS part {}/{} (lang {}) after {} retries: {}",
-                        idx + 1,
-                        total_parts,
-                        lang,
-                        MAX_TTS_RETRY_ATTEMPTS,
-                        e
-                    ));
-                }
-            }
-        }
-
-        // After processing all parts, handle the concatenated audio.
-        if !all_audio_bytes.is_empty() {
-            debug!("Perform Online TTS: All audio bytes collected (total {} bytes). Updating last_call_uas.", all_audio_bytes.len());
-            // Update the global set of recently used user agents.
-            let mut last_call_uas_guard = last_call_uas_lock.lock().await;
-            *last_call_uas_guard = uas_this_task; // Replace old set with the one used in this task.
-            drop(last_call_uas_guard);
-            trace!("Perform Online TTS: last_call_uas updated.");
-
-            // Ensure the parent directory for the cache file exists before writing.
-            if let Some(parent_dir) = cache_file_path.parent() {
-                debug!(
-                    "Perform Online TTS: Checking/creating parent directory for cache: {:?}",
-                    parent_dir
-                );
-                if !parent_dir.exists() {
-                    if let Err(e) = tokio_fs::create_dir_all(parent_dir).await {
-                        return Err(format!(
-                            "Failed to create TTS cache subdirectory {:?}: {}",
-                            parent_dir, e
-                        ));
-                    }
-                    info!("Created TTS cache subdirectory: {:?}", parent_dir);
-                }
-            } else {
-                return Err(format!(
-                    "Could not determine parent directory for cache file: {:?}",
-                    cache_file_path
-                ));
-            }
-
-            // Write the concatenated audio bytes to the cache file.
-            debug!(
-                "Perform Online TTS: Writing concatenated audio to cache file: {:?}",
-                cache_file_path
-            );
-            if let Err(e) = Self::write_cache_file(&cache_file_path, &all_audio_bytes).await {
-                return Err(format!(
-                    "Failed to write concatenated TTS audio to cache {:?} (lang {}): {}",
-                    cache_file_path, lang, e
-                ));
-            }
-            info!(
-                "TTS audio (lang {}) cached successfully: {:?}",
-                lang, cache_file_path
-            );
-
-            // Prune the cache if the maximum file limit is set.
-            let max_files = config.tts_cache_maximum_files;
-            if max_files > 0 {
-                debug!(
-                    "Perform Online TTS: Initiating cache pruning. Max files: {}",
-                    max_files
-                );
-                Self::prune_cache(&config.gtts_cache_base_path, max_files).await;
-            }
-
-            // Get the web-accessible URL for the newly created audio file.
-            debug!("Perform Online TTS: Getting web-accessible URL for new audio.");
-            if let Some(audio_url) = Self::get_web_accessible_audio_url(
-                &cache_file_path,
-                &config.serve_dir_path, // Not used in current implementation but kept for context
-                &config.gtts_cache_base_path,
-                &config.tts_cache_web_path,
-            ) {
-                debug!(
-                    "Perform Online TTS: Generated web-accessible URL: {}",
-                    audio_url
-                );
-                return Ok(audio_url);
-            } else {
-                return Err(format!(
-                    "Failed to get web-accessible URL for TTS audio (id: {}, lang: {}): {:?}",
-                    id, lang, cache_file_path
-                ));
-            }
-        } else {
-            return Err(format!(
-                "No audio bytes collected from TTS for call ID '{}', lang '{}'",
-                id, lang
-            ));
-        }
     }
 
     /// Falls back to stem audio files when online TTS fails or times out.
