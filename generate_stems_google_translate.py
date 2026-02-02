@@ -28,6 +28,7 @@ LOGGER = logging.getLogger(__name__)
 # Configuration
 # ---------------------------------------------------------------------------
 
+
 @dataclass(frozen=True)
 class TTSConfig:
     stems_output_dir: Path = Path("./public/media/audio_stems")
@@ -60,7 +61,11 @@ LANGUAGE_PARTS: dict[str, dict[str, Sequence[str]]] = {
 
 CACHE_COMBINATIONS: Sequence[tuple[str, int, int]] = tuple(
     list(product(["A"], range(1, 101), range(1, 6)))
-    + list(product([chr(i) for i in range(ord("B"), ord("C") + 1)], range(1, 11), range(1, 6)))
+    + list(
+        product(
+            [chr(i) for i in range(ord("B"), ord("D") + 1)], range(1, 11), range(1, 6)
+        )
+    )
 )
 
 FILENAME_SANITIZER = re.compile(r"[\\/*?:\"<>|]")
@@ -71,6 +76,7 @@ USER_AGENT = UserAgent()
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 @dataclass(frozen=True)
 class StemJob:
@@ -108,14 +114,22 @@ def iter_stem_jobs(config: TTSConfig) -> Iterable[StemJob]:
         lang_dir = config.stems_output_dir / lang
         lang_dir.mkdir(parents=True, exist_ok=True)
         for text in (*parts["phrases"], *parts["numbers"], *parts["characters"]):
-            yield StemJob(language=lang, text=text, destination=lang_dir / derive_stem_filename(text, lang))
+            yield StemJob(
+                language=lang,
+                text=text,
+                destination=lang_dir / derive_stem_filename(text, lang),
+            )
 
 
 def iter_cache_jobs(config: TTSConfig) -> Iterable[CacheJob]:
     config.cache_output_dir.mkdir(parents=True, exist_ok=True)
     for prefix, number, counter in CACHE_COMBINATIONS:
         suffix = config.cache_language_suffix
-        filename = f"{prefix}{number:02d}-{counter}_{suffix}.mp3" if suffix else f"{prefix}{number:02d}-{counter}.mp3"
+        filename = (
+            f"{prefix}{number:02d}-{counter}_{suffix}.mp3"
+            if suffix
+            else f"{prefix}{number:02d}-{counter}.mp3"
+        )
         yield CacheJob(prefix, number, counter, config.cache_output_dir / filename)
 
 
@@ -213,13 +227,17 @@ async def execute_cache_job(
         compress_mp3_file(job.destination, config)
 
 
-WorkerFn = Callable[[aiohttp.ClientSession, asyncio.Semaphore, Any, TTSConfig], Awaitable[None]]
+WorkerFn = Callable[
+    [aiohttp.ClientSession, asyncio.Semaphore, Any, TTSConfig], Awaitable[None]
+]
 
 
 async def run_jobs(jobs: Iterable[Any], worker_fn: WorkerFn, config: TTSConfig) -> None:
     semaphore = asyncio.Semaphore(config.concurrency_limit)
     async with aiohttp.ClientSession() as session:
-        await asyncio.gather(*(worker_fn(session, semaphore, job, config) for job in jobs))
+        await asyncio.gather(
+            *(worker_fn(session, semaphore, job, config) for job in jobs)
+        )
 
 
 async def generate_stems(config: TTSConfig) -> None:
@@ -250,7 +268,9 @@ async def main(config: TTSConfig, *, stems: bool, cache: bool) -> None:
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Pre-generate TTS stems and cache audio")
+    parser = argparse.ArgumentParser(
+        description="Pre-generate TTS stems and cache audio"
+    )
     parser.add_argument(
         "--skip-stems",
         action="store_true",
@@ -271,7 +291,9 @@ def parse_args() -> argparse.Namespace:
 
 
 def configure_logging(level: str) -> None:
-    logging.basicConfig(format="%(levelname)s %(message)s", level=getattr(logging, level))
+    logging.basicConfig(
+        format="%(levelname)s %(message)s", level=getattr(logging, level)
+    )
 
 
 if __name__ == "__main__":
