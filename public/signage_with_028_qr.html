@@ -1,0 +1,573 @@
+<!DOCTYPE html>
+<html lang="th">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Queue Display - New Location</title>
+    <link rel="apple-touch-icon" sizes="180x180" href="/media/favicon/apple-touch-icon.png">
+    <link rel="icon" type="image/png" sizes="32x32" href="/media/favicon/favicon-32x32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="/media/favicon/favicon-16x16.png">
+    <link rel="manifest" href="/site.webmanifest">
+    <link href="css/styles.css" rel="stylesheet">
+    <!-- Legacy fallback CSS for older smart TVs (precedes inline modern CSS) -->
+    <link href="css/signage-legacy.css" rel="stylesheet">
+    <style>
+        html,
+        body {
+            margin: 0;
+            padding: 0;
+            height: 100vh;
+            width: 100vw;
+            overflow: hidden;
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+            font-size: clamp(14px, 1vw, 18px);
+            color: #e5e7eb;
+            background: radial-gradient(120% 120% at 50% 20%, #1f2937 0%, #111827 60%, #0b1120 100%);
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            cursor: none;
+        }
+
+        .aspect-ratio-container {
+            width: 100vw;
+            height: 100vh;
+            aspect-ratio: 16 / 9;
+        }
+
+        .signage-shell {
+            display: flex;
+            height: 100%;
+            padding: clamp(1.25rem, 3vh, 2.5rem);
+            gap: clamp(0.25rem, 0.5vh, 0.4rem);
+            backdrop-filter: blur(10px);
+        }
+
+        /* QR Code Section - Main Focus Area */
+        .qr-main-section {
+            flex: 2;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            border-radius: 24px;
+            padding: clamp(2rem, 4vw, 4rem);
+            background: linear-gradient(145deg, rgba(55, 65, 81, 0.65), rgba(17, 24, 39, 0.85));
+            border: 1px solid rgba(148, 163, 184, 0.15);
+            box-shadow: 0 35px 60px -40px rgba(15, 23, 42, 0.9);
+            position: relative;
+            text-align: center;
+        }
+
+        .qr-main-title {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+            margin-bottom: clamp(1.5rem, 3vh, 3rem);
+        }
+
+        .qr-main-title-th {
+            font-size: clamp(3rem, 6vw, 5rem);
+            font-weight: 700;
+            color: #fde68a;
+            text-shadow: 0 8px 30px rgba(250, 204, 21, 0.4);
+            letter-spacing: 0.02em;
+        }
+
+        .qr-main-title-en {
+            font-size: clamp(2rem, 4vw, 3.5rem);
+            font-weight: 600;
+            color: rgba(224, 231, 255, 0.9);
+            letter-spacing: 0.02em;
+        }
+
+        .qr-code-container {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background: #ffffff;
+            border-radius: 24px;
+            padding: clamp(1.5rem, 3vw, 3rem);
+            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.3);
+            max-width: 90%;
+        }
+
+        .qr-code-container img {
+            width: clamp(250px, 35vw, 500px);
+            height: auto;
+            aspect-ratio: 1/1;
+        }
+
+        .qr-scan-hint {
+            margin-top: clamp(1.5rem, 3vh, 2.5rem);
+            display: flex;
+            flex-direction: column;
+            gap: 0.3rem;
+        }
+
+        .qr-scan-hint-th {
+            font-size: clamp(1.5rem, 2.5vw, 2rem);
+            color: rgba(226, 232, 240, 0.9);
+            font-weight: 500;
+        }
+
+        .qr-scan-hint-en {
+            font-size: clamp(1.1rem, 1.8vw, 1.5rem);
+            color: rgba(148, 163, 184, 0.85);
+            font-weight: 400;
+        }
+
+        #datetime {
+            position: absolute;
+            top: clamp(1.25rem, 3vh, 2.5rem);
+            right: clamp(1.25rem, 3vh, 2.5rem);
+            text-align: right;
+            background: rgba(17, 24, 39, 0.6);
+            border-radius: 10px;
+            border: 1px solid rgba(148, 163, 184, 0.12);
+            padding: 0.5rem 1rem;
+        }
+
+        #time {
+            display: block;
+            font-size: 2.5rem;
+            font-weight: 700;
+        }
+
+        #date {
+            display: block;
+            font-size: 1.8rem;
+            font-weight: 600;
+        }
+
+        /* Side Panel - Queue Information */
+        .side-panel {
+            flex: 1.1;
+            display: flex;
+            flex-direction: column;
+            gap: clamp(0.25rem, 0.5vh, 0.4rem);
+        }
+
+        .glass-card {
+            background: rgba(17, 24, 39, 0.6);
+            border-radius: 20px;
+            border: 1px solid rgba(148, 163, 184, 0.12);
+            box-shadow: 0 20px 40px -30px rgba(15, 23, 42, 0.85);
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* Announcement Area */
+        #announcement-area {
+            flex: none;
+            min-height: clamp(5rem, 17.5vh, 9rem);
+            background: #ffffff;
+            padding: clamp(0.75rem, 1.5vh, 1.25rem);
+        }
+
+        #announcement-banner-container {
+            width: 100%;
+            height: 100%;
+            border-radius: 14px;
+            background: #ffffff;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            overflow: hidden;
+        }
+
+        #announcement-placeholder {
+            font-size: clamp(1.2rem, 2.5vw, 2.2rem);
+            font-weight: 600;
+        }
+
+        .banner-media {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            aspect-ratio: 480 / 107;
+        }
+
+        /* Now Serving - Prominent Display */
+        .now-serving-card {
+            flex: 1.5;
+            display: flex;
+            flex-direction: column;
+            padding: clamp(1rem, 2vh, 1.5rem);
+        }
+
+        .now-serving-header {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 0.2rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .now-serving-title-th {
+            font-size: clamp(1.8rem, 3vw, 2.5rem);
+            font-weight: 700;
+            color: #fde68a;
+        }
+
+        .now-serving-title-en {
+            font-size: clamp(1rem, 1.8vw, 1.4rem);
+            font-weight: 500;
+            color: rgba(148, 163, 184, 0.9);
+        }
+
+        .now-serving-content {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        .token-display {
+            font-size: clamp(6rem, 18vh, 12rem);
+            font-weight: 900;
+            line-height: 0.95;
+            letter-spacing: -0.04em;
+            color: #fde68a;
+            text-shadow: 0 10px 30px rgba(250, 204, 21, 0.35);
+            text-align: center;
+        }
+
+        .counter-panel {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 0.1rem;
+        }
+
+        .counter-label {
+            font-size: clamp(1.2rem, 2vw, 1.6rem);
+            font-weight: 600;
+            color: rgba(224, 231, 255, 0.85);
+        }
+
+        .counter-label-en {
+            font-size: clamp(0.8rem, 1.3vw, 1rem);
+            color: rgba(148, 163, 184, 0.8);
+        }
+
+        .counter-display {
+            font-size: clamp(4rem, 12vh, 8rem);
+            font-weight: 800;
+            line-height: 1;
+            color: #e2e8f0;
+            text-shadow: 0 6px 20px rgba(15, 23, 42, 0.55);
+        }
+
+        /* Token Lists - Smaller Cards Row */
+        .cards-row {
+            display: flex;
+            gap: clamp(0.25rem, 0.5vh, 0.4rem);
+            flex: 0.5;
+            min-height: 0;
+            min-width: 0;
+        }
+
+        .cards-row>.list-card {
+            min-width: 0;
+        }
+
+        .list-card {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            min-width: 0;
+        }
+
+        .list-card header {
+            padding: 0.8rem 1rem 0.6rem;
+            border-bottom: 1px solid rgba(148, 163, 184, 0.12);
+        }
+
+        .list-title {
+            font-size: clamp(0.85rem, 1.3vw, 1.1rem);
+            font-weight: 600;
+            letter-spacing: 0.015em;
+            display: flex;
+            align-items: baseline;
+            justify-content: space-between;
+        }
+
+        .list-title span {
+            font-size: 0.7rem;
+            color: rgba(156, 163, 175, 0.8);
+            font-weight: 500;
+        }
+
+        .list-scroll {
+            flex: 1;
+            overflow-y: hidden;
+            padding: 0.75rem 1rem 1rem;
+            min-width: 0;
+        }
+
+        #list-combined-calls {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        /* Combined list item styles */
+        .combined-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: clamp(1rem, 1.6vw, 1.4rem);
+            padding: 0.35rem 0.6rem;
+            border-radius: 10px;
+            white-space: nowrap;
+            gap: 0.4rem;
+            border-left: 4px solid transparent;
+        }
+
+        .combined-item.italic {
+            display: block;
+            text-align: center;
+            border-left: none;
+        }
+
+        .combined-item .id-part {
+            overflow: hidden;
+            text-overflow: ellipsis;
+            min-width: 0;
+        }
+
+        .combined-item .id-part strong {
+            letter-spacing: -0.05em;
+            word-spacing: -0.15em;
+        }
+
+        .combined-item .timestamp {
+            color: rgba(148, 163, 184, 0.75);
+            font-size: 0.8em;
+            letter-spacing: normal;
+            flex: 0 0 auto;
+            margin-left: 0.3rem;
+        }
+
+        /* Served items - Green accent */
+        .served-item {
+            background: rgba(34, 197, 94, 0.15);
+            border-left-color: #22c55e;
+            color: #bbf7d0;
+        }
+
+        .served-item .id-part strong {
+            color: #86efac;
+        }
+
+        /* Skipped/Missed items - Amber accent */
+        .skipped-item {
+            background: rgba(251, 191, 36, 0.15);
+            border-left-color: #fbbf24;
+            color: #fef08a;
+        }
+
+        .skipped-item .id-part strong {
+            color: #fcd34d;
+        }
+
+        /* Legend styles */
+        .legend {
+            display: flex;
+            gap: 0.75rem;
+            font-size: 0.65rem;
+            font-weight: 500;
+            margin-left: auto;
+        }
+
+        .legend-served {
+            color: #86efac;
+        }
+
+        .legend-skipped {
+            color: #fcd34d;
+        }
+
+        .history-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: clamp(1rem, 1.6vw, 1.4rem);
+            padding: 0.2rem 0.5rem;
+            border-radius: 8px;
+            background: rgba(30, 41, 59, 0.55);
+            border: 1px solid rgba(148, 163, 184, 0.08);
+            white-space: nowrap;
+            gap: 0.4rem;
+        }
+
+        .history-item.italic {
+            display: block;
+            text-align: center;
+        }
+
+        .history-item strong {
+            letter-spacing: -0.07em;
+            word-spacing: -0.2em;
+        }
+
+        .history-item .id-part,
+        .history-item strong {
+            min-width: 0;
+        }
+
+        .history-item .id-part {
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .history-item .timestamp {
+            color: rgba(148, 163, 184, 0.75);
+            font-size: 0.85em;
+            letter-spacing: normal;
+            flex: 0 0 auto;
+            margin-left: 0.3rem;
+        }
+
+        #sse-status-indicator {
+            position: absolute;
+            bottom: clamp(1.25rem, 3vh, 2.5rem);
+            left: clamp(1.25rem, 3vh, 2.5rem);
+            padding: 0.5rem 1rem;
+            border-radius: 999px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            letter-spacing: 0.02em;
+            min-width: 10rem;
+            text-align: center;
+            background: rgba(59, 130, 246, 0.18);
+            color: #dbeafe;
+            transition: background-color 0.3s ease, color 0.3s ease;
+            z-index: 50;
+        }
+
+        #sse-status-indicator[data-status='connecting'] {
+            background: rgba(234, 179, 8, 0.25);
+            color: #fef08a;
+        }
+
+        #sse-status-indicator[data-status='connected'] {
+            background: rgba(34, 197, 94, 0.28);
+            color: #bbf7d0;
+        }
+
+        #sse-status-indicator[data-status='disconnected'] {
+            background: rgba(248, 113, 113, 0.28);
+            color: #fecaca;
+        }
+
+        #sse-status-indicator[data-status='unsupported'] {
+            background: rgba(148, 163, 184, 0.28);
+            color: #e2e8f0;
+        }
+
+        @media (max-width: 768px) {
+            .signage-shell {
+                padding: 1rem;
+                gap: 1rem;
+                flex-direction: column;
+            }
+
+            .qr-main-section {
+                padding: 1.25rem;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="aspect-ratio-container">
+        <div class="signage-shell">
+            <!-- Main QR Code Section -->
+            <section class="qr-main-section">
+                <div id="datetime">
+                    <span id="time"></span>
+                    <span id="date"></span>
+                </div>
+
+                <div class="qr-main-title">
+                    <div class="qr-main-title-th">สถานที่ทำการใหม่</div>
+                    <div class="qr-main-title-en">New Location</div>
+                </div>
+
+                <div class="qr-code-container">
+                    <img src="media/new_location.svg" alt="New Location QR Code">
+                </div>
+
+                <div class="qr-scan-hint">
+                    <div class="qr-scan-hint-th">สแกน QR Code เพื่อดูแผนที่</div>
+                    <div class="qr-scan-hint-en">Scan QR Code for map directions</div>
+                </div>
+
+                <div id="sse-status-indicator" title="SSE Connection Status" data-status="connecting">Connecting…</div>
+            </section>
+
+            <!-- Side Panel - Queue Information -->
+            <aside class="side-panel">
+                <!-- Announcement Area -->
+                <div id="announcement-area" class="glass-card">
+                    <div id="announcement-banner-container">
+                        <span id="announcement-placeholder" class="text-gray-600">Announcements</span>
+                    </div>
+                </div>
+
+                <!-- Now Serving - Prominent Display -->
+                <div class="glass-card now-serving-card">
+                    <div class="now-serving-header">
+                        <div class="now-serving-title-th">กำลังเรียก</div>
+                        <div class="now-serving-title-en">Now Serving</div>
+                    </div>
+                    <div class="now-serving-content">
+                        <div id="current-call-id" class="token-display">----</div>
+                        <div class="counter-panel">
+                            <div class="counter-label">ช่อง <span class="counter-label-en">/ Counter</span></div>
+                            <div id="current-location" class="counter-display">----</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Combined Call History -->
+                <div class="glass-card list-card" style="flex: 0.6;">
+                    <header class="list-title">
+                        ประวัติการเรียก <span>Call History</span>
+                        <span class="legend">
+                            <span class="legend-served">● เรียกแล้ว</span>
+                            <span class="legend-skipped">● เรียกไม่พบ</span>
+                        </span>
+                    </header>
+                    <div class="list-scroll">
+                        <ul id="list-combined-calls">
+                            <li class="combined-item italic text-gray-400">---</li>
+                        </ul>
+                    </div>
+                </div>
+            </aside>
+        </div>
+    </div>
+
+    <audio id="chimeAudio" src="media/chime.mp3" preload="auto" style="display:none;"></audio>
+    <audio id="announcement-audio-player" preload="auto" style="display:none;"></audio>
+    <audio id="tts-audio-player" preload="auto" style="display:none;"></audio>
+
+    <script nomodule src="dist/polyfills.legacy.js"></script>
+    <script nomodule src="dist/signage.legacy.js"></script>
+    <script type="module" src="js/pages/signage/signage_with_qr.js"></script>
+</body>
+
+</html>
