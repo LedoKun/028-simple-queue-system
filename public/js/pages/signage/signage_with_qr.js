@@ -203,7 +203,7 @@ class SignagePageWithQR {
     }
 
     fetchOrderedLanguages() {
-        return fetch(`${API_BASE_URL}/settings/ordered-languages`)
+        return fetch(`${API_BASE_URL}/tts/ordered-languages`)
             .then((response) => {
                 if (!response.ok) {
                     throw new Error(`Failed to fetch ordered languages: ${response.status}`);
@@ -231,7 +231,7 @@ class SignagePageWithQR {
             .then((queueState) => {
                 this.updateCurrentCallDisplay(queueState?.current_call ?? {});
                 this.updateQueueDisplay(queueState);
-                return fetch(`${API_BASE_URL}/announcement/status`);
+                return fetch(`${API_BASE_URL}/announcements/status`);
             })
             .then((response) => {
                 if (!response.ok) {
