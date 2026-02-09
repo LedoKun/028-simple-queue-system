@@ -14,9 +14,9 @@ const UI_TEXT = {
     successPrefix: 'Success: ',
   },
   th: {
-    connecting: 'กำลังเชื่อมต่อเซิร์ฟเวอร์...',
-    connected: 'เชื่อมต่อสดแล้ว',
-    disconnected: 'ตัดการเชื่อมต่อ - กำลังลองใหม่...',
+    connecting: 'Connecting to server...',
+    connected: 'Live Connection Active',
+    disconnected: 'Connection lost. Retrying...',
     announcementPlaceholder: 'ประกาศ',
     historyPlaceholder: 'รอการเรียก...',
     skippedPlaceholder: 'ไม่มีคิวที่ข้ามไป',

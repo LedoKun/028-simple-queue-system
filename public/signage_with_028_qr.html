@@ -361,7 +361,7 @@
             display: flex;
             justify-content: space-between;
             align-items: center;
-            font-size: clamp(1rem, 1.6vw, 1.4rem);
+            font-size: clamp(1.2rem, 2.5vw, 2.2rem);
             padding: 0.35rem 0.6rem;
             border-radius: 10px;
             white-space: nowrap;
@@ -536,7 +536,6 @@
                 </div>
 
                 <div class="qr-main-title">
-                    <div class="qr-main-title-th">สถานที่ทำการใหม่</div>
                     <div class="qr-main-title-en">New Location</div>
                 </div>
 
@@ -545,7 +544,6 @@
                 </div>
 
                 <div class="qr-scan-hint">
-                    <div class="qr-scan-hint-th">สแกน QR Code เพื่อดูแผนที่</div>
                     <div class="qr-scan-hint-en">Scan QR Code for map directions</div>
                 </div>
 
@@ -564,13 +562,12 @@
                 <!-- Now Serving - Prominent Display -->
                 <div class="glass-card now-serving-card">
                     <div class="now-serving-header">
-                        <div class="now-serving-title-th">กำลังเรียก</div>
                         <div class="now-serving-title-en">Now Serving</div>
                     </div>
                     <div class="now-serving-content">
                         <div id="current-call-id" class="token-display">----</div>
                         <div class="counter-panel">
-                            <div class="counter-label">ช่อง <span class="counter-label-en">/ Counter</span></div>
+                            <div class="counter-label"><span class="counter-label-en">Counter</span></div>
                             <div id="current-location" class="counter-display">----</div>
                         </div>
                     </div>
@@ -579,7 +576,7 @@
                 <!-- Combined Call History -->
                 <div class="glass-card list-card" style="flex: 0.6;">
                     <header class="list-title">
-                        ประวัติการเรียก <span>Call History</span>
+                        <span>Call History</span>
                         <span class="legend">
                             <span class="legend-served">● Served</span>
                             <span class="legend-skipped">● Missed</span>
