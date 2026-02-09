@@ -1020,58 +1020,89 @@
       if (wrapper) {
         wrapper.classList.add('hidden');
       }
-      var banners = announcementStatus.current_banner_playlist.slice();
+      var imageExtensions = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg'];
+      var videoExtensions = ['mp4', 'webm', 'ogg', 'mov'];
+      var playlist = announcementStatus.current_banner_playlist.slice().map(function (mediaUrl) {
+        var extension = String(mediaUrl || '').split('.').pop().toLowerCase();
+        if (imageExtensions.includes(extension)) return {
+          mediaUrl: mediaUrl,
+          type: 'image'
+        };
+        if (videoExtensions.includes(extension)) return {
+          mediaUrl: mediaUrl,
+          type: 'video'
+        };
+        console.warn('SignageUI', 'Unsupported banner media type', mediaUrl);
+        return null;
+      }).filter(Boolean);
+      if (playlist.length === 0) {
+        if (wrapper && !container.contains(wrapper)) {
+          container.appendChild(wrapper);
+        }
+        if (wrapper) {
+          wrapper.classList.remove('hidden');
+        }
+        if (span) {
+          span.textContent = getLabels().announcementPlaceholder || 'Announcements';
+        }
+        return;
+      }
       var currentIndex = 0;
-      var _displayBanner = function displayBanner() {
-        if (banners.length === 0) return;
-        var mediaUrl = banners[currentIndex];
-        var extension = mediaUrl.split('.').pop().toLowerCase();
+      var cycleMs = (announcementStatus.banner_cycle_interval_seconds || 10) * 1000;
+      var showNextBanner = function showNextBanner() {
+        if (playlist.length <= 1) return;
+        currentIndex = (currentIndex + 1) % playlist.length;
+        displayBanner();
+      };
+      var displayBanner = function displayBanner() {
+        if (_this4.bannerIntervalId) {
+          clearInterval(_this4.bannerIntervalId);
+          _this4.bannerIntervalId = null;
+        }
+        if (playlist.length === 0) return;
+        var current = playlist[currentIndex];
         _this4.clearBannerContainer(wrapper);
-        if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg'].includes(extension)) {
+        if (current.type === 'image') {
           var img = document.createElement('img');
-          img.src = mediaUrl;
+          img.src = current.mediaUrl;
           img.alt = 'Announcement Banner';
           img.className = 'banner-media';
           container.appendChild(img);
-        } else if (['mp4', 'webm', 'ogg', 'mov'].includes(extension)) {
+          if (playlist.length > 1) {
+            _this4.bannerIntervalId = setTimeout(showNextBanner, cycleMs);
+          }
+        } else if (current.type === 'video') {
           var video = document.createElement('video');
-          video.src = mediaUrl;
+          video.src = current.mediaUrl;
           video.className = 'banner-media';
           video.autoplay = true;
           video.muted = true;
           video.playsInline = true;
-          video.loop = banners.length === 1;
-          if (banners.length > 1) {
-            video.onended = function () {
-              currentIndex = (currentIndex + 1) % banners.length;
-              _displayBanner();
-            };
+          video.loop = playlist.length === 1;
+          var advanced = false;
+          var advanceOnce = function advanceOnce() {
+            if (advanced) return;
+            advanced = true;
+            showNextBanner();
+          };
+          if (playlist.length > 1) {
+            video.onended = advanceOnce;
+            video.onerror = advanceOnce;
           }
           container.appendChild(video);
           video.play().catch(function (error) {
-            return console.error('SignageUI', 'Error playing banner video', mediaUrl, error);
+            console.error('SignageUI', 'Error playing banner video', current.mediaUrl, error);
+            if (playlist.length > 1 && !advanced) {
+              _this4.bannerIntervalId = setTimeout(advanceOnce, cycleMs);
+            }
           });
         } else {
-          console.warn('SignageUI', 'Unsupported banner media type', mediaUrl);
           if (wrapper && !container.contains(wrapper)) {
             container.appendChild(wrapper);
           }
         }
       };
-      _displayBanner();
-      if (banners.length > 1) {
-        var isImagePlaylist = banners.every(function (url) {
-          var ext = url.split('.').pop().toLowerCase();
-          return ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg'].includes(ext);
-        });
-        if (isImagePlaylist) {
-          var cycleMs = (announcementStatus.banner_cycle_interval_seconds || 10) * 1000;
-          this.bannerIntervalId = setInterval(function () {
-            currentIndex = (currentIndex + 1) % banners.length;
-            _displayBanner();
-          }, cycleMs);
-        }
-      }
+      displayBanner();
     };
     _proto.ensureBannerPlaceholder = function ensureBannerPlaceholder() {
       var container = this.dom.announcementBannerContainer;

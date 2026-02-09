@@ -227,39 +227,88 @@ class SignagePage {
       wrapper.classList.add('hidden');
     }
 
-    const banners = announcementStatus.current_banner_playlist.slice();
+    const imageExtensions = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg'];
+    const videoExtensions = ['mp4', 'webm', 'ogg', 'mov'];
+    const playlist = announcementStatus.current_banner_playlist
+      .slice()
+      .map((mediaUrl) => {
+        const extension = String(mediaUrl || '').split('.').pop().toLowerCase();
+        if (imageExtensions.includes(extension)) return { mediaUrl, type: 'image' };
+        if (videoExtensions.includes(extension)) return { mediaUrl, type: 'video' };
+        console.warn('SignageUI', 'Unsupported banner media type', mediaUrl);
+        return null;
+      })
+      .filter(Boolean);
+
+    if (playlist.length === 0) {
+      if (wrapper && !container.contains(wrapper)) {
+        container.appendChild(wrapper);
+      }
+      if (wrapper) {
+        wrapper.classList.remove('hidden');
+      }
+      if (span) {
+        span.textContent = getLabels().announcementPlaceholder || 'Announcements';
+      }
+      return;
+    }
+
     let currentIndex = 0;
+    const cycleMs = (announcementStatus.banner_cycle_interval_seconds || 10) * 1000;
+
+    const showNextBanner = () => {
+      if (playlist.length <= 1) return;
+      currentIndex = (currentIndex + 1) % playlist.length;
+      displayBanner();
+    };
 
     const displayBanner = () => {
-      if (banners.length === 0) return;
-      const mediaUrl = banners[currentIndex];
-      const extension = mediaUrl.split('.').pop().toLowerCase();
+      if (this.bannerIntervalId) {
+        clearInterval(this.bannerIntervalId);
+        this.bannerIntervalId = null;
+      }
+
+      if (playlist.length === 0) return;
+      const current = playlist[currentIndex];
       this.clearBannerContainer(wrapper);
 
-      if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg'].includes(extension)) {
+      if (current.type === 'image') {
         const img = document.createElement('img');
-        img.src = mediaUrl;
+        img.src = current.mediaUrl;
         img.alt = 'Announcement Banner';
         img.className = 'banner-media';
         container.appendChild(img);
-      } else if (['mp4', 'webm', 'ogg', 'mov'].includes(extension)) {
+        if (playlist.length > 1) {
+          this.bannerIntervalId = setTimeout(showNextBanner, cycleMs);
+        }
+      } else if (current.type === 'video') {
         const video = document.createElement('video');
-        video.src = mediaUrl;
+        video.src = current.mediaUrl;
         video.className = 'banner-media';
         video.autoplay = true;
         video.muted = true;
         video.playsInline = true;
-        video.loop = banners.length === 1;
-        if (banners.length > 1) {
-          video.onended = () => {
-            currentIndex = (currentIndex + 1) % banners.length;
-            displayBanner();
-          };
+        video.loop = playlist.length === 1;
+
+        let advanced = false;
+        const advanceOnce = () => {
+          if (advanced) return;
+          advanced = true;
+          showNextBanner();
+        };
+
+        if (playlist.length > 1) {
+          video.onended = advanceOnce;
+          video.onerror = advanceOnce;
         }
         container.appendChild(video);
-        video.play().catch((error) => console.error('SignageUI', 'Error playing banner video', mediaUrl, error));
+        video.play().catch((error) => {
+          console.error('SignageUI', 'Error playing banner video', current.mediaUrl, error);
+          if (playlist.length > 1 && !advanced) {
+            this.bannerIntervalId = setTimeout(advanceOnce, cycleMs);
+          }
+        });
       } else {
-        console.warn('SignageUI', 'Unsupported banner media type', mediaUrl);
         if (wrapper && !container.contains(wrapper)) {
           container.appendChild(wrapper);
         }
@@ -267,21 +316,6 @@ class SignagePage {
     };
 
     displayBanner();
-
-    if (banners.length > 1) {
-      const isImagePlaylist = banners.every((url) => {
-        const ext = url.split('.').pop().toLowerCase();
-        return ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg'].includes(ext);
-      });
-
-      if (isImagePlaylist) {
-        const cycleMs = (announcementStatus.banner_cycle_interval_seconds || 10) * 1000;
-        this.bannerIntervalId = setInterval(() => {
-          currentIndex = (currentIndex + 1) % banners.length;
-          displayBanner();
-        }, cycleMs);
-      }
-    }
   }
 
   ensureBannerPlaceholder() {
