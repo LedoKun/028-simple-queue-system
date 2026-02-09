@@ -15,10 +15,10 @@ class OperatorPage {
     this.dom = this.queryDom();
     this.feedback = createFeedbackController({ elementId: this.dom.feedbackArea });
     this.apiClient = new QueueApiClient({ baseUrl: API_BASE_URL, feedback: this.feedback });
-    this.eventStream = new EventStream(SSE_URL, { labelProvider: getLabels });
+    this.eventStream = new EventStream(SSE_URL, { labelProvider: () => getLabels('en') });
     this.cooldownIntervalId = null;
     this.lastAnnouncementStatus = null;
-    this.autoRefreshCleanup = () => {};
+    this.autoRefreshCleanup = () => { };
     this.translatorCooldownIntervalId = null;
     this.translatorCooldownState = { active: false, remainingSeconds: 0, totalSeconds: 0 };
     this.lastLocationValid = false;
@@ -312,9 +312,9 @@ class OperatorPage {
       ...status,
       available_slots: Array.isArray(status.available_slots)
         ? status.available_slots.map((slot) => ({
-            ...slot,
-            audio_playlist: Array.isArray(slot.audio_playlist) ? [...slot.audio_playlist] : [],
-          }))
+          ...slot,
+          audio_playlist: Array.isArray(slot.audio_playlist) ? [...slot.audio_playlist] : [],
+        }))
         : [],
     };
   }

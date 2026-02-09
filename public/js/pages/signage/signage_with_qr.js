@@ -86,7 +86,7 @@ function renderCombinedCallList(container, servedItems, skippedItems, options = 
 class SignagePageWithQR {
   constructor() {
     this.dom = this.queryDom();
-    this.eventStream = new EventStream(SSE_URL, { labelProvider: getLabels });
+    this.eventStream = new EventStream(SSE_URL, { labelProvider: () => getLabels('en') });
     this.updateSseIndicator = createSseIndicatorUpdater(this.dom.sseStatusIndicator, {
       setDataset: true,
       keepClasses: true,
@@ -99,7 +99,7 @@ class SignagePageWithQR {
     this.isAudioFilePlaying = false;
     this.bannerIntervalId = null;
     this.lastShownCallData = null;
-    this.autoRefreshCancel = () => {};
+    this.autoRefreshCancel = () => { };
     this.clock = this.createClock();
   }
 
@@ -411,8 +411,8 @@ class SignagePageWithQR {
       let shouldQueue = true;
 
       if (this.currentProcessingEvent?.type === 'call' &&
-          this.currentProcessingEvent.id === newCall.id &&
-          this.currentProcessingEvent.location === newCall.location) {
+        this.currentProcessingEvent.id === newCall.id &&
+        this.currentProcessingEvent.location === newCall.location) {
         shouldQueue = false;
       }
 
@@ -454,7 +454,7 @@ class SignagePageWithQR {
     let shouldQueue = true;
 
     if (this.currentProcessingEvent?.type === 'announcement' &&
-        this.currentProcessingEvent.audioSequence.some((item) => item.src === primarySrc)) {
+      this.currentProcessingEvent.audioSequence.some((item) => item.src === primarySrc)) {
       shouldQueue = false;
     }
 
@@ -524,8 +524,8 @@ class SignagePageWithQR {
 
     let targetEvent = null;
     if (this.currentProcessingEvent?.type === 'call' &&
-        this.currentProcessingEvent.id === ttsData.id &&
-        this.currentProcessingEvent.location === ttsData.location) {
+      this.currentProcessingEvent.id === ttsData.id &&
+      this.currentProcessingEvent.location === ttsData.location) {
       targetEvent = this.currentProcessingEvent;
     } else {
       targetEvent = this.eventQueue.find((evt) => evt.type === 'call' && evt.id === ttsData.id && evt.location === ttsData.location);
