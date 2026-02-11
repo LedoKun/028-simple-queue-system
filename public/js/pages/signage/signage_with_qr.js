@@ -275,7 +275,7 @@ class SignagePageWithQR {
       ? announcementStatus.current_banner_playlist.slice()
       : [];
     if (banners.length === 0) {
-      placeholder.textContent = getLabels().announcementPlaceholder || 'Announcements';
+      this.renderAnnouncementsPlaceholder(placeholder);
       placeholder.style.display = '';
       return;
     }
@@ -296,7 +296,7 @@ class SignagePageWithQR {
 
     if (playlist.length === 0) {
       placeholder.style.display = '';
-      placeholder.textContent = getLabels().announcementPlaceholder || 'Announcements';
+      this.renderAnnouncementsPlaceholder(placeholder);
       container.appendChild(placeholder);
       return;
     }
@@ -363,7 +363,7 @@ class SignagePageWithQR {
       }
 
       placeholder.style.display = '';
-      placeholder.textContent = getLabels().announcementPlaceholder || 'Announcements';
+      this.renderAnnouncementsPlaceholder(placeholder);
       container.appendChild(placeholder);
     };
 
@@ -401,6 +401,22 @@ class SignagePageWithQR {
       }
       container.removeChild(child);
     });
+  }
+
+  renderAnnouncementsPlaceholder(element) {
+    if (!element) return;
+    const labels = getLabels();
+    if (document.documentElement.lang === 'th') {
+      element.innerHTML = `
+        <span style="font-size: 1.3em; font-weight: 600;">ประกาศ</span>
+        <span style="font-size: 0.8em;">Announcements</span>
+      `;
+      element.style.display = 'flex';
+      element.style.flexDirection = 'column';
+      element.style.alignItems = 'center';
+    } else {
+      element.textContent = labels.announcementPlaceholder || 'Announcements';
+    }
   }
 
   handleQueueUpdate(queueState) {
@@ -778,7 +794,7 @@ class SignagePageWithQR {
     }
 
     if (this.dom.announcementPlaceholder) {
-      this.dom.announcementPlaceholder.textContent = labels.announcementPlaceholder || 'Announcements';
+      this.renderAnnouncementsPlaceholder(this.dom.announcementPlaceholder);
     }
   }
 

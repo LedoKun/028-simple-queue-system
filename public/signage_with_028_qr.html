@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Queue Display - New Location</title>
+    <title>แสดงคิว - ที่ทำการชั่วคราว (Queue Display - New Temporary Location)</title>
     <link rel="apple-touch-icon" sizes="180x180" href="/media/favicon/apple-touch-icon.png">
     <link rel="icon" type="image/png" sizes="32x32" href="/media/favicon/favicon-32x32.png">
     <link rel="icon" type="image/png" sizes="16x16" href="/media/favicon/favicon-16x16.png">
@@ -536,14 +536,17 @@
                 </div>
 
                 <div class="qr-main-title">
-                    <div class="qr-main-title-en">New Location</div>
+                    <div class="qr-main-title-th">ที่ทำการชั่วคราว</div>
+                    <div class="qr-main-title-en">New Temporary Location</div>
                 </div>
 
                 <div class="qr-code-container">
-                    <img src="media/new_location.svg" alt="New Location QR Code">
+                    <img src="media/new_location.svg"
+                        alt="คิวอาร์โค้ดที่ทำการชั่วคราว (New Temporary Location QR Code)">
                 </div>
 
                 <div class="qr-scan-hint">
+                    <div class="qr-scan-hint-th">สแกนเพื่อดูแผนที่</div>
                     <div class="qr-scan-hint-en">Scan QR Code for map directions</div>
                 </div>
 
@@ -555,19 +558,28 @@
                 <!-- Announcement Area -->
                 <div id="announcement-area" class="glass-card">
                     <div id="announcement-banner-container">
-                        <span id="announcement-placeholder" class="text-gray-600">Announcements</span>
+                        <div id="announcement-placeholder" class="text-gray-600"
+                            style="display: flex; flex-direction: column; align-items: center;">
+                            <span style="font-size: 1.3em; font-weight: 600;">ประกาศ</span>
+                            <span style="font-size: 0.8em;">Announcements</span>
+                        </div>
                     </div>
                 </div>
 
                 <!-- Now Serving - Prominent Display -->
                 <div class="glass-card now-serving-card">
                     <div class="now-serving-header">
+                        <div class="now-serving-title-th">กำลังเรียก</div>
                         <div class="now-serving-title-en">Now Serving</div>
                     </div>
                     <div class="now-serving-content">
                         <div id="current-call-id" class="token-display">----</div>
                         <div class="counter-panel">
-                            <div class="counter-label"><span class="counter-label-en">Counter</span></div>
+                            <div class="counter-label"
+                                style="display: flex; flex-direction: column; align-items: center; line-height: 1.2;">
+                                <span>ช่องบริการ</span>
+                                <span class="counter-label-en">Counter</span>
+                            </div>
                             <div id="current-location" class="counter-display">----</div>
                         </div>
                     </div>
@@ -578,8 +590,10 @@
                     <header class="list-title">
                         <span>Call History</span>
                         <span class="legend">
-                            <span class="legend-served">● Served</span>
-                            <span class="legend-skipped">● Missed</span>
+                            <span class="legend-served">● เรียกแล้ว <small
+                                    style="font-size: 0.7em; opacity: 0.8;">Served</small></span>
+                            <span class="legend-skipped">● ข้าม <small
+                                    style="font-size: 0.7em; opacity: 0.8;">Missed</small></span>
                         </span>
                     </header>
                     <div class="list-scroll">
