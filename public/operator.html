@@ -42,12 +42,11 @@
                 <h2 class="text-xl font-semibold mb-4 text-white border-b border-gray-600 pb-2">Call Management</h2>
                 <form id="call-form" class="space-y-4">
                     <div>
-                        <label for="call-original-id" class="block text-sm font-medium text-gray-300">Identifier (e.g.,
-                            A1, B12)</label>
+                        <label for="call-original-id" class="block text-sm font-medium text-gray-300">Identifier</label>
                         <input type="text" id="call-original-id" name="original_id" required
                             class="mt-1 block w-full bg-gray-600 border-gray-500 text-white rounded-md shadow-sm p-2 focus:ring-indigo-500 focus:border-indigo-500 uppercase"
-                            autofocus autocapitalize="characters" autocomplete="off" pattern="^[A-Za-z][A-Za-z0-9]*$"
-                            title="Start with a letter, followed by letters or numbers. Will be auto-uppercased.">
+                            autofocus autocapitalize="off" autocomplete="off"
+                            title="Allowed format is configured by the server.">
                     </div>
                     <div>
                         <label for="call-location" class="block text-sm font-medium text-gray-300">Counter (e.g., 5, 10

@@ -27,6 +27,8 @@ pub struct ForceSkipRequest {
 
 const IDENTIFIER_FORMAT_MESSAGE: &str =
     "Invalid Identifier format. Must be an uppercase letter followed by digits (e.g., A1, Z99).";
+const NUMERIC_IDENTIFIER_FORMAT_MESSAGE: &str =
+    "Invalid Identifier format. Must contain digits only (e.g., 1, 99).";
 const LOCATION_FORMAT_MESSAGE: &str = "Invalid Location format. Must be digits only (e.g., 5, 10).";
 
 fn identifier_pattern() -> &'static Regex {
@@ -34,19 +36,32 @@ fn identifier_pattern() -> &'static Regex {
     PATTERN.get_or_init(|| Regex::new(r"^[A-Z][0-9]+$").expect("identifier regex must compile"))
 }
 
+fn numeric_identifier_pattern() -> &'static Regex {
+    static PATTERN: OnceLock<Regex> = OnceLock::new();
+    PATTERN.get_or_init(|| Regex::new(r"^[0-9]+$").expect("numeric identifier regex must compile"))
+}
+
 fn location_pattern() -> &'static Regex {
     static PATTERN: OnceLock<Regex> = OnceLock::new();
     PATTERN.get_or_init(|| Regex::new(r"^[0-9]+$").expect("location regex must compile"))
 }
 
-fn validate_identifier(original_id: &str) -> Result<(), String> {
-    if identifier_pattern().is_match(original_id) {
+fn validate_identifier(original_id: &str, identifier_prefix_required: bool) -> Result<(), String> {
+    let pattern = if identifier_prefix_required {
+        identifier_pattern()
+    } else {
+        numeric_identifier_pattern()
+    };
+    let message = if identifier_prefix_required {
+        IDENTIFIER_FORMAT_MESSAGE
+    } else {
+        NUMERIC_IDENTIFIER_FORMAT_MESSAGE
+    };
+
+    if pattern.is_match(original_id) {
         Ok(())
     } else {
-        Err(format!(
-            "{} Received: {}",
-            IDENTIFIER_FORMAT_MESSAGE, original_id
-        ))
+        Err(format!("{} Received: {}", message, original_id))
     }
 }
 
@@ -70,10 +85,13 @@ pub async fn queue_call(
         call_info.original_id, call_info.location
     );
 
-    if let Err(message) = validate_identifier(&call_info.original_id) {
+    let identifier_prefix_required = state.config.queue_identifier_prefix_required;
+    let identifier_message = state.config.queue_identifier_format_message();
+
+    if let Err(message) = validate_identifier(&call_info.original_id, identifier_prefix_required) {
         warn!(
             "Invalid original_id format received: '{}'. {}",
-            call_info.original_id, IDENTIFIER_FORMAT_MESSAGE
+            call_info.original_id, identifier_message
         );
         return Err((StatusCode::BAD_REQUEST, message));
     }
@@ -164,10 +182,13 @@ pub async fn force_skip_new_call(
         call_info.original_id, call_info.location
     );
 
-    if let Err(message) = validate_identifier(&call_info.original_id) {
+    let identifier_prefix_required = state.config.queue_identifier_prefix_required;
+    let identifier_message = state.config.queue_identifier_format_message();
+
+    if let Err(message) = validate_identifier(&call_info.original_id, identifier_prefix_required) {
         warn!(
             "Invalid original_id format received for force_skip: '{}'. {}",
-            call_info.original_id, IDENTIFIER_FORMAT_MESSAGE
+            call_info.original_id, identifier_message
         );
         return Err((StatusCode::BAD_REQUEST, message));
     }

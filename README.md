@@ -126,6 +126,7 @@ The system can be configured using the following environment variables. You can 
 | `SERVER_PORT` | `3000` | The port for the server to listen on. |
 | `MAX_HISTORY_SIZE` | `5` | Maximum number of completed calls to store in the history. |
 | `MAX_SKIPPED_HISTORY_SIZE` | `5` | Maximum number of skipped calls to store in the history. |
+| `QUEUE_IDENTIFIER_PREFIX_REQUIRED` | `true` | When `true`, queue identifiers must use the legacy letter+digits format such as `A1`. When `false`, queue identifiers must contain digits only such as `1` or `99`. |
 | `SERVE_DIR_PATH` | `./public` | Path to the directory containing static web files. |
 | `ANNOUNCEMENTS_AUDIO_SUB_PATH` | `media/announcements` | Sub-path within SERVE_DIR_PATH where announcement audio files are located. |
 | `BANNERS_SUB_PATH` | `media/banners` | Sub-path within SERVE_DIR_PATH where banner media is stored. |
@@ -145,6 +146,7 @@ The system can be configured using the following environment variables. You can 
 Example:
 
 ```bash
+-e QUEUE_IDENTIFIER_PREFIX_REQUIRED=false \
 -e TTS_ANNOUNCEMENT_TEMPLATE_TH='หมายเลข {Q_NUM}, เชิญช่อง {DEST_NUM}' \
 -e TTS_ANNOUNCEMENT_TEMPLATE_EN='Queue {Q_NUM}, please proceed to counter {DEST_NUM}'
 ```
@@ -161,6 +163,13 @@ templates, the runtime can still reuse the pre-generated combined cache under
 `public/media/audio_cache/multi/`. If you customize the templates, the runtime
 skips those pre-generated combined files and falls back to online generation first,
 then to the default stem sequence if live TTS fails.
+
+Queue identifier format also affects fallback stem playback. In the default mode
+(`QUEUE_IDENTIFIER_PREFIX_REQUIRED=true`), stem playback uses the legacy
+`phrase_number + char_<prefix> + number_<digit>...` sequence. When
+`QUEUE_IDENTIFIER_PREFIX_REQUIRED=false`, numeric-only queue identifiers skip the
+`char_*.mp3` segment and play only digit stems for the queue number. No extra
+stem generation is required for that numeric-only fallback path.
 
 Prerequisites:
 
@@ -190,6 +199,11 @@ Outputs are written beneath `public/media/audio_stems/` (locale folders such as
 `th` and `en-GB`) and `public/media/audio_cache/multi/` (combined cache files
 named like `A01-1_th_en-GB.mp3`). You can safely re-run the script; completed
 files are detected and left untouched unless they are removed first.
+
+The helper script still bootstraps the bundled combined cache with the default
+letter-prefixed sample IDs. Numeric-only queue identifiers continue to work at
+runtime through live TTS or atomic stem fallback, but they are not pre-generated
+into the bundled combined cache unless you extend the script yourself.
 
 ## Automated Docker Image Builds
 

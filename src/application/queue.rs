@@ -49,8 +49,11 @@ pub struct QueueService {
 impl QueueService {
     /// Construct a new queue service using configuration limits and shared dependencies.
     pub fn new(config: Arc<AppConfig>, event_bus: BroadcastSender, tts: TtsService) -> Self {
-        let queue_manager =
-            QueueManager::new(config.max_history_size, config.max_skipped_history_size);
+        let queue_manager = QueueManager::new(
+            config.max_history_size,
+            config.max_skipped_history_size,
+            config.queue_identifier_prefix_required,
+        );
         Self {
             config,
             manager: Arc::new(Mutex::new(queue_manager)),
@@ -188,6 +191,7 @@ mod tests {
             server_port: 3000,
             max_history_size: 5,
             max_skipped_history_size: 5,
+            queue_identifier_prefix_required: true,
             serve_dir_path: Default::default(),
             announcements_audio_sub_path: Default::default(),
             banners_sub_path: Default::default(),

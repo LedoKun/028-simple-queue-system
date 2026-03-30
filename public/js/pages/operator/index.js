@@ -47,6 +47,7 @@ class OperatorPage {
     const byId = (id) => document.getElementById(id);
     return {
       callForm: byId('call-form'),
+      originalIdLabel: document.querySelector('label[for="call-original-id"]'),
       originalIdInput: byId('call-original-id'),
       locationInput: byId('call-location'),
       btnCall: byId('btn-call'),
@@ -102,6 +103,7 @@ class OperatorPage {
     }
 
     setCurrentLanguage('en');
+    this.applyIdentifierRules(true);
     this.setupAutoRefresh();
     this.restoreOperatorStationValue();
     this.setupInputGuards();
@@ -135,19 +137,7 @@ class OperatorPage {
         const selectionStart = target.selectionStart;
         const selectionEnd = target.selectionEnd;
 
-        const rawValue = String(target.value || '');
-        let cleaned = '';
-        if (rawValue.length > 0) {
-          const firstChar = rawValue.charAt(0).toUpperCase();
-          if (/^[A-Z]$/.test(firstChar)) {
-            cleaned += firstChar;
-          }
-          if (rawValue.length > 1) {
-            cleaned += rawValue.substring(1).replace(/[^0-9]/g, '');
-          }
-        }
-
-        target.value = cleaned;
+        target.value = Validation.sanitizeCallIdentifierInput(target.value);
         target.setSelectionRange(selectionStart, selectionEnd);
         this.validateInputs();
       });
@@ -164,6 +154,27 @@ class OperatorPage {
         this.persistOperatorStationValue();
       });
     }
+  }
+
+  applyIdentifierRules(identifierPrefixRequired = Validation.isQueueIdentifierPrefixRequired()) {
+    const prefixRequired = Validation.setQueueIdentifierPrefixRequired(identifierPrefixRequired);
+
+    if (this.dom.originalIdLabel) {
+      this.dom.originalIdLabel.textContent = prefixRequired
+        ? 'Identifier (e.g., A1, B12)'
+        : 'Identifier (digits only, e.g., 1, 99)';
+    }
+
+    if (this.dom.originalIdInput) {
+      this.dom.originalIdInput.placeholder = prefixRequired ? 'A1' : '1';
+      this.dom.originalIdInput.title = Validation.getCallIdentifierValidationMessage();
+      this.dom.originalIdInput.pattern = prefixRequired ? '[A-Za-z][0-9]+' : '[0-9]+';
+      this.dom.originalIdInput.autocapitalize = prefixRequired ? 'characters' : 'off';
+      this.dom.originalIdInput.inputMode = prefixRequired ? 'text' : 'numeric';
+      this.dom.originalIdInput.value = Validation.sanitizeCallIdentifierInput(this.dom.originalIdInput.value);
+    }
+
+    this.validateInputs();
   }
 
   attachEventHandlers() {
@@ -278,6 +289,9 @@ class OperatorPage {
 
   updateQueueStatusDisplay(queueState) {
     const labels = getLabels();
+    if (typeof queueState?.identifier_prefix_required === 'boolean') {
+      this.applyIdentifierRules(queueState.identifier_prefix_required);
+    }
     const currentCall = queueState?.current_call || null;
 
     if (this.dom.statusCurrentCallId) {
@@ -558,7 +572,7 @@ class OperatorPage {
     const location = this.dom.locationInput.value.trim();
 
     if (!Validation.isValidCallIdentifier(originalId)) {
-      this.feedback.show('Identifier must start with an uppercase letter, followed by digits (e.g., A1, Z99).', { type: 'error' });
+      this.feedback.show(Validation.getCallIdentifierValidationMessage(), { type: 'error' });
       this.dom.originalIdInput.focus();
       return;
     }
@@ -610,7 +624,7 @@ class OperatorPage {
     const location = this.dom.locationInput.value.trim();
 
     if (!Validation.isValidCallIdentifier(originalId)) {
-      this.feedback.show('Identifier must start with an uppercase letter, followed by digits (e.g., A1, Z99).', { type: 'error' });
+      this.feedback.show(Validation.getCallIdentifierValidationMessage(), { type: 'error' });
       this.dom.originalIdInput.focus();
       return;
     }

@@ -39,6 +39,8 @@ pub struct QueueManager {
     max_history_size: usize,
     /// The maximum number of calls to retain in the `skipped_history`.
     max_skipped_history_size: usize,
+    /// Whether queue identifiers must follow the legacy letter+digits format.
+    identifier_prefix_required: bool,
 }
 
 impl QueueManager {
@@ -52,10 +54,14 @@ impl QueueManager {
     ///
     /// # Returns
     /// A new `QueueManager` instance.
-    pub fn new(max_history_size: usize, max_skipped_history_size: usize) -> Self {
+    pub fn new(
+        max_history_size: usize,
+        max_skipped_history_size: usize,
+        identifier_prefix_required: bool,
+    ) -> Self {
         info!(
-            "Initializing QueueManager with max_history_size={} and max_skipped_history_size={}",
-            max_history_size, max_skipped_history_size
+            "Initializing QueueManager with max_history_size={}, max_skipped_history_size={}, identifier_prefix_required={}",
+            max_history_size, max_skipped_history_size, identifier_prefix_required
         );
         QueueManager {
             current_call: None,
@@ -64,14 +70,19 @@ impl QueueManager {
             skipped_history: VecDeque::with_capacity(max_skipped_history_size),
             max_history_size,
             max_skipped_history_size,
+            identifier_prefix_required,
         }
     }
 
     /// Formats a raw call identifier string into a standardized format.
     ///
-    /// This function assumes the `original_id` starts with a letter followed by digits.
-    /// It converts the first character to uppercase and pads single-digit numbers
-    /// with a leading zero (e.g., "A1" becomes "A01", "B10" remains "B10").
+    /// When `identifier_prefix_required` is enabled, this function assumes the
+    /// `original_id` starts with a letter followed by digits. It converts the
+    /// first character to uppercase and pads single-digit numbers with a leading
+    /// zero (e.g., "A1" becomes "A01", "B10" remains "B10").
+    ///
+    /// When `identifier_prefix_required` is disabled, a numeric-only identifier
+    /// is preserved as entered (e.g., "1" remains "1").
     ///
     /// # Arguments
     /// - `original_id`: The raw call identifier string (e.g., "a1", "B10").
@@ -79,14 +90,23 @@ impl QueueManager {
     /// # Returns
     /// A `String` representing the formatted identifier. Returns an empty string
     /// if `original_id` is empty.
-    fn format_identifier(original_id: &str) -> String {
+    fn format_identifier(original_id: &str, identifier_prefix_required: bool) -> String {
         debug!(
             "QueueManager::format_identifier: Formatting '{}'",
             original_id
         );
+        let original_id = original_id.trim();
         if original_id.is_empty() {
             trace!("QueueManager::format_identifier: Input is empty, returning empty string.");
             return String::new();
+        }
+
+        if !identifier_prefix_required {
+            trace!(
+                "QueueManager::format_identifier: Numeric-only mode active. Preserving '{}'.",
+                original_id
+            );
+            return original_id.to_string();
         }
 
         let mut chars = original_id.chars();
@@ -202,7 +222,8 @@ impl QueueManager {
     /// # Returns
     /// An `Option<&Call>` reference to the newly set `current_call`.
     pub fn add_call(&mut self, original_id_param: String, location_param: String) -> Option<&Call> {
-        let formatted_id = Self::format_identifier(&original_id_param);
+        let formatted_id =
+            Self::format_identifier(&original_id_param, self.identifier_prefix_required);
         let now: DateTime<Utc> = SystemTime::now().into();
 
         info!(
@@ -347,7 +368,8 @@ impl QueueManager {
         original_id_param: String,
         location_param: String,
     ) -> Option<Call> {
-        let formatted_id = Self::format_identifier(&original_id_param);
+        let formatted_id =
+            Self::format_identifier(&original_id_param, self.identifier_prefix_required);
         let now: DateTime<Utc> = SystemTime::now().into();
         info!("QueueManager::add_to_skipped_directly: Attempting for original_id='{}' (formatted_id='{}'), location='{}'.", original_id_param, formatted_id, location_param);
 
@@ -419,6 +441,7 @@ impl QueueManager {
     /// Create a clone of the current queue state for external consumers.
     pub fn snapshot(&self) -> QueueState {
         QueueState {
+            identifier_prefix_required: self.identifier_prefix_required,
             current_call: self.current_call.clone(),
             completed_history: self.completed_history.clone(),
             skipped_history: self.skipped_history.clone(),
@@ -478,35 +501,45 @@ mod tests {
     #[traced_test] // Enables tracing for this test function
     fn test_format_identifier_logic() {
         assert_eq!(
-            QueueManager::format_identifier("A1"),
+            QueueManager::format_identifier("A1", true),
             "A01",
             "Should pad single digit 'A1' to 'A01'"
         );
         assert_eq!(
-            QueueManager::format_identifier("a1"),
+            QueueManager::format_identifier("a1", true),
             "A01",
             "Should uppercase and pad 'a1' to 'A01'"
         );
         assert_eq!(
-            QueueManager::format_identifier("B10"),
+            QueueManager::format_identifier("B10", true),
             "B10",
             "Should not pad multi-digit 'B10'"
         );
         assert_eq!(
-            QueueManager::format_identifier(""),
+            QueueManager::format_identifier("", true),
             "",
             "Should return empty string for empty input"
         );
         // Additional tests for robustness:
         assert_eq!(
-            QueueManager::format_identifier("Z9"),
+            QueueManager::format_identifier("Z9", true),
             "Z09",
             "Should pad single digit 'Z9' to 'Z09'"
         );
         assert_eq!(
-            QueueManager::format_identifier("c123"),
+            QueueManager::format_identifier("c123", true),
             "C123",
             "Should uppercase and not pad 'c123'"
+        );
+        assert_eq!(
+            QueueManager::format_identifier("1", false),
+            "1",
+            "Numeric-only mode should preserve a single digit"
+        );
+        assert_eq!(
+            QueueManager::format_identifier("001", false),
+            "001",
+            "Numeric-only mode should preserve leading zeroes"
         );
         info!("test_format_identifier_logic passed successfully.");
     }
@@ -515,7 +548,7 @@ mod tests {
     #[test]
     #[traced_test]
     fn test_add_call_sequence_t1_to_t4_behavior_and_uniqueness() {
-        let mut manager = QueueManager::new(2, 2); // Small history sizes for easier testing
+        let mut manager = QueueManager::new(2, 2, true); // Small history sizes for easier testing
 
         info!("Starting T1: Initial state check.");
         // T1: Initial state check
@@ -649,7 +682,7 @@ mod tests {
     #[test]
     #[traced_test]
     fn test_skip_current_call_uniqueness() {
-        let mut manager = QueueManager::new(1, 1); // Small histories for easier testing
+        let mut manager = QueueManager::new(1, 1, true); // Small histories for easier testing
 
         info!("Setting up initial calls for skip test.");
         manager.add_call("S1".to_string(), "1".to_string()); // S1 becomes current
@@ -704,7 +737,7 @@ mod tests {
     #[test]
     #[traced_test]
     fn test_add_to_skipped_directly_t5_and_uniqueness() {
-        let mut manager = QueueManager::new(2, 2); // Small history sizes for easier testing
+        let mut manager = QueueManager::new(2, 2, true); // Small history sizes for easier testing
 
         info!("Setting up initial calls for add_to_skipped_directly test.");
         manager.add_call("A100".to_string(), "4".to_string()); // A100
@@ -803,5 +836,25 @@ mod tests {
         );
 
         info!("test_add_to_skipped_directly_t5_and_uniqueness passed successfully.");
+    }
+
+    #[test]
+    #[traced_test]
+    fn test_numeric_only_identifier_mode() {
+        let mut manager = QueueManager::new(2, 2, false);
+
+        manager.add_call("1".to_string(), "4".to_string());
+        assert_eq!(manager.get_current_call().unwrap().id, "1");
+
+        manager.add_call("01".to_string(), "5".to_string());
+        assert_eq!(manager.get_current_call().unwrap().id, "01");
+        assert_eq!(
+            manager.get_completed_history().front().unwrap().id,
+            "1",
+            "Numeric-only mode should preserve the exact identifier instead of padding"
+        );
+
+        let snapshot = manager.snapshot();
+        assert!(!snapshot.identifier_prefix_required);
     }
 }

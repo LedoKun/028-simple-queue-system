@@ -17,6 +17,7 @@ use tracing::{debug, error, info};
 
 pub const DEFAULT_TTS_ANNOUNCEMENT_TEMPLATE_TH: &str = "หมายเลข {Q_NUM}, เชิญช่อง {DEST_NUM}";
 pub const DEFAULT_TTS_ANNOUNCEMENT_TEMPLATE_EN: &str = "Number {Q_NUM}, to counter {DEST_NUM}";
+pub const DEFAULT_QUEUE_IDENTIFIER_PREFIX_REQUIRED: bool = true;
 
 /// `AppConfig` represents the complete configuration for the Queue Calling System application.
 ///
@@ -54,6 +55,15 @@ pub struct AppConfig {
     /// Default: `5`.
     #[envconfig(from = "MAX_SKIPPED_HISTORY_SIZE", default = "5")]
     pub max_skipped_history_size: usize,
+
+    /// Controls whether queue identifiers must use the legacy letter+digits format.
+    ///
+    /// When `true`, identifiers must look like `A1` or `B123`.
+    /// When `false`, identifiers must contain digits only, such as `1` or `123`.
+    ///
+    /// Corresponds to the `QUEUE_IDENTIFIER_PREFIX_REQUIRED` environment variable.
+    #[envconfig(from = "QUEUE_IDENTIFIER_PREFIX_REQUIRED", default = "true")]
+    pub queue_identifier_prefix_required: bool,
 
     /// The base directory from which static files (e.g., frontend assets, custom announcements)
     /// will be served by the HTTP layer.
@@ -429,6 +439,15 @@ impl AppConfig {
 
         Some(format!("tmpl_{:016x}", stable_fnv1a_hash(&combined)))
     }
+
+    /// Returns the validation message for queue identifiers under the active mode.
+    pub fn queue_identifier_format_message(&self) -> &'static str {
+        if self.queue_identifier_prefix_required {
+            "Invalid Identifier format. Must be an uppercase letter followed by digits (e.g., A1, Z99)."
+        } else {
+            "Invalid Identifier format. Must contain digits only (e.g., 1, 99)."
+        }
+    }
 }
 
 pub(crate) fn normalize_language_code(raw: &str) -> String {
@@ -492,6 +511,7 @@ mod tests {
             server_port: 3000,
             max_history_size: 5,
             max_skipped_history_size: 5,
+            queue_identifier_prefix_required: DEFAULT_QUEUE_IDENTIFIER_PREFIX_REQUIRED,
             serve_dir_path: PathBuf::from("./public"),
             announcements_audio_sub_path: PathBuf::from("media"),
             banners_sub_path: PathBuf::from("media"),
@@ -574,6 +594,7 @@ mod tests {
             server_port: 3000,
             max_history_size: 5,
             max_skipped_history_size: 5,
+            queue_identifier_prefix_required: DEFAULT_QUEUE_IDENTIFIER_PREFIX_REQUIRED,
             serve_dir_path: PathBuf::from("./public"),
             announcements_audio_sub_path: PathBuf::from("media"),
             banners_sub_path: PathBuf::from("media"),
@@ -612,6 +633,7 @@ mod tests {
             server_port: 3000,
             max_history_size: 5,
             max_skipped_history_size: 5,
+            queue_identifier_prefix_required: DEFAULT_QUEUE_IDENTIFIER_PREFIX_REQUIRED,
             serve_dir_path: PathBuf::from("./public"),
             announcements_audio_sub_path: PathBuf::from("media"),
             banners_sub_path: PathBuf::from("media"),
@@ -646,6 +668,7 @@ mod tests {
             server_port: 3000,
             max_history_size: 5,
             max_skipped_history_size: 5,
+            queue_identifier_prefix_required: DEFAULT_QUEUE_IDENTIFIER_PREFIX_REQUIRED,
             serve_dir_path: PathBuf::from("./public"),
             announcements_audio_sub_path: PathBuf::from("media"),
             banners_sub_path: PathBuf::from("media"),

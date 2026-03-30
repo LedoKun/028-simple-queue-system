@@ -18023,7 +18023,7 @@ var QueuePolyfills = (function () {
 	 */
 
 	(function (module) {
-		var runtime = (function (exports) {
+		var runtime = (function (exports$1) {
 
 		  var Op = Object.prototype;
 		  var hasOwn = Op.hasOwnProperty;
@@ -18064,7 +18064,7 @@ var QueuePolyfills = (function () {
 
 		    return generator;
 		  }
-		  exports.wrap = wrap;
+		  exports$1.wrap = wrap;
 
 		  // Try/catch helper to minimize deoptimizations. Returns a completion
 		  // record like context.tryEntries[i].completion. This interface could
@@ -18143,7 +18143,7 @@ var QueuePolyfills = (function () {
 		    });
 		  }
 
-		  exports.isGeneratorFunction = function(genFun) {
+		  exports$1.isGeneratorFunction = function(genFun) {
 		    var ctor = typeof genFun === "function" && genFun.constructor;
 		    return ctor
 		      ? ctor === GeneratorFunction ||
@@ -18153,7 +18153,7 @@ var QueuePolyfills = (function () {
 		      : false;
 		  };
 
-		  exports.mark = function(genFun) {
+		  exports$1.mark = function(genFun) {
 		    if (Object.setPrototypeOf) {
 		      Object.setPrototypeOf(genFun, GeneratorFunctionPrototype);
 		    } else {
@@ -18168,7 +18168,7 @@ var QueuePolyfills = (function () {
 		  // `yield regeneratorRuntime.awrap(x)`, so that the runtime can test
 		  // `hasOwn.call(value, "__await")` to determine if the yielded value is
 		  // meant to be awaited.
-		  exports.awrap = function(arg) {
+		  exports$1.awrap = function(arg) {
 		    return { __await: arg };
 		  };
 
@@ -18243,12 +18243,12 @@ var QueuePolyfills = (function () {
 		  define(AsyncIterator.prototype, asyncIteratorSymbol, function () {
 		    return this;
 		  });
-		  exports.AsyncIterator = AsyncIterator;
+		  exports$1.AsyncIterator = AsyncIterator;
 
 		  // Note that simple async functions are implemented on top of
 		  // AsyncIterator objects; they just return a Promise for the value of
 		  // the final result produced by the iterator.
-		  exports.async = function(innerFn, outerFn, self, tryLocsList, PromiseImpl) {
+		  exports$1.async = function(innerFn, outerFn, self, tryLocsList, PromiseImpl) {
 		    if (PromiseImpl === void 0) PromiseImpl = Promise;
 
 		    var iter = new AsyncIterator(
@@ -18256,7 +18256,7 @@ var QueuePolyfills = (function () {
 		      PromiseImpl
 		    );
 
-		    return exports.isGeneratorFunction(outerFn)
+		    return exports$1.isGeneratorFunction(outerFn)
 		      ? iter // If outerFn is a generator, return the full iterator.
 		      : iter.next().then(function(result) {
 		          return result.done ? result.value : iter.next();
@@ -18476,7 +18476,7 @@ var QueuePolyfills = (function () {
 		    this.reset(true);
 		  }
 
-		  exports.keys = function(val) {
+		  exports$1.keys = function(val) {
 		    var object = Object(val);
 		    var keys = [];
 		    for (var key in object) {
@@ -18537,7 +18537,7 @@ var QueuePolyfills = (function () {
 
 		    throw new TypeError(typeof iterable + " is not iterable");
 		  }
-		  exports.values = values;
+		  exports$1.values = values;
 
 		  function doneResult() {
 		    return { value: undefined$1, done: true };
@@ -18747,7 +18747,7 @@ var QueuePolyfills = (function () {
 		  // or not, return the runtime object so that we can declare the variable
 		  // regeneratorRuntime in the outer scope, which allows this module to be
 		  // injected easily by `bin/regenerator --include-runtime script.js`.
-		  return exports;
+		  return exports$1;
 
 		}(
 		  // If this script is executing as a CommonJS module, use module.exports

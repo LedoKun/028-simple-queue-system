@@ -988,6 +988,9 @@ impl TTSManager {
     /// - /media/audio_stems/th/number_001.mp3
     /// - /media/audio_stems/th/phrase_to_counter.mp3
     /// - /media/audio_stems/th/number_004.mp3
+    ///
+    /// In numeric-only mode, a call like "01" to counter "4" would omit the
+    /// `char_*.mp3` segment and use only digit stems for the identifier.
     fn build_stem_audio_urls_for_language(id: &str, location: &str, lang: &str) -> Vec<String> {
         debug!(
             "Building stem audio URLs for id: '{}', location: '{}', lang: '{}'",
@@ -1014,8 +1017,13 @@ impl TTSManager {
         // Add "phrase_number.mp3" (e.g., "Number" in English, "หมายเลข" in Thai)
         audio_urls.push(format!("{}/phrase_number.mp3", base_stem_path));
 
-        // Parse the ID to extract letter and number parts
-        if let Some((letter_part, number_part)) = Self::parse_call_id(id) {
+        if id.chars().all(|c| c.is_ascii_digit()) {
+            for digit_char in id.chars() {
+                let digit_value: u8 = digit_char.to_digit(10).unwrap_or(0) as u8;
+                audio_urls.push(format!("{}/number_{:03}.mp3", base_stem_path, digit_value));
+            }
+        } else if let Some((letter_part, number_part)) = Self::parse_call_id(id) {
+            // Parse the ID to extract letter and number parts
             // Add character audio (e.g., "char_a.mp3")
             audio_urls.push(format!(
                 "{}/char_{}.mp3",
@@ -1060,7 +1068,7 @@ impl TTSManager {
         audio_urls
     }
 
-    /// Parses a call ID into letter and number parts.
+    /// Parses a legacy call ID into letter and number parts.
     ///
     /// # Arguments
     /// - `id`: The call ID (e.g., "A01", "B123")
@@ -1468,6 +1476,7 @@ mod tests {
             server_port: 3000,
             max_history_size: 5,
             max_skipped_history_size: 5,
+            queue_identifier_prefix_required: true,
             serve_dir_path: PathBuf::from("./public"),
             announcements_audio_sub_path: PathBuf::from("media/announcements"),
             banners_sub_path: PathBuf::from("media/banners"),
@@ -1537,6 +1546,20 @@ mod tests {
         assert_eq!(
             TTSManager::get_sanitized_call_filename("A01", "1", "th_en-GB", Some("tmpl_deadbeef")),
             "A01-1_th_en-GB_tmpl_deadbeef.mp3"
+        );
+    }
+
+    #[test]
+    fn build_stem_audio_urls_supports_numeric_only_identifiers() {
+        assert_eq!(
+            TTSManager::build_stem_audio_urls_for_language("01", "4", "th"),
+            vec![
+                "/media/audio_stems/th/phrase_number.mp3".to_string(),
+                "/media/audio_stems/th/number_000.mp3".to_string(),
+                "/media/audio_stems/th/number_001.mp3".to_string(),
+                "/media/audio_stems/th/phrase_to_counter.mp3".to_string(),
+                "/media/audio_stems/th/number_004.mp3".to_string(),
+            ]
         );
     }
 }

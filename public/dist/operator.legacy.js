@@ -168,9 +168,9 @@
       successPrefix: 'Success: '
     },
     th: {
-      connecting: 'กำลังเชื่อมต่อเซิร์ฟเวอร์...',
-      connected: 'เชื่อมต่อสดแล้ว',
-      disconnected: 'ตัดการเชื่อมต่อ - กำลังลองใหม่...',
+      connecting: 'Connecting to server...',
+      connected: 'Live Connection Active',
+      disconnected: 'Connection lost. Retrying...',
       announcementPlaceholder: 'ประกาศ',
       historyPlaceholder: 'รอการเรียก...',
       skippedPlaceholder: 'ไม่มีคิวที่ข้ามไป',
@@ -491,6 +491,14 @@
     _proto.getAnnouncementStatus = function getAnnouncementStatus() {
       return this.get('/announcements/status');
     };
+    _proto.callTranslator = function callTranslator(location) {
+      return this.post('/translator/call', {
+        location: location
+      });
+    };
+    _proto.getTranslatorStatus = function getTranslatorStatus() {
+      return this.get('/translator/status');
+    };
     return QueueApiClient;
   }();
 
@@ -630,17 +638,55 @@
     }
   }
 
-  var CALL_IDENTIFIER_REGEX = /^[A-Z][0-9]+$/;
+  var CALL_IDENTIFIER_REGEX_PREFIX_REQUIRED = /^[A-Z][0-9]+$/;
+  var CALL_IDENTIFIER_REGEX_NUMERIC_ONLY = /^[0-9]+$/;
   var CALL_LOCATION_REGEX = /^[0-9]+$/;
+  var queueIdentifierPrefixRequired = true;
+  function setQueueIdentifierPrefixRequired(required) {
+    queueIdentifierPrefixRequired = required !== false;
+    return queueIdentifierPrefixRequired;
+  }
+  function isQueueIdentifierPrefixRequired() {
+    return queueIdentifierPrefixRequired;
+  }
+  function getCallIdentifierRegex() {
+    return queueIdentifierPrefixRequired ? CALL_IDENTIFIER_REGEX_PREFIX_REQUIRED : CALL_IDENTIFIER_REGEX_NUMERIC_ONLY;
+  }
+  function getCallIdentifierValidationMessage() {
+    return queueIdentifierPrefixRequired ? 'Identifier must start with an uppercase letter, followed by digits (e.g., A1, Z99).' : 'Identifier must contain digits only (e.g., 1, 99).';
+  }
+  function sanitizeCallIdentifierInput(value) {
+    var rawValue = String(value || '');
+    if (!queueIdentifierPrefixRequired) {
+      return rawValue.replace(/[^0-9]/g, '');
+    }
+    var cleaned = '';
+    if (rawValue.length > 0) {
+      var firstChar = rawValue.charAt(0).toUpperCase();
+      if (/^[A-Z]$/.test(firstChar)) {
+        cleaned += firstChar;
+      }
+      if (rawValue.length > 1) {
+        cleaned += rawValue.substring(1).replace(/[^0-9]/g, '');
+      }
+    }
+    return cleaned;
+  }
   function isValidCallIdentifier(value) {
-    return CALL_IDENTIFIER_REGEX.test(String(value || '').trim());
+    return getCallIdentifierRegex().test(String(value || '').trim());
   }
   function isValidCallLocation(value) {
     return CALL_LOCATION_REGEX.test(String(value || '').trim());
   }
   var Validation = Object.freeze({
-    CALL_IDENTIFIER_REGEX: CALL_IDENTIFIER_REGEX,
+    CALL_IDENTIFIER_REGEX_PREFIX_REQUIRED: CALL_IDENTIFIER_REGEX_PREFIX_REQUIRED,
+    CALL_IDENTIFIER_REGEX_NUMERIC_ONLY: CALL_IDENTIFIER_REGEX_NUMERIC_ONLY,
     CALL_LOCATION_REGEX: CALL_LOCATION_REGEX,
+    getCallIdentifierRegex: getCallIdentifierRegex,
+    getCallIdentifierValidationMessage: getCallIdentifierValidationMessage,
+    sanitizeCallIdentifierInput: sanitizeCallIdentifierInput,
+    setQueueIdentifierPrefixRequired: setQueueIdentifierPrefixRequired,
+    isQueueIdentifierPrefixRequired: isQueueIdentifierPrefixRequired,
     isValidCallIdentifier: isValidCallIdentifier,
     isValidCallLocation: isValidCallLocation
   });
@@ -805,6 +851,7 @@
       this.eventSource.addEventListener('queue_update', this.handleNamedEvent);
       this.eventSource.addEventListener('announcement_status', this.handleNamedEvent);
       this.eventSource.addEventListener('tts_complete', this.handleNamedEvent);
+      this.eventSource.addEventListener('translator_call', this.handleNamedEvent);
       this.eventSource.onerror = this.handleError;
     };
     _proto.disconnect = function disconnect() {
@@ -1016,11 +1063,20 @@
         feedback: this.feedback
       });
       this.eventStream = new EventStream(SSE_URL, {
-        labelProvider: getLabels
+        labelProvider: function labelProvider() {
+          return getLabels('en');
+        }
       });
       this.cooldownIntervalId = null;
       this.lastAnnouncementStatus = null;
       this.autoRefreshCleanup = function () {};
+      this.translatorCooldownIntervalId = null;
+      this.translatorCooldownState = {
+        active: false,
+        remainingSeconds: 0,
+        totalSeconds: 0
+      };
+      this.lastLocationValid = false;
       this.renderHistoryList = function (container, items, options) {
         if (options === void 0) {
           options = {};
@@ -1048,10 +1104,12 @@
       };
       return {
         callForm: byId('call-form'),
+        originalIdLabel: document.querySelector('label[for="call-original-id"]'),
         originalIdInput: byId('call-original-id'),
         locationInput: byId('call-location'),
         btnCall: byId('btn-call'),
         btnSkip: byId('btn-skip'),
+        btnCallTranslator: byId('btn-call-translator'),
         statusCurrentCallId: byId('status-current-call-id'),
         statusCurrentCallLocation: byId('status-current-call-location'),
         listHistoryCalls: byId('list-history-calls'),
@@ -1061,6 +1119,8 @@
         statusAnnouncementCooldownTimer: byId('status-announcement-cooldown-timer'),
         btnNextAnnouncement: byId('btn-next-announcement'),
         announcementSlotList: byId('announcement-slot-list'),
+        statusTranslatorCooldown: byId('status-translator-cooldown'),
+        statusTranslatorCooldownTimer: byId('status-translator-cooldown-timer'),
         sseStatusIndicator: byId('sse-status-indicator'),
         feedbackArea: byId('feedback-area')
       };
@@ -1098,6 +1158,7 @@
         return;
       }
       setCurrentLanguage('en');
+      this.applyIdentifierRules(true);
       this.setupAutoRefresh();
       this.restoreOperatorStationValue();
       this.setupInputGuards();
@@ -1134,18 +1195,7 @@
           var target = event.target;
           var selectionStart = target.selectionStart;
           var selectionEnd = target.selectionEnd;
-          var rawValue = String(target.value || '');
-          var cleaned = '';
-          if (rawValue.length > 0) {
-            var firstChar = rawValue.charAt(0).toUpperCase();
-            if (/^[A-Z]$/.test(firstChar)) {
-              cleaned += firstChar;
-            }
-            if (rawValue.length > 1) {
-              cleaned += rawValue.substring(1).replace(/[^0-9]/g, '');
-            }
-          }
-          target.value = cleaned;
+          target.value = Validation.sanitizeCallIdentifierInput(target.value);
           target.setSelectionRange(selectionStart, selectionEnd);
           _this2.validateInputs();
         });
@@ -1162,12 +1212,31 @@
         });
       }
     };
+    _proto.applyIdentifierRules = function applyIdentifierRules(identifierPrefixRequired) {
+      if (identifierPrefixRequired === void 0) {
+        identifierPrefixRequired = Validation.isQueueIdentifierPrefixRequired();
+      }
+      var prefixRequired = Validation.setQueueIdentifierPrefixRequired(identifierPrefixRequired);
+      if (this.dom.originalIdLabel) {
+        this.dom.originalIdLabel.textContent = prefixRequired ? 'Identifier (e.g., A1, B12)' : 'Identifier (digits only, e.g., 1, 99)';
+      }
+      if (this.dom.originalIdInput) {
+        this.dom.originalIdInput.placeholder = prefixRequired ? 'A1' : '1';
+        this.dom.originalIdInput.title = Validation.getCallIdentifierValidationMessage();
+        this.dom.originalIdInput.pattern = prefixRequired ? '[A-Za-z][0-9]+' : '[0-9]+';
+        this.dom.originalIdInput.autocapitalize = prefixRequired ? 'characters' : 'off';
+        this.dom.originalIdInput.inputMode = prefixRequired ? 'text' : 'numeric';
+        this.dom.originalIdInput.value = Validation.sanitizeCallIdentifierInput(this.dom.originalIdInput.value);
+      }
+      this.validateInputs();
+    };
     _proto.attachEventHandlers = function attachEventHandlers() {
       var _this3 = this;
       var _this$dom2 = this.dom,
         callForm = _this$dom2.callForm,
         btnSkip = _this$dom2.btnSkip,
         btnNextAnnouncement = _this$dom2.btnNextAnnouncement,
+        btnCallTranslator = _this$dom2.btnCallTranslator,
         originalIdInput = _this$dom2.originalIdInput,
         locationInput = _this$dom2.locationInput;
       if (callForm) {
@@ -1183,6 +1252,11 @@
       if (btnNextAnnouncement) {
         btnNextAnnouncement.addEventListener('click', function () {
           return _this3.handleNextAnnouncement();
+        });
+      }
+      if (btnCallTranslator) {
+        btnCallTranslator.addEventListener('click', function (event) {
+          return _this3.handleCallTranslator(event);
         });
       }
       if (originalIdInput) {
@@ -1210,8 +1284,12 @@
         var detail = _ref5.detail;
         console.debug('OperatorUI', 'TTS complete event received', detail);
       });
-      this.eventStream.on('status', function (_ref6) {
+      this.eventStream.on('translatorcall', function (_ref6) {
         var detail = _ref6.detail;
+        _this4.handleTranslatorCallEvent(detail);
+      });
+      this.eventStream.on('status', function (_ref7) {
+        var detail = _ref7.detail;
         _this4.updateSseIndicator(detail);
       });
       document.addEventListener('visibilitychange', function () {
@@ -1223,7 +1301,7 @@
     };
     _proto.fetchInitialState = /*#__PURE__*/function () {
       var _fetchInitialState = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee() {
-        var labels, _yield$Promise$allSet, queueResult, announcementResult;
+        var labels, _yield$Promise$allSet, queueResult, announcementResult, translatorResult;
         return _regenerator().w(function (_context) {
           while (1) switch (_context.n) {
             case 0:
@@ -1233,11 +1311,12 @@
                 duration: 0
               });
               _context.n = 1;
-              return Promise.allSettled([this.apiClient.getQueueState(), this.apiClient.getAnnouncementStatus()]);
+              return Promise.allSettled([this.apiClient.getQueueState(), this.apiClient.getAnnouncementStatus(), this.apiClient.getTranslatorStatus()]);
             case 1:
               _yield$Promise$allSet = _context.v;
               queueResult = _yield$Promise$allSet[0];
               announcementResult = _yield$Promise$allSet[1];
+              translatorResult = _yield$Promise$allSet[2];
               this.feedback.clear();
               if (queueResult.status === 'fulfilled' && queueResult.value) {
                 this.updateQueueStatusDisplay(queueResult.value);
@@ -1256,6 +1335,12 @@
                   duration: 5000
                 });
                 this.updateAnnouncementStatusDisplay(null);
+              }
+              if (translatorResult.status === 'fulfilled' && translatorResult.value) {
+                this.updateTranslatorStatusDisplay(translatorResult.value);
+              } else {
+                console.warn('OperatorUI', 'Failed to load translator status initially');
+                this.updateTranslatorStatusDisplay(null);
               }
             case 2:
               return _context.a(2);
@@ -1279,9 +1364,14 @@
       if (this.dom.btnSkip) {
         this.dom.btnSkip.disabled = !(isIdValid && isLocationValid);
       }
+      this.lastLocationValid = isLocationValid;
+      this.updateTranslatorButtonState();
     };
     _proto.updateQueueStatusDisplay = function updateQueueStatusDisplay(queueState) {
       var labels = getLabels();
+      if (typeof (queueState == null ? void 0 : queueState.identifier_prefix_required) === 'boolean') {
+        this.applyIdentifierRules(queueState.identifier_prefix_required);
+      }
       var currentCall = (queueState == null ? void 0 : queueState.current_call) || null;
       if (this.dom.statusCurrentCallId) {
         var _currentCall$id;
@@ -1432,6 +1522,105 @@
       }
       this.renderAnnouncementSlotButtons(announcementStatus);
     };
+    _proto.updateTranslatorStatusDisplay = function updateTranslatorStatusDisplay(status) {
+      var _this7 = this;
+      if (this.translatorCooldownIntervalId) {
+        clearInterval(this.translatorCooldownIntervalId);
+        this.translatorCooldownIntervalId = null;
+      }
+      if (!status) {
+        if (this.dom.statusTranslatorCooldown) {
+          this.dom.statusTranslatorCooldown.textContent = 'Unknown';
+        }
+        if (this.dom.statusTranslatorCooldownTimer) {
+          this.dom.statusTranslatorCooldownTimer.textContent = '';
+        }
+        this.translatorCooldownState = {
+          active: false,
+          remainingSeconds: 0,
+          totalSeconds: 0
+        };
+        this.updateTranslatorButtonState();
+        return;
+      }
+      var totalSeconds = Number(status.cooldown_seconds) || 0;
+      var remaining = Number(status.cooldown_remaining_seconds) || 0;
+      var active = Boolean(status.cooldown_active && remaining > 0);
+      if (this.dom.statusTranslatorCooldown) {
+        this.dom.statusTranslatorCooldown.textContent = active ? 'On Cooldown' : 'Ready';
+      }
+      if (this.dom.statusTranslatorCooldownTimer) {
+        this.dom.statusTranslatorCooldownTimer.textContent = active ? "(" + remaining + "s)" : '';
+      }
+      this.translatorCooldownState = {
+        active: active,
+        remainingSeconds: active ? remaining : 0,
+        totalSeconds: totalSeconds
+      };
+      if (active && remaining > 0) {
+        this.translatorCooldownIntervalId = window.setInterval(function () {
+          remaining -= 1;
+          if (remaining > 0) {
+            if (_this7.dom.statusTranslatorCooldownTimer) {
+              _this7.dom.statusTranslatorCooldownTimer.textContent = "(" + remaining + "s)";
+            }
+            _this7.translatorCooldownState.remainingSeconds = remaining;
+          } else {
+            clearInterval(_this7.translatorCooldownIntervalId);
+            _this7.translatorCooldownIntervalId = null;
+            _this7.translatorCooldownState = {
+              active: false,
+              remainingSeconds: 0,
+              totalSeconds: totalSeconds
+            };
+            if (_this7.dom.statusTranslatorCooldown) {
+              _this7.dom.statusTranslatorCooldown.textContent = 'Ready';
+            }
+            if (_this7.dom.statusTranslatorCooldownTimer) {
+              _this7.dom.statusTranslatorCooldownTimer.textContent = '';
+            }
+            _this7.updateTranslatorButtonState();
+          }
+        }, 1000);
+      }
+      this.updateTranslatorButtonState();
+    };
+    _proto.updateTranslatorButtonState = function updateTranslatorButtonState() {
+      var _this$translatorCoold, _this$translatorCoold2;
+      if (!this.dom.btnCallTranslator) {
+        return;
+      }
+      var isCooldownActive = Boolean((_this$translatorCoold = this.translatorCooldownState) == null ? void 0 : _this$translatorCoold.active);
+      var hasRemaining = (((_this$translatorCoold2 = this.translatorCooldownState) == null ? void 0 : _this$translatorCoold2.remainingSeconds) || 0) > 0;
+      var onCooldown = isCooldownActive && hasRemaining;
+      var shouldDisable = !this.lastLocationValid || onCooldown;
+      this.dom.btnCallTranslator.disabled = shouldDisable;
+      if (shouldDisable) {
+        this.dom.btnCallTranslator.classList.add('opacity-50', 'cursor-not-allowed');
+      } else {
+        this.dom.btnCallTranslator.classList.remove('opacity-50', 'cursor-not-allowed');
+      }
+    };
+    _proto.handleTranslatorCallEvent = function handleTranslatorCallEvent(eventData) {
+      var _this$translatorCoold3, _eventData$cooldown_r, _eventData$cooldown_s, _this$translatorCoold4;
+      if (!eventData || typeof eventData !== 'object') {
+        return;
+      }
+      var fallbackRemaining = ((_this$translatorCoold3 = this.translatorCooldownState) == null ? void 0 : _this$translatorCoold3.remainingSeconds) || 0;
+      var remainingSeconds = Number((_eventData$cooldown_r = eventData.cooldown_remaining_seconds) != null ? _eventData$cooldown_r : fallbackRemaining) || 0;
+      var statusPayload = {
+        cooldown_seconds: Number((_eventData$cooldown_s = eventData.cooldown_seconds) != null ? _eventData$cooldown_s : (_this$translatorCoold4 = this.translatorCooldownState) == null ? void 0 : _this$translatorCoold4.totalSeconds) || 0,
+        cooldown_remaining_seconds: remainingSeconds,
+        cooldown_active: remainingSeconds > 0
+      };
+      this.updateTranslatorStatusDisplay(statusPayload);
+      if (eventData.location) {
+        this.feedback.show("Translator request broadcasting for counter " + sanitizeText(eventData.location) + ".", {
+          type: 'info',
+          duration: 4000
+        });
+      }
+    };
     _proto.handleCallFormSubmit = /*#__PURE__*/function () {
       var _handleCallFormSubmit = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee2(event) {
         var originalId, location, payload, response, message;
@@ -1446,7 +1635,7 @@
                 _context2.n = 1;
                 break;
               }
-              this.feedback.show('Identifier must start with an uppercase letter, followed by digits (e.g., A1, Z99).', {
+              this.feedback.show(Validation.getCallIdentifierValidationMessage(), {
                 type: 'error'
               });
               this.dom.originalIdInput.focus();
@@ -1517,7 +1706,7 @@
                 _context3.n = 1;
                 break;
               }
-              this.feedback.show('Identifier must start with an uppercase letter, followed by digits (e.g., A1, Z99).', {
+              this.feedback.show(Validation.getCallIdentifierValidationMessage(), {
                 type: 'error'
               });
               this.dom.originalIdInput.focus();
@@ -1574,11 +1763,84 @@
       }
       return handleForceSkipCall;
     }();
-    _proto.handleManualAnnouncementTrigger = /*#__PURE__*/function () {
-      var _handleManualAnnouncementTrigger = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee4(slotId, button) {
-        var labelSpan, metaSpan, originalLabel, originalMeta, response, message;
+    _proto.handleCallTranslator = /*#__PURE__*/function () {
+      var _handleCallTranslator = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee4(event) {
+        var _this$dom$locationInp2;
+        var locationValue, _this$dom$locationInp3, response, status;
         return _regenerator().w(function (_context4) {
           while (1) switch (_context4.n) {
+            case 0:
+              if (event) {
+                event.preventDefault();
+              }
+              this.feedback.clear();
+              locationValue = ((_this$dom$locationInp2 = this.dom.locationInput) == null || (_this$dom$locationInp2 = _this$dom$locationInp2.value) == null ? void 0 : _this$dom$locationInp2.trim()) || '';
+              if (Validation.isValidCallLocation(locationValue)) {
+                _context4.n = 1;
+                break;
+              }
+              this.feedback.show('Location must be digits only (e.g., 5, 10).', {
+                type: 'error'
+              });
+              (_this$dom$locationInp3 = this.dom.locationInput) == null || _this$dom$locationInp3.focus();
+              return _context4.a(2);
+            case 1:
+              if (this.dom.btnCallTranslator) {
+                this.dom.btnCallTranslator.disabled = true;
+                this.dom.btnCallTranslator.textContent = 'Calling translator...';
+                this.dom.btnCallTranslator.classList.add('opacity-50', 'cursor-not-allowed');
+              }
+              _context4.n = 2;
+              return this.apiClient.callTranslator(locationValue);
+            case 2:
+              response = _context4.v;
+              if (!(response && typeof response === 'object')) {
+                _context4.n = 3;
+                break;
+              }
+              if (response.status) {
+                this.updateTranslatorStatusDisplay(response.status);
+              }
+              if (response.message) {
+                this.feedback.show(response.message, {
+                  type: 'info'
+                });
+              } else {
+                this.feedback.show("Translator request sent for counter " + sanitizeText(locationValue) + ".", {
+                  type: 'info'
+                });
+              }
+              _context4.n = 5;
+              break;
+            case 3:
+              console.warn('OperatorUI', 'Translator call response missing payload. Forcing status refresh.');
+              _context4.n = 4;
+              return this.apiClient.getTranslatorStatus();
+            case 4:
+              status = _context4.v;
+              if (status) {
+                this.updateTranslatorStatusDisplay(status);
+              }
+            case 5:
+              if (this.dom.btnCallTranslator) {
+                this.dom.btnCallTranslator.textContent = 'Call Translator';
+              }
+              this.updateTranslatorButtonState();
+            case 6:
+              return _context4.a(2);
+          }
+        }, _callee4, this);
+      }));
+      function handleCallTranslator(_x3) {
+        return _handleCallTranslator.apply(this, arguments);
+      }
+      return handleCallTranslator;
+    }();
+    _proto.handleManualAnnouncementTrigger = /*#__PURE__*/function () {
+      var _handleManualAnnouncementTrigger = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee5(slotId, button) {
+        var labelSpan, metaSpan, originalLabel, originalMeta, response, message;
+        return _regenerator().w(function (_context5) {
+          while (1) switch (_context5.n) {
             case 0:
               this.feedback.clear();
               labelSpan = button == null ? void 0 : button.querySelector('.slot-trigger-label');
@@ -1591,10 +1853,10 @@
                 if (labelSpan) labelSpan.textContent = "Triggering " + slotId + "...";
                 if (metaSpan) metaSpan.textContent = 'Please wait';
               }
-              _context4.n = 1;
+              _context5.n = 1;
               return this.apiClient.triggerAnnouncement(slotId);
             case 1:
-              response = _context4.v;
+              response = _context5.v;
               if (response) {
                 message = typeof response.message === 'string' ? response.message : "Announcement '" + sanitizeText(slotId) + "' trigger requested.";
                 this.feedback.show(message, {
@@ -1609,31 +1871,31 @@
                 button.classList.remove('opacity-50', 'cursor-not-allowed');
               }, 7000);
             case 2:
-              return _context4.a(2);
+              return _context5.a(2);
           }
-        }, _callee4, this);
+        }, _callee5, this);
       }));
-      function handleManualAnnouncementTrigger(_x3, _x4) {
+      function handleManualAnnouncementTrigger(_x4, _x5) {
         return _handleManualAnnouncementTrigger.apply(this, arguments);
       }
       return handleManualAnnouncementTrigger;
     }();
     _proto.handleNextAnnouncement = /*#__PURE__*/function () {
-      var _handleNextAnnouncement = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee5() {
-        var _this7 = this;
+      var _handleNextAnnouncement = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee6() {
+        var _this8 = this;
         var response, message;
-        return _regenerator().w(function (_context5) {
-          while (1) switch (_context5.n) {
+        return _regenerator().w(function (_context6) {
+          while (1) switch (_context6.n) {
             case 0:
               this.feedback.clear();
               if (this.dom.btnNextAnnouncement) {
                 this.dom.btnNextAnnouncement.disabled = true;
                 this.dom.btnNextAnnouncement.textContent = 'Triggering...';
               }
-              _context5.n = 1;
+              _context6.n = 1;
               return this.apiClient.nextAnnouncement();
             case 1:
-              response = _context5.v;
+              response = _context6.v;
               if (response) {
                 message = typeof response.message === 'string' ? response.message : 'Next announcement triggered.';
                 this.feedback.show(message, {
@@ -1641,27 +1903,27 @@
                 });
               }
               setTimeout(function () {
-                var _this7$dom$statusAnno;
-                if (!_this7.dom.btnNextAnnouncement) return;
-                if (_this7.dom.btnNextAnnouncement.disabled && ((_this7$dom$statusAnno = _this7.dom.statusAnnouncementCooldown) == null ? void 0 : _this7$dom$statusAnno.textContent) !== 'On Cooldown') {
-                  _this7.dom.btnNextAnnouncement.disabled = false;
-                  _this7.dom.btnNextAnnouncement.textContent = 'Trigger Next Announcement';
-                  if (_this7.lastAnnouncementStatus) {
-                    var cloned = _this7.cloneAnnouncementStatus(_this7.lastAnnouncementStatus);
+                var _this8$dom$statusAnno;
+                if (!_this8.dom.btnNextAnnouncement) return;
+                if (_this8.dom.btnNextAnnouncement.disabled && ((_this8$dom$statusAnno = _this8.dom.statusAnnouncementCooldown) == null ? void 0 : _this8$dom$statusAnno.textContent) !== 'On Cooldown') {
+                  _this8.dom.btnNextAnnouncement.disabled = false;
+                  _this8.dom.btnNextAnnouncement.textContent = 'Trigger Next Announcement';
+                  if (_this8.lastAnnouncementStatus) {
+                    var cloned = _this8.cloneAnnouncementStatus(_this8.lastAnnouncementStatus);
                     if (cloned) {
                       cloned.cooldown_active = false;
                       cloned.cooldown_remaining_seconds = 0;
-                      _this7.renderAnnouncementSlotButtons(cloned);
+                      _this8.renderAnnouncementSlotButtons(cloned);
                     }
                   }
-                } else if (!_this7.dom.btnNextAnnouncement.disabled) {
-                  _this7.dom.btnNextAnnouncement.textContent = 'Trigger Next Announcement';
+                } else if (!_this8.dom.btnNextAnnouncement.disabled) {
+                  _this8.dom.btnNextAnnouncement.textContent = 'Trigger Next Announcement';
                 }
               }, 7000);
             case 2:
-              return _context5.a(2);
+              return _context6.a(2);
           }
-        }, _callee5, this);
+        }, _callee6, this);
       }));
       function handleNextAnnouncement() {
         return _handleNextAnnouncement.apply(this, arguments);

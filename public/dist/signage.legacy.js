@@ -168,9 +168,9 @@
       successPrefix: 'Success: '
     },
     th: {
-      connecting: 'กำลังเชื่อมต่อเซิร์ฟเวอร์...',
-      connected: 'เชื่อมต่อสดแล้ว',
-      disconnected: 'ตัดการเชื่อมต่อ - กำลังลองใหม่...',
+      connecting: 'Connecting to server...',
+      connected: 'Live Connection Active',
+      disconnected: 'Connection lost. Retrying...',
       announcementPlaceholder: 'ประกาศ',
       historyPlaceholder: 'รอการเรียก...',
       skippedPlaceholder: 'ไม่มีคิวที่ข้ามไป',
@@ -494,6 +494,7 @@
       this.eventSource.addEventListener('queue_update', this.handleNamedEvent);
       this.eventSource.addEventListener('announcement_status', this.handleNamedEvent);
       this.eventSource.addEventListener('tts_complete', this.handleNamedEvent);
+      this.eventSource.addEventListener('translator_call', this.handleNamedEvent);
       this.eventSource.onerror = this.handleError;
     };
     _proto.disconnect = function disconnect() {
@@ -718,7 +719,9 @@
       };
       this.dom = this.queryDom();
       this.eventStream = new EventStream(SSE_URL, {
-        labelProvider: getLabels
+        labelProvider: function labelProvider() {
+          return getLabels('en');
+        }
       });
       this.updateSseIndicator = createSseIndicatorUpdater(this.dom.sseStatusIndicator, {
         setDataset: true,
@@ -846,8 +849,12 @@
         var detail = _ref5.detail;
         return _this3.handleTtsComplete(detail);
       });
-      this.eventStream.on('status', function (_ref6) {
+      this.eventStream.on('translatorcall', function (_ref6) {
         var detail = _ref6.detail;
+        return _this3.handleTranslatorCall(detail);
+      });
+      this.eventStream.on('status', function (_ref7) {
+        var detail = _ref7.detail;
         return _this3.updateSseIndicator(detail);
       });
       this.eventStream.connect();
@@ -1210,15 +1217,50 @@
       this.eventQueue.push(announcementEvent);
       this.processNextEventFromQueue();
     };
+    _proto.handleTranslatorCall = function handleTranslatorCall(payload) {
+      var _this$currentProcessi3, _this$currentProcessi4, _this$currentProcessi5;
+      if (!payload || !Array.isArray(payload.audio_urls) || payload.audio_urls.length === 0) {
+        console.warn('SignageUI', 'Translator call payload missing audio URLs', payload);
+        return;
+      }
+      var playlist = payload.audio_urls.filter(Boolean);
+      if (playlist.length === 0) {
+        return;
+      }
+      var dedupKey = (payload.location || 'translator') + "::" + playlist[0];
+      var isDuplicateActive = ((_this$currentProcessi3 = this.currentProcessingEvent) == null ? void 0 : _this$currentProcessi3.type) === 'announcement' && ((_this$currentProcessi4 = this.currentProcessingEvent) == null ? void 0 : _this$currentProcessi4.source) === 'translator' && ((_this$currentProcessi5 = this.currentProcessingEvent) == null ? void 0 : _this$currentProcessi5.dedupKey) === dedupKey;
+      if (isDuplicateActive) {
+        return;
+      }
+      var isDuplicateQueued = this.eventQueue.some(function (evt) {
+        return evt.type === 'announcement' && evt.source === 'translator' && evt.dedupKey === dedupKey;
+      });
+      if (isDuplicateQueued) {
+        return;
+      }
+      var translatorEvent = {
+        type: 'announcement',
+        source: 'translator',
+        dedupKey: dedupKey,
+        audioSequence: playlist.map(function (src) {
+          return {
+            src: src,
+            playerType: 'announcement'
+          };
+        })
+      };
+      this.eventQueue.push(translatorEvent);
+      this.processNextEventFromQueue();
+    };
     _proto.handleTtsComplete = function handleTtsComplete(ttsData) {
-      var _this$currentProcessi3,
+      var _this$currentProcessi6,
         _this5 = this;
       if (!ttsData || !ttsData.id || !ttsData.location || !Array.isArray(ttsData.audio_urls)) {
         console.warn('SignageUI', 'Invalid TTS payload received', ttsData);
         return;
       }
       var targetEvent = null;
-      if (((_this$currentProcessi3 = this.currentProcessingEvent) == null ? void 0 : _this$currentProcessi3.type) === 'call' && this.currentProcessingEvent.id === ttsData.id && this.currentProcessingEvent.location === ttsData.location) {
+      if (((_this$currentProcessi6 = this.currentProcessingEvent) == null ? void 0 : _this$currentProcessi6.type) === 'call' && this.currentProcessingEvent.id === ttsData.id && this.currentProcessingEvent.location === ttsData.location) {
         targetEvent = this.currentProcessingEvent;
       } else {
         targetEvent = this.eventQueue.find(function (evt) {
@@ -1319,8 +1361,8 @@
           this.updateCurrentCallDisplay(this.lastShownCallData);
         }
         if ((_this$dom$chimeAudio2 = this.dom.chimeAudio) != null && _this$dom$chimeAudio2.src) {
-          var _this$currentProcessi4;
-          var alreadyHasChime = (_this$currentProcessi4 = this.currentProcessingEvent.audioSequence) == null ? void 0 : _this$currentProcessi4.some(function (item) {
+          var _this$currentProcessi7;
+          var alreadyHasChime = (_this$currentProcessi7 = this.currentProcessingEvent.audioSequence) == null ? void 0 : _this$currentProcessi7.some(function (item) {
             return item.playerType === 'chime' || item.src === _this6.dom.chimeAudio.src;
           });
           if (!alreadyHasChime) {
@@ -1343,9 +1385,9 @@
     _proto.playNextAudioFileInSequence = function playNextAudioFileInSequence() {
       var _this7 = this;
       if (this.audioPlaybackQueue.length === 0) {
-        var _this$currentProcessi5;
+        var _this$currentProcessi8;
         this.isAudioFilePlaying = false;
-        if (((_this$currentProcessi5 = this.currentProcessingEvent) == null ? void 0 : _this$currentProcessi5.type) === 'call') {
+        if (((_this$currentProcessi8 = this.currentProcessingEvent) == null ? void 0 : _this$currentProcessi8.type) === 'call') {
           var current = this.currentProcessingEvent;
           if (!current.chimeFinished) {
             return;
@@ -1425,8 +1467,8 @@
       player.removeEventListener('error', this.handleAudioFileError);
     };
     _proto.finishCurrentEvent = function finishCurrentEvent() {
-      var _this$currentProcessi6;
-      if ((_this$currentProcessi6 = this.currentProcessingEvent) != null && _this$currentProcessi6.ttsWaitTimeoutId) {
+      var _this$currentProcessi9;
+      if ((_this$currentProcessi9 = this.currentProcessingEvent) != null && _this$currentProcessi9.ttsWaitTimeoutId) {
         clearTimeout(this.currentProcessingEvent.ttsWaitTimeoutId);
         this.currentProcessingEvent.ttsWaitTimeoutId = null;
       }
