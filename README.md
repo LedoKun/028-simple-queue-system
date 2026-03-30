@@ -136,9 +136,18 @@ The system can be configured using the following environment variables. You can 
 | `TTS_CACHE_MAXIMUM_FILES` | `500` | Maximum number of TTS audio files to keep in the cache. |
 | `TTS_EXTERNAL_SERVICE_TIMEOUT_SECONDS` | `30` | Timeout (in seconds) for external TTS service requests. |
 | `TTS_SUPPORTED_LANGUAGES` | `th:Thai,en-GB:British English` | Comma-separated list of supported languages for TTS (format: code:Name). |
+| `TTS_ANNOUNCEMENT_TEMPLATE_TH` | `หมายเลข {Q_NUM}, เชิญช่อง {DEST_NUM}` | Live Thai TTS template. Must include both `{Q_NUM}` and `{DEST_NUM}` placeholders. |
+| `TTS_ANNOUNCEMENT_TEMPLATE_EN` | `Number {Q_NUM}, to counter {DEST_NUM}` | Live English TTS template. Must include both `{Q_NUM}` and `{DEST_NUM}` placeholders. |
 | `SSE_KEEP_ALIVE_INTERVAL_SECONDS` | `15` | Interval (in seconds) for sending SSE keep-alive messages. |
 | `SSE_EVENT_BUFFER_SIZE` | `200` | Size of the buffer for SSE events. |
 | `TTS_CACHE_WEB_PATH` | `/tts_cache` | Web path where the TTS cache is accessible. |
+
+Example:
+
+```bash
+-e TTS_ANNOUNCEMENT_TEMPLATE_TH='หมายเลข {Q_NUM}, เชิญช่อง {DEST_NUM}' \
+-e TTS_ANNOUNCEMENT_TEMPLATE_EN='Queue {Q_NUM}, please proceed to counter {DEST_NUM}'
+```
 
 ### Generating Text-to-Speech Assets
 
@@ -146,6 +155,12 @@ The frontend falls back to pre-generated Google Translate audio when the live TT
 service cannot be reached. The helper script `generate_stems_google_translate.py`
 creates both the individual "stems" (phrases, numbers, characters) and a cache of
 combined queue announcements.
+
+Live TTS templates only affect online/dynamic generation. If you keep the default
+templates, the runtime can still reuse the pre-generated combined cache under
+`public/media/audio_cache/multi/`. If you customize the templates, the runtime
+skips those pre-generated combined files and falls back to online generation first,
+then to the default stem sequence if live TTS fails.
 
 Prerequisites:
 

@@ -29,7 +29,10 @@ use tracing::{debug, error, info, trace, warn}; // Import tracing macros
 use urlencoding::encode as url_encode;
 
 use crate::{
-    config::{normalize_language_code, AppConfig},
+    config::{
+        normalize_language_code, AppConfig, DEFAULT_TTS_ANNOUNCEMENT_TEMPLATE_EN,
+        DEFAULT_TTS_ANNOUNCEMENT_TEMPLATE_TH,
+    },
     AppEvent,
 };
 
@@ -46,6 +49,10 @@ const MAX_TTS_RETRY_ATTEMPTS: u8 = 5;
 const RETRY_BASE_DELAY_MS: u64 = 200;
 /// Timeout for online TTS generation before falling back to stem audio (in seconds).
 const ONLINE_TTS_TIMEOUT_SECONDS: u64 = 5;
+/// Placeholder token for the queue number in configurable live TTS templates.
+const TTS_TEMPLATE_QUEUE_NUMBER_TOKEN: &str = "{Q_NUM}";
+/// Placeholder token for the destination/counter in configurable live TTS templates.
+const TTS_TEMPLATE_DESTINATION_TOKEN: &str = "{DEST_NUM}";
 
 /// Manages Text-to-Speech (TTS) operations, including fetching audio from
 /// external services, caching, text tokenization, and fallback to stem audio.
@@ -421,44 +428,56 @@ impl TTSManager {
         );
 
         let lang_suffix = config.tts_language_suffix_for_filename();
-        let call_filename = Self::get_sanitized_call_filename(&id, &location, &lang_suffix);
+        let template_cache_key = config.tts_announcement_templates_cache_key();
 
         // --- 1. PRE-GENERATED CACHE CHECK ---
         // The pre-generated path is inside the public serving directory, as requested.
-        let pregen_fs_base_path = config.serve_dir_path.join("media/audio_cache/multi");
-        let pregen_file_path = pregen_fs_base_path.join(&call_filename);
+        // These assets are only safe to reuse when the live templates remain on the
+        // built-in defaults, because the bootstrap generator currently hard-codes the
+        // legacy phrasing.
+        if config.tts_announcement_templates_are_default() {
+            let call_filename =
+                Self::get_sanitized_call_filename(&id, &location, &lang_suffix, None);
+            let pregen_fs_base_path = config.serve_dir_path.join("media/audio_cache/multi");
+            let pregen_file_path = pregen_fs_base_path.join(&call_filename);
 
-        debug!(
-            "TTS task: for call_id='{}', checking pre-generated path='{:?}'",
-            id, pregen_file_path
-        );
+            debug!(
+                "TTS task: for call_id='{}', checking pre-generated path='{:?}'",
+                id, pregen_file_path
+            );
 
-        if tokio_fs::metadata(&pregen_file_path).await.is_ok() {
-            info!("Found pre-generated TTS audio: {:?}", pregen_file_path);
-            // The URL is relative to the root of the serving directory. We use serve_dir_path as the
-            // filesystem base and an empty string for the web path segment to achieve this.
-            if let Some(audio_url) = Self::get_web_accessible_audio_url(
-                &pregen_file_path,
-                &config.serve_dir_path, // Base for stripping is the entire public dir
-                "",                     // Web path segment is empty (root)
-            ) {
-                debug!(
-                    "Perform TTS Task: Broadcasting TTSComplete for pre-generated audio. URL: {}",
-                    audio_url
-                );
-                let event = AppEvent::TTSComplete {
-                    id: id.clone(),
-                    location: location.clone(),
-                    lang: lang.clone(),
-                    audio_urls: vec![audio_url],
-                };
-                if let Err(e) = sender.send(event) {
-                    debug!("Failed to broadcast TTSComplete for pre-generated TTS audio (id: {}, lang: {}): {}", id, lang, e);
+            if tokio_fs::metadata(&pregen_file_path).await.is_ok() {
+                info!("Found pre-generated TTS audio: {:?}", pregen_file_path);
+                // The URL is relative to the root of the serving directory. We use serve_dir_path as the
+                // filesystem base and an empty string for the web path segment to achieve this.
+                if let Some(audio_url) = Self::get_web_accessible_audio_url(
+                    &pregen_file_path,
+                    &config.serve_dir_path, // Base for stripping is the entire public dir
+                    "",                     // Web path segment is empty (root)
+                ) {
+                    debug!(
+                        "Perform TTS Task: Broadcasting TTSComplete for pre-generated audio. URL: {}",
+                        audio_url
+                    );
+                    let event = AppEvent::TTSComplete {
+                        id: id.clone(),
+                        location: location.clone(),
+                        lang: lang.clone(),
+                        audio_urls: vec![audio_url],
+                    };
+                    if let Err(e) = sender.send(event) {
+                        debug!("Failed to broadcast TTSComplete for pre-generated TTS audio (id: {}, lang: {}): {}", id, lang, e);
+                    }
+                } else {
+                    error!("Failed to get web-accessible URL for pre-generated TTS audio (id: {}, lang: {}): {:?}", id, lang, pregen_file_path);
                 }
-            } else {
-                error!("Failed to get web-accessible URL for pre-generated TTS audio (id: {}, lang: {}): {:?}", id, lang, pregen_file_path);
+                return; // Exit after finding the pre-generated file.
             }
-            return; // Exit after finding the pre-generated file.
+        } else {
+            info!(
+                "Custom live TTS templates are configured; skipping pre-generated default audio lookup for call id '{}'.",
+                id
+            );
         }
 
         info!(
@@ -476,13 +495,13 @@ impl TTSManager {
 
         // --- 2. DYNAMIC CACHE CHECK ---
         // Determine the expected path for the dynamically cached concatenated audio file.
-        let cache_file_path =
-            Self::get_multi_language_cache_file_path(
-                &config.gtts_cache_base_path,
-                &id,
-                &location,
-                &lang_suffix,
-            );
+        let cache_file_path = Self::get_multi_language_cache_file_path(
+            &config.gtts_cache_base_path,
+            &id,
+            &location,
+            &lang_suffix,
+            template_cache_key.as_deref(),
+        );
 
         debug!(
             "TTS task: for call_id='{}', checking dynamic cache path='{:?}'",
@@ -538,6 +557,7 @@ impl TTSManager {
                 location.clone(),
                 ordered_lang_codes,
                 lang_suffix,
+                template_cache_key,
             ),
         )
         .await;
@@ -582,14 +602,15 @@ impl TTSManager {
         location: String,
         ordered_lang_codes: Vec<String>,
         lang_suffix: String,
+        template_cache_key: Option<String>,
     ) -> Result<String, String> {
-        let cache_file_path =
-            Self::get_multi_language_cache_file_path(
-                &config.gtts_cache_base_path,
-                &id,
-                &location,
-                &lang_suffix,
-            );
+        let cache_file_path = Self::get_multi_language_cache_file_path(
+            &config.gtts_cache_base_path,
+            &id,
+            &location,
+            &lang_suffix,
+            template_cache_key.as_deref(),
+        );
 
         let mut all_audio_bytes: Vec<u8> = Vec::new();
         let mut uas_this_task: HashSet<String> = HashSet::new();
@@ -604,7 +625,7 @@ impl TTSManager {
             );
 
             // Build the speak text for this language
-            let text_for_this_lang = Self::build_speak_text(&id, &location, lang_code);
+            let text_for_this_lang = Self::build_speak_text(&config, &id, &location, lang_code);
             debug!("TTS text for '{}': '{}'", lang_code, text_for_this_lang);
 
             // Tokenize the text
@@ -734,6 +755,7 @@ impl TTSManager {
         call_id: &str,
         call_location: &str,
         lang_suffix: &str,
+        template_cache_key: Option<&str>,
     ) -> String {
         let sanitize = |s: &str| {
             s.chars()
@@ -749,14 +771,21 @@ impl TTSManager {
         let call_id_sanitized = sanitize(call_id);
         let call_location_sanitized = sanitize(call_location);
         let suffix_sanitized = sanitize(lang_suffix);
-        if suffix_sanitized.is_empty() {
-            format!("{}-{}.mp3", call_id_sanitized, call_location_sanitized)
-        } else {
-            format!(
-                "{}-{}_{}.mp3",
-                call_id_sanitized, call_location_sanitized, suffix_sanitized
-            )
+        let template_key_sanitized = template_cache_key
+            .map(sanitize)
+            .filter(|value| !value.is_empty());
+
+        let mut file_stem = format!("{}-{}", call_id_sanitized, call_location_sanitized);
+        if !suffix_sanitized.is_empty() {
+            file_stem.push('_');
+            file_stem.push_str(&suffix_sanitized);
         }
+        if let Some(template_key) = template_key_sanitized {
+            file_stem.push('_');
+            file_stem.push_str(&template_key);
+        }
+
+        format!("{}.mp3", file_stem)
     }
 
     /// Generates a cache file path for multi-language TTS audio.
@@ -765,8 +794,14 @@ impl TTSManager {
         call_id: &str,
         call_location: &str,
         lang_suffix: &str,
+        template_cache_key: Option<&str>,
     ) -> PathBuf {
-        let filename = Self::get_sanitized_call_filename(call_id, call_location, lang_suffix);
+        let filename = Self::get_sanitized_call_filename(
+            call_id,
+            call_location,
+            lang_suffix,
+            template_cache_key,
+        );
         // Store multi-language files in a "multi" subdirectory
         cache_base_path.join("multi").join(filename)
     }
@@ -1100,33 +1135,87 @@ impl TTSManager {
     ///
     /// # Returns
     /// A `String` containing the full text to be spoken.
-    fn build_speak_text(id: &str, location: &str, lang: &str) -> String {
+    fn build_speak_text(config: &AppConfig, id: &str, location: &str, lang: &str) -> String {
         debug!(
             "Build Speak Text: For ID: '{}', Location: '{}', Lang: '{}'",
             id, location, lang
         );
-        match lang.to_lowercase().as_str() {
-            "th" => {
-                let text = format!("หมายเลข {}, เชิญช่อง {}", id, location); // Thai phrasing
-                trace!("Build Speak Text: Thai phrasing: '{}'", text);
+        let normalized_lang = normalize_language_code(lang);
+        let (configured_template, default_template, template_env_var) =
+            match normalized_lang.to_ascii_lowercase().as_str() {
+                "th" | "th-th" => (
+                    config.tts_announcement_template_th.as_str(),
+                    DEFAULT_TTS_ANNOUNCEMENT_TEMPLATE_TH,
+                    "TTS_ANNOUNCEMENT_TEMPLATE_TH",
+                ),
+                "en-uk" | "en-us" | "en-gb" | "en" => (
+                    config.tts_announcement_template_en.as_str(),
+                    DEFAULT_TTS_ANNOUNCEMENT_TEMPLATE_EN,
+                    "TTS_ANNOUNCEMENT_TEMPLATE_EN",
+                ),
+                _ => {
+                    warn!(
+                        "Using English live TTS template for unmapped lang code '{}'.",
+                        lang
+                    );
+                    (
+                        config.tts_announcement_template_en.as_str(),
+                        DEFAULT_TTS_ANNOUNCEMENT_TEMPLATE_EN,
+                        "TTS_ANNOUNCEMENT_TEMPLATE_EN",
+                    )
+                }
+            };
+
+        match Self::render_announcement_template(configured_template, id, location) {
+            Ok(text) => {
+                trace!("Build Speak Text: Rendered template: '{}'", text);
                 text
             }
-            "en-uk" | "en-us" | "en-gb" | "en" => {
-                let text = format!("Number {}, to counter {}", id, location); // English phrasing
-                trace!("Build Speak Text: English phrasing: '{}'", text);
-                text
-            }
-            _ => {
-                // Default to English phrasing for unsupported or unmapped languages,
-                // and log a warning.
-                let text = format!("Number {}, to counter {}", id, location);
+            Err(err) => {
                 warn!(
-                    "Using default/English speak text phrasing for unmapped lang code: {}; Text: '{}'",
-                    lang, text
+                    "Invalid live TTS template in {} for lang '{}': {}. Falling back to built-in default phrasing.",
+                    template_env_var, lang, err
                 );
-                text
+                let fallback_text =
+                    Self::render_announcement_template(default_template, id, location)
+                        .expect("built-in TTS templates must always be valid");
+                trace!(
+                    "Build Speak Text: Using built-in fallback template: '{}'",
+                    fallback_text
+                );
+                fallback_text
             }
         }
+    }
+
+    fn render_announcement_template(
+        template: &str,
+        id: &str,
+        location: &str,
+    ) -> Result<String, String> {
+        let trimmed = template.trim();
+        if trimmed.is_empty() {
+            return Err("template is empty".to_string());
+        }
+
+        let mut missing_tokens = Vec::new();
+        if !trimmed.contains(TTS_TEMPLATE_QUEUE_NUMBER_TOKEN) {
+            missing_tokens.push(TTS_TEMPLATE_QUEUE_NUMBER_TOKEN);
+        }
+        if !trimmed.contains(TTS_TEMPLATE_DESTINATION_TOKEN) {
+            missing_tokens.push(TTS_TEMPLATE_DESTINATION_TOKEN);
+        }
+
+        if !missing_tokens.is_empty() {
+            return Err(format!(
+                "missing required placeholder(s): {}",
+                missing_tokens.join(", ")
+            ));
+        }
+
+        Ok(trimmed
+            .replace(TTS_TEMPLATE_QUEUE_NUMBER_TOKEN, id)
+            .replace(TTS_TEMPLATE_DESTINATION_TOKEN, location))
     }
 
     /// Asynchronously writes a byte slice to a file at the specified path.
@@ -1362,5 +1451,92 @@ impl TTSManager {
     pub fn get_supported_languages(&self) -> &HashMap<String, String> {
         debug!("Get Supported Languages: Returning map of supported languages.");
         &self.supported_languages_map
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::{
+        DEFAULT_TTS_ANNOUNCEMENT_TEMPLATE_EN, DEFAULT_TTS_ANNOUNCEMENT_TEMPLATE_TH,
+    };
+    use std::path::PathBuf;
+
+    fn test_config() -> AppConfig {
+        AppConfig {
+            server_address: "127.0.0.1".parse().unwrap(),
+            server_port: 3000,
+            max_history_size: 5,
+            max_skipped_history_size: 5,
+            serve_dir_path: PathBuf::from("./public"),
+            announcements_audio_sub_path: PathBuf::from("media/announcements"),
+            banners_sub_path: PathBuf::from("media/banners"),
+            announcement_auto_cycle_interval_seconds: 1200,
+            announcement_manual_trigger_cooldown_seconds: 5,
+            banner_rotation_interval_seconds: 10,
+            gtts_cache_base_path: PathBuf::from("/tmp/gtts_audio_cache"),
+            tts_cache_maximum_files: 500,
+            tts_external_service_timeout_seconds: 30,
+            tts_supported_languages: "th:Thai,en-GB:British English".to_string(),
+            tts_announcement_template_th: DEFAULT_TTS_ANNOUNCEMENT_TEMPLATE_TH.to_string(),
+            tts_announcement_template_en: DEFAULT_TTS_ANNOUNCEMENT_TEMPLATE_EN.to_string(),
+            sse_keep_alive_interval_seconds: 15,
+            sse_event_buffer_size: 200,
+            tts_cache_web_path: "/tts_cache".to_string(),
+        }
+    }
+
+    #[test]
+    fn build_speak_text_uses_default_templates() {
+        let config = test_config();
+
+        assert_eq!(
+            TTSManager::build_speak_text(&config, "A01", "4", "th"),
+            "หมายเลข A01, เชิญช่อง 4"
+        );
+        assert_eq!(
+            TTSManager::build_speak_text(&config, "A01", "4", "en-GB"),
+            "Number A01, to counter 4"
+        );
+    }
+
+    #[test]
+    fn build_speak_text_renders_custom_templates() {
+        let mut config = test_config();
+        config.tts_announcement_template_th = "เชิญหมายเลข {Q_NUM} ไปที่ช่อง {DEST_NUM}".to_string();
+        config.tts_announcement_template_en =
+            "Queue {Q_NUM}, please proceed to counter {DEST_NUM}".to_string();
+
+        assert_eq!(
+            TTSManager::build_speak_text(&config, "B12", "7", "th"),
+            "เชิญหมายเลข B12 ไปที่ช่อง 7"
+        );
+        assert_eq!(
+            TTSManager::build_speak_text(&config, "B12", "7", "en-GB"),
+            "Queue B12, please proceed to counter 7"
+        );
+    }
+
+    #[test]
+    fn build_speak_text_falls_back_when_template_is_invalid() {
+        let mut config = test_config();
+        config.tts_announcement_template_en = "Now serving {Q_NUM}".to_string();
+
+        assert_eq!(
+            TTSManager::build_speak_text(&config, "C03", "2", "en-GB"),
+            "Number C03, to counter 2"
+        );
+    }
+
+    #[test]
+    fn get_sanitized_call_filename_includes_custom_template_key() {
+        assert_eq!(
+            TTSManager::get_sanitized_call_filename("A01", "1", "th_en-GB", None),
+            "A01-1_th_en-GB.mp3"
+        );
+        assert_eq!(
+            TTSManager::get_sanitized_call_filename("A01", "1", "th_en-GB", Some("tmpl_deadbeef")),
+            "A01-1_th_en-GB_tmpl_deadbeef.mp3"
+        );
     }
 }

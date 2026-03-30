@@ -198,6 +198,10 @@ mod tests {
             tts_cache_maximum_files: 10,
             tts_external_service_timeout_seconds: 5,
             tts_supported_languages: "th:Thai,en-GB:British English".to_string(),
+            tts_announcement_template_th: crate::config::DEFAULT_TTS_ANNOUNCEMENT_TEMPLATE_TH
+                .to_string(),
+            tts_announcement_template_en: crate::config::DEFAULT_TTS_ANNOUNCEMENT_TEMPLATE_EN
+                .to_string(),
             sse_keep_alive_interval_seconds: 15,
             sse_event_buffer_size: 10,
             tts_cache_web_path: "/tts".to_string(),

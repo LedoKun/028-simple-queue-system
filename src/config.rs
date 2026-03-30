@@ -15,6 +15,9 @@ use std::path::PathBuf;
 use std::time::Duration;
 use tracing::{debug, error, info};
 
+pub const DEFAULT_TTS_ANNOUNCEMENT_TEMPLATE_TH: &str = "หมายเลข {Q_NUM}, เชิญช่อง {DEST_NUM}";
+pub const DEFAULT_TTS_ANNOUNCEMENT_TEMPLATE_EN: &str = "Number {Q_NUM}, to counter {DEST_NUM}";
+
 /// `AppConfig` represents the complete configuration for the Queue Calling System application.
 ///
 /// This struct uses `envconfig` to load settings from environment variables,
@@ -133,6 +136,32 @@ pub struct AppConfig {
         default = "th:Thai,en-GB:British English"
     )]
     pub tts_supported_languages: String,
+
+    /// Template used to announce queue calls in Thai during live TTS generation.
+    ///
+    /// Supported placeholders:
+    /// - `{Q_NUM}` for the queue number
+    /// - `{DEST_NUM}` for the destination/counter
+    ///
+    /// Corresponds to the `TTS_ANNOUNCEMENT_TEMPLATE_TH` environment variable.
+    #[envconfig(
+        from = "TTS_ANNOUNCEMENT_TEMPLATE_TH",
+        default = "หมายเลข {Q_NUM}, เชิญช่อง {DEST_NUM}"
+    )]
+    pub tts_announcement_template_th: String,
+
+    /// Template used to announce queue calls in English during live TTS generation.
+    ///
+    /// Supported placeholders:
+    /// - `{Q_NUM}` for the queue number
+    /// - `{DEST_NUM}` for the destination/counter
+    ///
+    /// Corresponds to the `TTS_ANNOUNCEMENT_TEMPLATE_EN` environment variable.
+    #[envconfig(
+        from = "TTS_ANNOUNCEMENT_TEMPLATE_EN",
+        default = "Number {Q_NUM}, to counter {DEST_NUM}"
+    )]
+    pub tts_announcement_template_en: String,
 
     /// The interval in seconds for sending keep-alive messages to Server-Sent Events (SSE) clients.
     /// This helps prevent connection timeouts.
@@ -376,6 +405,30 @@ impl AppConfig {
 
         codes.join("_")
     }
+
+    /// Returns true when the live TTS templates are still on the built-in defaults.
+    pub fn tts_announcement_templates_are_default(&self) -> bool {
+        self.tts_announcement_template_th.trim() == DEFAULT_TTS_ANNOUNCEMENT_TEMPLATE_TH
+            && self.tts_announcement_template_en.trim() == DEFAULT_TTS_ANNOUNCEMENT_TEMPLATE_EN
+    }
+
+    /// Returns a stable cache key suffix for custom live TTS templates.
+    ///
+    /// The suffix is omitted for default templates so existing default cache and
+    /// pre-generated filenames remain compatible.
+    pub fn tts_announcement_templates_cache_key(&self) -> Option<String> {
+        if self.tts_announcement_templates_are_default() {
+            return None;
+        }
+
+        let combined = format!(
+            "th={}\nen={}",
+            self.tts_announcement_template_th.trim(),
+            self.tts_announcement_template_en.trim()
+        );
+
+        Some(format!("tmpl_{:016x}", stable_fnv1a_hash(&combined)))
+    }
 }
 
 pub(crate) fn normalize_language_code(raw: &str) -> String {
@@ -384,6 +437,18 @@ pub(crate) fn normalize_language_code(raw: &str) -> String {
     } else {
         raw.to_string()
     }
+}
+
+fn stable_fnv1a_hash(input: &str) -> u64 {
+    const OFFSET_BASIS: u64 = 0xcbf29ce484222325;
+    const PRIME: u64 = 0x100000001b3;
+
+    let mut hash = OFFSET_BASIS;
+    for byte in input.as_bytes() {
+        hash ^= u64::from(*byte);
+        hash = hash.wrapping_mul(PRIME);
+    }
+    hash
 }
 
 // Module for unit tests related to AppConfig
@@ -437,6 +502,8 @@ mod tests {
             tts_cache_maximum_files: 100,
             tts_external_service_timeout_seconds: 15,
             tts_supported_languages: String::new(), // This will be set for each test case
+            tts_announcement_template_th: DEFAULT_TTS_ANNOUNCEMENT_TEMPLATE_TH.to_string(),
+            tts_announcement_template_en: DEFAULT_TTS_ANNOUNCEMENT_TEMPLATE_EN.to_string(),
             sse_keep_alive_interval_seconds: 15,
             sse_event_buffer_size: 200,
             tts_cache_web_path: String::from("/tts_cache"),
@@ -517,6 +584,8 @@ mod tests {
             tts_cache_maximum_files: 100,
             tts_external_service_timeout_seconds: 15,
             tts_supported_languages: String::new(),
+            tts_announcement_template_th: DEFAULT_TTS_ANNOUNCEMENT_TEMPLATE_TH.to_string(),
+            tts_announcement_template_en: DEFAULT_TTS_ANNOUNCEMENT_TEMPLATE_EN.to_string(),
             sse_keep_alive_interval_seconds: 15,
             sse_event_buffer_size: 200,
             tts_cache_web_path: String::from("/tts_cache"),
@@ -553,6 +622,8 @@ mod tests {
             tts_cache_maximum_files: 100,
             tts_external_service_timeout_seconds: 15,
             tts_supported_languages: String::new(),
+            tts_announcement_template_th: DEFAULT_TTS_ANNOUNCEMENT_TEMPLATE_TH.to_string(),
+            tts_announcement_template_en: DEFAULT_TTS_ANNOUNCEMENT_TEMPLATE_EN.to_string(),
             sse_keep_alive_interval_seconds: 15,
             sse_event_buffer_size: 200,
             tts_cache_web_path: String::from("/tts_cache"),
@@ -566,5 +637,42 @@ mod tests {
 
         config.tts_supported_languages = "".to_string();
         assert_eq!(config.tts_language_suffix_for_filename(), "");
+    }
+
+    #[test]
+    fn test_tts_announcement_templates_cache_key() {
+        let mut config = AppConfig {
+            server_address: "0.0.0.0".parse().unwrap(),
+            server_port: 3000,
+            max_history_size: 5,
+            max_skipped_history_size: 5,
+            serve_dir_path: PathBuf::from("./public"),
+            announcements_audio_sub_path: PathBuf::from("media"),
+            banners_sub_path: PathBuf::from("media"),
+            banner_rotation_interval_seconds: 10,
+            announcement_auto_cycle_interval_seconds: 1200,
+            announcement_manual_trigger_cooldown_seconds: 60,
+            gtts_cache_base_path: PathBuf::from("/tmp/cache"),
+            tts_cache_maximum_files: 100,
+            tts_external_service_timeout_seconds: 15,
+            tts_supported_languages: "th:Thai,en-GB:British English".to_string(),
+            tts_announcement_template_th: DEFAULT_TTS_ANNOUNCEMENT_TEMPLATE_TH.to_string(),
+            tts_announcement_template_en: DEFAULT_TTS_ANNOUNCEMENT_TEMPLATE_EN.to_string(),
+            sse_keep_alive_interval_seconds: 15,
+            sse_event_buffer_size: 200,
+            tts_cache_web_path: String::from("/tts_cache"),
+        };
+
+        assert!(config.tts_announcement_templates_are_default());
+        assert_eq!(config.tts_announcement_templates_cache_key(), None);
+
+        config.tts_announcement_template_en =
+            "Now serving queue {Q_NUM}, counter {DEST_NUM}".to_string();
+
+        assert!(!config.tts_announcement_templates_are_default());
+        assert_eq!(
+            config.tts_announcement_templates_cache_key(),
+            Some("tmpl_66ef3c11b8c8a522".to_string())
+        );
     }
 }
