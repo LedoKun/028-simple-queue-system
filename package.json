@@ -6,8 +6,8 @@
   },
   "dependencies": {
     "@tailwindcss/cli": "^4.1",
-    "tailwindcss": "^4.1",
-    "css-vars-ponyfill": "^2.4.9"
+    "css-vars-ponyfill": "^2.4.9",
+    "tailwindcss": "^4.1"
   },
   "devDependencies": {
     "@babel/core": "^7.24.0",
@@ -18,7 +18,7 @@
     "core-js": "^3.37.1",
     "eventsource-polyfill": "^0.9.6",
     "regenerator-runtime": "^0.14.1",
-    "rollup": "^4.9.6",
+    "rollup": "^4.60.1",
     "whatwg-fetch": "^3.6.20"
   }
 }
