@@ -7,6 +7,20 @@ import { EventStream } from '../../sse/eventStream.js';
 const MAX_HISTORY_ITEMS_DISPLAY = 7;
 const MAX_SKIPPED_ITEMS_TO_DISPLAY = 4;
 const TTS_TIMEOUT_DURATION = 10_000;
+const SIGNAGE_PLACEHOLDERS = {
+  history: '-',
+  missed: '-',
+  announcement: 'ประกาศ / ANNOUNCEMENTS',
+};
+
+function normalizeTokenId(value) {
+  return value == null ? '' : String(value).trim().toUpperCase();
+}
+
+function getEntryTime(entry) {
+  const time = entry?.timestamp ? new Date(entry.timestamp).getTime() : 0;
+  return time === time ? time : 0;
+}
 
 class SignagePage {
   constructor() {
@@ -179,26 +193,60 @@ class SignagePage {
   }
 
   updateQueueDisplay(queueState) {
-    const labels = getLabels();
+    const activeCall = queueState?.current_call || this.currentProcessingEvent?.callData || this.lastShownCallData;
+    const { servedItems, missedItems } = this.getExclusiveDisplayItems(queueState, activeCall);
 
-    renderCallList(this.dom.listHistoryCalls, queueState?.completed_history, {
+    renderCallList(this.dom.listHistoryCalls, servedItems, {
       maxItems: MAX_HISTORY_ITEMS_DISPLAY,
-      placeholderText: labels.historyPlaceholder || '----',
+      placeholderText: SIGNAGE_PLACEHOLDERS.history,
       itemClass: 'history-item flex justify-between items-center',
       placeholderClass: 'history-item italic text-gray-500',
       timestampFormatter: formatDisplayTime,
       sanitizer: sanitizeText,
     });
 
-    renderCallList(this.dom.listSkippedCalls, queueState?.skipped_history, {
+    renderCallList(this.dom.listSkippedCalls, missedItems, {
       maxItems: MAX_SKIPPED_ITEMS_TO_DISPLAY,
-      placeholderText: labels.skippedPlaceholder || '----',
+      placeholderText: SIGNAGE_PLACEHOLDERS.missed,
       itemClass: 'history-item flex justify-between items-center',
       placeholderClass: 'history-item italic text-gray-500',
       highlightClass: 'text-yellow-400',
       timestampFormatter: formatDisplayTime,
       sanitizer: sanitizeText,
     });
+  }
+
+  getExclusiveDisplayItems(queueState, activeCall) {
+    const activeId = normalizeTokenId(activeCall?.id);
+    const latestByToken = Object.create(null);
+
+    const collect = (items, status) => {
+      if (!Array.isArray(items)) return;
+      items.forEach((item, index) => {
+        const id = normalizeTokenId(item?.id);
+        if (!id || id === activeId) return;
+
+        const candidate = {
+          item,
+          status,
+          time: getEntryTime(item),
+          index,
+        };
+        const previous = latestByToken[id];
+        if (!previous || candidate.time > previous.time || (candidate.time === previous.time && candidate.index < previous.index)) {
+          latestByToken[id] = candidate;
+        }
+      });
+    };
+
+    collect(queueState?.completed_history, 'served');
+    collect(queueState?.skipped_history, 'missed');
+
+    const entries = Object.keys(latestByToken).map((id) => latestByToken[id]).sort((a, b) => b.time - a.time);
+    return {
+      servedItems: entries.filter((entry) => entry.status === 'served').map((entry) => entry.item),
+      missedItems: entries.filter((entry) => entry.status === 'missed').map((entry) => entry.item),
+    };
   }
 
   updateAnnouncementDisplay(announcementStatus) {
@@ -218,7 +266,7 @@ class SignagePage {
         container.appendChild(wrapper);
       }
       if (span) {
-        span.textContent = getLabels().announcementPlaceholder || 'Announcements';
+        span.textContent = SIGNAGE_PLACEHOLDERS.announcement;
       }
       return;
     }
@@ -248,7 +296,7 @@ class SignagePage {
         wrapper.classList.remove('hidden');
       }
       if (span) {
-        span.textContent = getLabels().announcementPlaceholder || 'Announcements';
+        span.textContent = SIGNAGE_PLACEHOLDERS.announcement;
       }
       return;
     }
@@ -327,7 +375,7 @@ class SignagePage {
       placeholder = document.createElement('span');
       placeholder.id = 'announcement-placeholder';
       placeholder.className = 'text-gray-500 text-sm md:text-base';
-      placeholder.textContent = getLabels().announcementPlaceholder || 'Announcements';
+      placeholder.textContent = SIGNAGE_PLACEHOLDERS.announcement;
       wrapper.appendChild(placeholder);
       if (container) {
         container.appendChild(wrapper);
@@ -713,17 +761,16 @@ class SignagePage {
   }
 
   updateStaticPlaceholders() {
-    const labels = getLabels();
     const historyLi = this.dom.listHistoryCalls?.querySelector('.italic');
     if (historyLi && this.dom.listHistoryCalls.children.length <= 1) {
-      historyLi.textContent = labels.historyPlaceholder || 'Waiting for calls...';
+      historyLi.textContent = SIGNAGE_PLACEHOLDERS.history;
     }
     const skippedLi = this.dom.listSkippedCalls?.querySelector('.italic');
     if (skippedLi && this.dom.listSkippedCalls.children.length <= 1) {
-      skippedLi.textContent = labels.skippedPlaceholder || 'No skipped calls.';
+      skippedLi.textContent = SIGNAGE_PLACEHOLDERS.missed;
     }
     if (this.dom.announcementPlaceholder) {
-      this.dom.announcementPlaceholder.textContent = labels.announcementPlaceholder || 'Announcements';
+      this.dom.announcementPlaceholder.textContent = SIGNAGE_PLACEHOLDERS.announcement;
     }
   }
 

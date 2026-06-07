@@ -695,6 +695,18 @@
   var MAX_HISTORY_ITEMS_DISPLAY = 7;
   var MAX_SKIPPED_ITEMS_TO_DISPLAY = 4;
   var TTS_TIMEOUT_DURATION = 10000;
+  var SIGNAGE_PLACEHOLDERS = {
+    history: '-',
+    missed: '-',
+    announcement: 'ประกาศ / ANNOUNCEMENTS'
+  };
+  function normalizeTokenId(value) {
+    return value == null ? '' : String(value).trim().toUpperCase();
+  }
+  function getEntryTime(entry) {
+    var time = entry != null && entry.timestamp ? new Date(entry.timestamp).getTime() : 0;
+    return time === time ? time : 0;
+  }
   var SignagePage = /*#__PURE__*/function () {
     function SignagePage() {
       var _this = this;
@@ -984,24 +996,67 @@
       if (this.dom.locationElement) this.dom.locationElement.textContent = location;
     };
     _proto.updateQueueDisplay = function updateQueueDisplay(queueState) {
-      var labels = getLabels();
-      renderCallList(this.dom.listHistoryCalls, queueState == null ? void 0 : queueState.completed_history, {
+      var activeCall = (queueState == null ? void 0 : queueState.current_call) || (this.currentProcessingEvent == null ? void 0 : this.currentProcessingEvent.callData) || this.lastShownCallData;
+      var _this$getExclusiveDi = this.getExclusiveDisplayItems(queueState, activeCall),
+        servedItems = _this$getExclusiveDi.servedItems,
+        missedItems = _this$getExclusiveDi.missedItems;
+      renderCallList(this.dom.listHistoryCalls, servedItems, {
         maxItems: MAX_HISTORY_ITEMS_DISPLAY,
-        placeholderText: labels.historyPlaceholder || '----',
+        placeholderText: SIGNAGE_PLACEHOLDERS.history,
         itemClass: 'history-item flex justify-between items-center',
         placeholderClass: 'history-item italic text-gray-500',
         timestampFormatter: formatDisplayTime,
         sanitizer: sanitizeText
       });
-      renderCallList(this.dom.listSkippedCalls, queueState == null ? void 0 : queueState.skipped_history, {
+      renderCallList(this.dom.listSkippedCalls, missedItems, {
         maxItems: MAX_SKIPPED_ITEMS_TO_DISPLAY,
-        placeholderText: labels.skippedPlaceholder || '----',
+        placeholderText: SIGNAGE_PLACEHOLDERS.missed,
         itemClass: 'history-item flex justify-between items-center',
         placeholderClass: 'history-item italic text-gray-500',
         highlightClass: 'text-yellow-400',
         timestampFormatter: formatDisplayTime,
         sanitizer: sanitizeText
       });
+    };
+    _proto.getExclusiveDisplayItems = function getExclusiveDisplayItems(queueState, activeCall) {
+      var activeId = normalizeTokenId(activeCall == null ? void 0 : activeCall.id);
+      var latestByToken = Object.create(null);
+      var collect = function collect(items, status) {
+        if (!Array.isArray(items)) return;
+        items.forEach(function (item, index) {
+          var id = normalizeTokenId(item == null ? void 0 : item.id);
+          if (!id || id === activeId) return;
+          var candidate = {
+            item: item,
+            status: status,
+            time: getEntryTime(item),
+            index: index
+          };
+          var previous = latestByToken[id];
+          if (!previous || candidate.time > previous.time || candidate.time === previous.time && candidate.index < previous.index) {
+            latestByToken[id] = candidate;
+          }
+        });
+      };
+      collect(queueState == null ? void 0 : queueState.completed_history, 'served');
+      collect(queueState == null ? void 0 : queueState.skipped_history, 'missed');
+      var entries = Object.keys(latestByToken).map(function (id) {
+        return latestByToken[id];
+      }).sort(function (a, b) {
+        return b.time - a.time;
+      });
+      return {
+        servedItems: entries.filter(function (entry) {
+          return entry.status === 'served';
+        }).map(function (entry) {
+          return entry.item;
+        }),
+        missedItems: entries.filter(function (entry) {
+          return entry.status === 'missed';
+        }).map(function (entry) {
+          return entry.item;
+        })
+      };
     };
     _proto.updateAnnouncementDisplay = function updateAnnouncementDisplay(announcementStatus) {
       var _this4 = this;
@@ -1020,7 +1075,7 @@
           container.appendChild(wrapper);
         }
         if (span) {
-          span.textContent = getLabels().announcementPlaceholder || 'Announcements';
+          span.textContent = SIGNAGE_PLACEHOLDERS.announcement;
         }
         return;
       }
@@ -1050,7 +1105,7 @@
           wrapper.classList.remove('hidden');
         }
         if (span) {
-          span.textContent = getLabels().announcementPlaceholder || 'Announcements';
+          span.textContent = SIGNAGE_PLACEHOLDERS.announcement;
         }
         return;
       }
@@ -1120,7 +1175,7 @@
         placeholder = document.createElement('span');
         placeholder.id = 'announcement-placeholder';
         placeholder.className = 'text-gray-500 text-sm md:text-base';
-        placeholder.textContent = getLabels().announcementPlaceholder || 'Announcements';
+        placeholder.textContent = SIGNAGE_PLACEHOLDERS.announcement;
         wrapper.appendChild(placeholder);
         if (container) {
           container.appendChild(wrapper);
@@ -1484,17 +1539,16 @@
     };
     _proto.updateStaticPlaceholders = function updateStaticPlaceholders() {
       var _this$dom$listHistory, _this$dom$listSkipped;
-      var labels = getLabels();
       var historyLi = (_this$dom$listHistory = this.dom.listHistoryCalls) == null ? void 0 : _this$dom$listHistory.querySelector('.italic');
       if (historyLi && this.dom.listHistoryCalls.children.length <= 1) {
-        historyLi.textContent = labels.historyPlaceholder || 'Waiting for calls...';
+        historyLi.textContent = SIGNAGE_PLACEHOLDERS.history;
       }
       var skippedLi = (_this$dom$listSkipped = this.dom.listSkippedCalls) == null ? void 0 : _this$dom$listSkipped.querySelector('.italic');
       if (skippedLi && this.dom.listSkippedCalls.children.length <= 1) {
-        skippedLi.textContent = labels.skippedPlaceholder || 'No skipped calls.';
+        skippedLi.textContent = SIGNAGE_PLACEHOLDERS.missed;
       }
       if (this.dom.announcementPlaceholder) {
-        this.dom.announcementPlaceholder.textContent = labels.announcementPlaceholder || 'Announcements';
+        this.dom.announcementPlaceholder.textContent = SIGNAGE_PLACEHOLDERS.announcement;
       }
     };
     _proto.shouldDelayRefresh = function shouldDelayRefresh() {

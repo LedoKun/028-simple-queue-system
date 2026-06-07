@@ -3,6 +3,8 @@
 
 html, body {
   font-size: 16px;
+  color: #102033;
+  background: #eef6ff;
 }
 
 .aspect-ratio-container {
@@ -12,31 +14,64 @@ html, body {
 
 .signage-shell {
   padding: 20px;
-  gap: 8px;
+  gap: 18px;
 }
 
 .now-serving {
   padding: 24px;
+  background: #ffffff;
+  color: #102033;
+  border: 1px solid #d7e4f2;
+}
+
+.glass-card {
+  background: #ffffff;
+  color: #102033;
+  border: 1px solid #d7e4f2;
+}
+
+.hero-header {
+  padding: 28px 36px 0;
+}
+
+.token-focus {
+  padding: 20px 36px;
+}
+
+.token-kicker {
+  font-size: 28px;
+  color: #1266d6;
+  background: #e0eeff;
 }
 
 .main-label-text {
   font-size: 48px;
+  color: #102033;
 }
 
 .sub-label-text {
-  font-size: 20px;
+  font-size: 30px;
+  color: #1266d6;
 }
 
 .token-display {
   font-size: 220px;
+  color: #1266d6;
+}
+
+.counter-panel {
+  padding: 20px;
+  background: #f8fbff;
+  border: 1px solid #d7e4f2;
 }
 
 .counter-display {
   font-size: 120px;
+  color: #102033;
 }
 
 .side-panel {
-  gap: 8px;
+  gap: 18px;
 }
 
 .qr-card {
@@ -59,6 +94,7 @@ html, body {
 #announcement-area {
   min-height: 140px;
   padding: 12px;
+  background: #ffffff;
 }
 
 .banner-media {
@@ -70,13 +106,62 @@ html, body {
   font-size: 20px;
 }
 
+.list-title-th {
+  font-size: 34px;
+  font-weight: 900;
+}
+
+.list-title-en {
+  font-size: 22px;
+  font-weight: 900;
+  color: #087a53;
+}
+
+.list-title-note {
+  color: #5f6f82;
+  font-size: 18px;
+}
+
 .list-scroll {
   padding: 16px 24px 28px;
 }
 
 .history-item {
-  font-size: 26px;
-  padding: 6px 10px;
+  font-size: 42px;
+  padding: 12px 16px;
+  color: #102033;
+  background: #ffffff;
+  border: 1px solid #d7e4f2;
+}
+
+.history-item strong {
+  color: #087a53;
+}
+
+.history-item .timestamp {
+  color: #5f6f82;
+  font-size: 22px;
+}
+
+.missed-card {
+  background: #fffdf8;
+  border-color: #f3d69c;
+}
+
+.missed-card .list-title-en,
+#list-skipped-calls .history-item strong {
+  color: #a55d00;
+}
+
+#list-skipped-calls .history-item {
+  font-size: 28px;
+  padding: 8px 12px;
+  border-color: #f3d69c;
+}
+
+#list-skipped-calls .history-item.italic {
+  width: 100%;
+  text-align: center;
 }
 
 .bottom-row-wrapper {
@@ -89,10 +174,12 @@ html, body {
 
 #time {
   font-size: 40px;
+  color: #102033;
 }
 
 #date {
   font-size: 28px;
+  color: #5f6f82;
 }
 
 /* Avoid CSS Grid for older engines */
@@ -103,4 +190,3 @@ html, body {
   display: block;
   margin-top: 4px;
 }
-

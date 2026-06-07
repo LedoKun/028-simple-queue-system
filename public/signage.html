@@ -1,10 +1,10 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="th">
 
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Queue Signage Display</title>
+    <title>Number Signage Display</title>
     <link rel="apple-touch-icon" sizes="180x180" href="/media/favicon/apple-touch-icon.png">
     <link rel="icon" type="image/png" sizes="32x32" href="/media/favicon/favicon-32x32.png">
     <link rel="icon" type="image/png" sizes="16x16" href="/media/favicon/favicon-16x16.png">
@@ -13,6 +13,24 @@
     <!-- Legacy fallback CSS for older smart TVs (precedes inline modern CSS) -->
     <link href="css/signage-legacy.css" rel="stylesheet">
     <style>
+        :root {
+            --page-bg: #eef6ff;
+            --panel-bg: #ffffff;
+            --panel-soft: #f8fbff;
+            --border: #d7e4f2;
+            --text: #102033;
+            --muted: #5f6f82;
+            --blue: #1266d6;
+            --blue-soft: #e0eeff;
+            --green: #087a53;
+            --green-soft: #dff8ed;
+            --amber: #a55d00;
+            --amber-soft: #fff2d8;
+            --red: #b42318;
+            --red-soft: #ffe3df;
+            --shadow: 0 18px 50px rgba(29, 78, 137, 0.13);
+        }
+
         html,
         body {
             margin: 0;
@@ -20,184 +38,210 @@
             height: 100vh;
             width: 100vw;
             overflow: hidden;
-            font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+            font-family: "Noto Sans Thai", "Noto Sans", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
             font-size: clamp(14px, 1vw, 18px);
-            color: #e5e7eb;
-            background: radial-gradient(120% 120% at 50% 20%, #1f2937 0%, #111827 60%, #0b1120 100%);
+            color: var(--text);
+            background:
+                linear-gradient(135deg, rgba(255, 255, 255, 0.94) 0%, rgba(238, 246, 255, 0.9) 48%, rgba(225, 244, 238, 0.72) 100%),
+                var(--page-bg);
             -webkit-font-smoothing: antialiased;
             -moz-osx-font-smoothing: grayscale;
-            display: flex;
-            justify-content: center;
-            align-items: center;
             cursor: none;
         }
 
         .aspect-ratio-container {
             width: 100vw;
             height: 100vh;
-            aspect-ratio: 16 / 9;
         }
 
         .signage-shell {
-            display: flex;
+            display: grid;
+            grid-template-columns: minmax(0, 2.35fr) minmax(22rem, 1fr);
+            grid-template-rows: minmax(0, 1fr);
             height: 100%;
-            padding: clamp(1.25rem, 3vh, 2.5rem);
-            gap: clamp(0.25rem, 0.5vh, 0.4rem);
-            backdrop-filter: blur(10px);
+            gap: clamp(0.8rem, 1.6vw, 1.4rem);
+            padding: clamp(1rem, 2vw, 2rem);
+            box-sizing: border-box;
+        }
+
+        .now-serving,
+        .glass-card {
+            background: rgba(255, 255, 255, 0.94);
+            border: 1px solid var(--border);
+            box-shadow: var(--shadow);
         }
 
         .now-serving {
-            flex: 2;
-            display: flex;
-            flex-direction: column;
-            justify-content: space-between;
-            border-radius: 24px;
-            padding: clamp(1.5rem, 3vw, 2.5rem);
-            background: linear-gradient(145deg, rgba(55, 65, 81, 0.65), rgba(17, 24, 39, 0.85));
-            border: 1px solid rgba(148, 163, 184, 0.15);
-            box-shadow: 0 35px 60px -40px rgba(15, 23, 42, 0.9);
-            min-height: 0;
             position: relative;
+            display: grid;
+            grid-template-rows: auto minmax(0, 1fr) auto;
+            min-width: 0;
+            min-height: 0;
+            border-radius: 18px;
+            overflow: hidden;
+        }
+
+        .now-serving::before {
+            content: "";
+            position: absolute;
+            inset: 0;
+            border-top: clamp(0.55rem, 1vw, 0.85rem) solid var(--blue);
+            pointer-events: none;
+        }
+
+        .hero-header {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 1.25rem;
+            padding: clamp(1.4rem, 2.4vw, 2.2rem) clamp(1.6rem, 3vw, 3rem) 0;
+            position: relative;
+            z-index: 1;
         }
 
         .now-serving-header {
             display: flex;
             flex-direction: column;
-            gap: 0.25rem;
+            gap: 0.35rem;
+        }
+
+        .main-label-text,
+        .sub-label-text {
+            margin: 0;
+            line-height: 1.08;
+            letter-spacing: 0;
         }
 
         .main-label-text {
-            font-size: clamp(2.5rem, 4.5vw, 3.8rem);
-            font-weight: 600;
-            color: rgba(224, 231, 255, 0.85);
+            font-size: clamp(1.9rem, 3.4vw, 3.4rem);
+            font-weight: 800;
+            color: var(--text);
         }
 
         .sub-label-text {
-            font-size: clamp(1.1rem, 2vw, 1.7rem);
-            color: rgba(148, 163, 184, 0.85);
-            letter-spacing: 0.02em;
+            font-size: clamp(1.15rem, 2vw, 2rem);
+            font-weight: 800;
+            color: var(--blue);
         }
 
-        .token-display {
-            margin-top: 0;
-            font-size: clamp(14rem, 40vh, 28rem);
-            font-weight: 900;
-            line-height: 0.95;
-            letter-spacing: -0.04em;
-            color: #fde68a;
-            text-shadow: 0 15px 40px rgba(250, 204, 21, 0.35);
-            text-align: center;
+        .token-focus {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 0;
+            padding: 0 clamp(1.6rem, 3vw, 3rem);
         }
 
-        .counter-panel {
-            margin-top: 0;
-            display: grid;
-            gap: 0.25rem;
-            max-width: 100%;
-        }
-
-        #location-sublabels {
+        .token-kicker {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.75rem;
+            padding: 0.45rem 1.1rem;
+            border-radius: 999px;
+            background: var(--blue-soft);
+            color: var(--blue);
+            font-size: clamp(1.2rem, 2vw, 2rem);
+            font-weight: 800;
+            line-height: 1.2;
             white-space: nowrap;
         }
 
-        .counter-display {
-            font-size: clamp(8rem, 22vh, 15rem);
-            font-weight: 800;
-            line-height: 1;
-            color: #e2e8f0;
-            text-shadow: 0 8px 25px rgba(15, 23, 42, 0.55);
+        .token-kicker .kicker-en {
+            font-size: 0.72em;
+        }
+
+        .token-display {
+            width: 100%;
+            margin: 0;
+            color: var(--blue);
+            font-size: clamp(13rem, 39vh, 30rem);
+            font-weight: 950;
+            line-height: 0.88;
+            letter-spacing: 0;
             text-align: center;
+            text-shadow: 0 10px 30px rgba(18, 102, 214, 0.13);
+            font-variant-numeric: tabular-nums;
+        }
+
+        .counter-panel {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) auto;
+            align-items: end;
+            gap: clamp(1rem, 2vw, 2rem);
+            margin: 0 clamp(1.6rem, 3vw, 3rem) clamp(1.4rem, 2.4vw, 2.2rem);
+            padding: clamp(1rem, 1.8vw, 1.5rem);
+            border-radius: 14px;
+            background: var(--panel-soft);
+            border: 1px solid var(--border);
+        }
+
+        .counter-copy {
+            min-width: 0;
+        }
+
+        .counter-display {
+            color: var(--text);
+            font-size: clamp(5.5rem, 16vh, 13rem);
+            font-weight: 900;
+            line-height: 0.95;
+            letter-spacing: 0;
+            text-align: right;
+            font-variant-numeric: tabular-nums;
+        }
+
+        #datetime {
+            flex: 0 0 auto;
+            min-width: 12rem;
+            text-align: right;
+            color: var(--text);
+        }
+
+        #time,
+        #date {
+            display: block;
+            line-height: 1.05;
+            letter-spacing: 0;
+        }
+
+        #time {
+            font-size: clamp(2.2rem, 3.8vw, 4.2rem);
+            font-weight: 900;
+        }
+
+        #date {
+            margin-top: 0.25rem;
+            font-size: clamp(1.25rem, 2vw, 2.2rem);
+            font-weight: 800;
+            color: var(--muted);
         }
 
         .side-panel {
-            flex: 1.1;
-            display: flex;
-            flex-direction: column;
-            gap: clamp(0.25rem, 0.5vh, 0.4rem);
-        }
-
-        .glass-card {
-            background: rgba(17, 24, 39, 0.6);
-            border-radius: 20px;
-            border: 1px solid rgba(148, 163, 184, 0.12);
-            box-shadow: 0 20px 40px -30px rgba(15, 23, 42, 0.85);
-            overflow: hidden;
-            display: flex;
-            flex-direction: column;
-        }
-
-        .bottom-row-wrapper {
-            display: flex;
-            flex-direction: row;
-            gap: clamp(1.25rem, 2.5vh, 2rem);
-            flex: 1;
+            display: grid;
+            grid-template-rows: minmax(7rem, 0.8fr) minmax(0, 1.65fr) auto;
+            gap: clamp(0.8rem, 1.6vw, 1.4rem);
+            min-width: 0;
             min-height: 0;
         }
 
-        .bottom-row-wrapper .list-card {
-            flex: 1;
-        }
-
-        .qr-card {
-            flex: 0.5;
-            justify-content: center;
-            align-items: center;
-            padding: clamp(0.75rem, 1.5vh, 1.25rem);
-        }
-
-        .qr-card figure {
-            margin: 0;
-            display: flex;
-            flex-direction: row;
-            align-items: center;
-            justify-content: space-between;
-            gap: 0.75rem;
-            color: rgba(226, 232, 240, 0.95);
-            width: 100%;
-            height: 100%;
-        }
-
-        .qr-card img {
-            height: 100%;
-            max-height: 100%;
-            filter: drop-shadow(0 8px 20px rgba(15, 23, 42, 0.4));
-            border-radius: 20px;
-            aspect-ratio: 1/1;
-        }
-
-        .qr-card figcaption {
-            font-weight: 500;
-            text-align: left;
-            display: flex;
-            flex-direction: column;
-            gap: 0.2rem;
-            line-height: 1.3;
-        }
-
-        .figcaption-th {
-            font-size: clamp(1.2rem, 2.2vw, 1.8rem);
-            font-weight: 600;
-            color: rgba(224, 231, 255, 0.85);
-        }
-
-        .figcaption-en {
-            font-size: clamp(0.8rem, 1.5vw, 1.2rem);
-            font-weight: 400;
-            color: rgba(148, 163, 184, 0.85);
-            letter-spacing: 0.02em;
+        .glass-card {
+            border-radius: 14px;
+            overflow: hidden;
+            min-width: 0;
         }
 
         #announcement-area {
-            flex: none;
-            min-height: clamp(5rem, 17.5vh, 9rem);
+            min-height: 0;
+            padding: clamp(0.6rem, 1vw, 0.9rem);
             background: #ffffff;
-            padding: clamp(0.75rem, 1.5vh, 1.25rem);
         }
 
         #announcement-banner-container {
             width: 100%;
             height: 100%;
-            border-radius: 14px;
+            min-height: 0;
+            border-radius: 10px;
             background: #ffffff;
             display: flex;
             justify-content: center;
@@ -206,8 +250,9 @@
         }
 
         #announcement-placeholder {
-            font-size: clamp(1.2rem, 2.5vw, 2.2rem);
-            font-weight: 600;
+            color: var(--muted);
+            font-size: clamp(1.4rem, 2.2vw, 2.4rem);
+            font-weight: 800;
         }
 
         .banner-media {
@@ -218,38 +263,58 @@
         }
 
         .list-card {
-            flex: 1;
             display: flex;
             flex-direction: column;
-            overflow: hidden;
-            min-width: 0;
+            min-height: 0;
         }
 
         .list-card header {
-            padding: 1.2rem 1.5rem 0.9rem;
-            border-bottom: 1px solid rgba(148, 163, 184, 0.12);
+            display: flex;
+            align-items: flex-end;
+            justify-content: space-between;
+            gap: 1rem;
+            padding: clamp(1rem, 1.7vw, 1.45rem) clamp(1rem, 1.8vw, 1.6rem);
+            border-bottom: 1px solid var(--border);
+            background: var(--panel-soft);
         }
 
         .list-title {
-            font-size: clamp(0.9rem, 1.5vw, 1.3rem);
-            font-weight: 600;
-            letter-spacing: 0.015em;
-            display: flex;
-            align-items: baseline;
-            justify-content: space-between;
+            display: grid;
+            gap: 0.15rem;
+            margin: 0;
+            line-height: 1.08;
         }
 
-        .list-title span {
-            font-size: 0.75rem;
-            color: rgba(156, 163, 175, 0.8);
-            font-weight: 500;
+        .list-title-th,
+        .list-title-en {
+            display: block;
+            font-weight: 900;
+            letter-spacing: 0;
+        }
+
+        .list-title-th {
+            font-size: clamp(1.55rem, 2.5vw, 2.5rem);
+            color: var(--text);
+        }
+
+        .list-title-en {
+            font-size: clamp(1rem, 1.55vw, 1.55rem);
+            color: var(--green);
+        }
+
+        .list-title-note {
+            color: var(--muted);
+            font-size: clamp(0.95rem, 1.4vw, 1.3rem);
+            font-weight: 800;
+            white-space: nowrap;
         }
 
         .list-scroll {
             flex: 1;
-            overflow-y: hidden;
-            padding: 1rem 1.5rem 1.75rem;
+            overflow: hidden;
+            padding: clamp(0.75rem, 1.4vw, 1.2rem);
             min-width: 0;
+            min-height: 0;
         }
 
         #list-history-calls,
@@ -257,134 +322,171 @@
             list-style: none;
             padding: 0;
             margin: 0;
+            min-width: 0;
+        }
+
+        #list-history-calls {
             display: flex;
             flex-direction: column-reverse;
-            gap: 0.8rem;
+            gap: clamp(0.45rem, 0.9vw, 0.8rem);
+        }
+
+        #list-skipped-calls {
+            display: flex;
+            flex-direction: row;
+            gap: clamp(0.45rem, 0.9vw, 0.8rem);
+            align-items: center;
+            overflow: hidden;
+            white-space: nowrap;
         }
 
         .history-item {
             display: flex;
-            justify-content: space-between;
             align-items: center;
-            font-size: clamp(1.4rem, 2.2vw, 1.9rem);
-            padding: 0.3rem 0.7rem;
-            border-radius: 12px;
-            background: rgba(30, 41, 59, 0.55);
-            border: 1px solid rgba(148, 163, 184, 0.08);
+            justify-content: space-between;
+            gap: clamp(0.6rem, 1vw, 1rem);
+            min-width: 0;
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            background: #ffffff;
+            padding: clamp(0.65rem, 1.1vw, 1rem) clamp(0.8rem, 1.3vw, 1.15rem);
+            color: var(--text);
+            font-size: clamp(2rem, 3.7vw, 3.8rem);
+            font-weight: 850;
+            line-height: 1.05;
             white-space: nowrap;
-            gap: 0.6rem;
         }
 
         .history-item.italic {
-            display: block;
+            justify-content: center;
+            color: var(--muted);
+            font-style: normal;
+            font-size: clamp(1.35rem, 2.1vw, 2rem);
+            font-weight: 800;
             text-align: center;
         }
 
         .history-item strong {
-            letter-spacing: -0.07em;
-            word-spacing: -0.2em;
+            color: var(--green);
+            font-weight: 950;
+            letter-spacing: 0;
+            font-variant-numeric: tabular-nums;
         }
 
         .history-item .id-part,
-        .history-item strong {
+        .history-item span:first-child {
             min-width: 0;
-        }
-
-        .history-item .id-part {
             overflow: hidden;
             text-overflow: ellipsis;
         }
 
         .history-item .timestamp {
-            color: rgba(148, 163, 184, 0.75);
-            font-size: 1em;
-            letter-spacing: normal;
             flex: 0 0 auto;
-            margin-left: 0.5rem;
+            color: var(--muted);
+            font-size: clamp(1rem, 1.6vw, 1.45rem);
+            font-weight: 800;
+            letter-spacing: 0;
+            margin-left: 0.25rem;
         }
 
-        @media (max-width: 768px) {
-            .signage-shell {
-                padding: 1rem;
-                gap: 1rem;
-                flex-direction: column;
-            }
+        .missed-card {
+            border-color: #f3d69c;
+            background: #fffdf8;
+        }
 
-            .now-serving {
-                padding: 1.25rem;
-            }
+        .missed-card header {
+            padding-top: clamp(0.7rem, 1.2vw, 1rem);
+            padding-bottom: clamp(0.7rem, 1.2vw, 1rem);
+            background: var(--amber-soft);
+            border-bottom-color: #f3d69c;
+        }
+
+        .missed-card .list-scroll {
+            padding: clamp(0.6rem, 1vw, 0.85rem);
+        }
+
+        .missed-card .list-title-en {
+            color: var(--amber);
+        }
+
+        #list-skipped-calls .history-item {
+            flex: 0 0 auto;
+            max-width: 100%;
+            border-color: #f3d69c;
+            background: #ffffff;
+            color: var(--text);
+            padding: 0.45rem 0.75rem;
+            font-size: clamp(1.25rem, 1.9vw, 1.9rem);
+        }
+
+        #list-skipped-calls .history-item strong {
+            color: var(--amber);
+        }
+
+        #list-skipped-calls .history-item .timestamp {
+            display: none;
+        }
+
+        #list-skipped-calls .history-item.italic {
+            flex: 1 1 100%;
+            justify-content: center;
+            text-align: center;
         }
 
         #sse-status-indicator {
             position: absolute;
-            bottom: clamp(1.25rem, 3vh, 2.5rem);
-            right: clamp(1.25rem, 3vh, 2.5rem);
-            padding: 0.5rem 1rem;
+            right: clamp(1.1rem, 2vw, 2rem);
+            bottom: clamp(1.1rem, 2vw, 2rem);
+            z-index: 5;
+            min-width: 9rem;
+            padding: 0.45rem 0.8rem;
             border-radius: 999px;
-            font-size: 0.85rem;
-            font-weight: 600;
-            letter-spacing: 0.02em;
-            min-width: 10rem;
+            background: var(--blue-soft);
+            color: var(--blue);
+            font-size: clamp(0.8rem, 1vw, 1rem);
+            font-weight: 800;
+            line-height: 1.1;
             text-align: center;
-            background: rgba(59, 130, 246, 0.18);
-            color: #dbeafe;
-            transition: background-color 0.3s ease, color 0.3s ease;
-            z-index: 50;
+            box-shadow: 0 6px 18px rgba(18, 102, 214, 0.1);
         }
 
         #sse-status-indicator[data-status='connecting'] {
-            background: rgba(234, 179, 8, 0.25);
-            color: #fef08a;
+            background: var(--amber-soft);
+            color: var(--amber);
         }
 
         #sse-status-indicator[data-status='connected'] {
-            background: rgba(34, 197, 94, 0.28);
-            color: #bbf7d0;
+            background: var(--green-soft);
+            color: var(--green);
         }
 
         #sse-status-indicator[data-status='disconnected'] {
-            background: rgba(248, 113, 113, 0.28);
-            color: #fecaca;
+            background: var(--red-soft);
+            color: var(--red);
         }
 
         #sse-status-indicator[data-status='unsupported'] {
-            background: rgba(148, 163, 184, 0.28);
-            color: #e2e8f0;
+            background: #edf1f5;
+            color: var(--muted);
         }
 
-        #datetime {
-            position: absolute;
-            top: clamp(1.25rem, 3vh, 2.5rem);
-            right: clamp(1.25rem, 3vh, 2.5rem);
-            text-align: right;
-            background: rgba(17, 24, 39, 0.6);
-            border-radius: 10px;
-            border: 1px solid rgba(148, 163, 184, 0.12);
-            padding: 0.5rem 1rem;
-        }
+        @media (max-width: 900px) {
+            .signage-shell {
+                grid-template-columns: 1fr;
+                grid-template-rows: minmax(0, 1.55fr) minmax(0, 1fr);
+            }
 
-        #time {
-            display: block;
-            font-size: 2.5rem;
-            font-weight: 700;
-        }
+            .side-panel {
+                grid-template-rows: minmax(5rem, 0.7fr) minmax(0, 1fr) auto;
+            }
 
-        #date {
-            display: block;
-            font-size: 1.8rem;
-            font-weight: 600;
-        }
+            .counter-panel {
+                grid-template-columns: 1fr;
+            }
 
-        .cards-row {
-            display: flex;
-            gap: clamp(0.25rem, 0.5vh, 0.4rem);
-            flex: 0.5;
-            min-height: 0;
-            min-width: 0;
-        }
-
-        .cards-row>.list-card {
-            min-width: 0;
+            .counter-display {
+                text-align: left;
+            }
         }
     </style>
 </head>
@@ -392,53 +494,72 @@
 <body>
     <div class="aspect-ratio-container">
         <div class="signage-shell">
-            <section class="now-serving">
-                <div id="datetime">
-                    <span id="time"></span>
-                    <span id="date"></span>
+            <section class="now-serving" aria-labelledby="call-id-label">
+                <div class="hero-header">
+                    <div class="now-serving-header">
+                        <p id="call-id-label" class="main-label-text">กำลังให้บริการ</p>
+                        <p id="call-id-sublabels" class="sub-label-text">NOW SERVING</p>
+                    </div>
+                    <div id="datetime">
+                        <span id="time"></span>
+                        <span id="date"></span>
+                    </div>
                 </div>
-                <div class="now-serving-header">
-                    <div id="call-id-label" class="main-label-text">หมายเลข / TOKEN</div>
-                    <div id="call-id-sublabels" class="sub-label-text">Token / တိုကင် / 代幣 / 代币 / トークン / តូខិន / 토큰 /
-                        Thẻ Token</div>
+
+                <div class="token-focus">
+                    <div class="token-kicker">
+                        <span class="kicker-th">หมายเลข</span>
+                        <span>/</span>
+                        <span class="kicker-en">NUMBER</span>
+                    </div>
+                    <div id="current-call-id" class="token-display">----</div>
                 </div>
-                <div id="current-call-id" class="token-display">----</div>
+
                 <div class="counter-panel">
-                    <div id="location-label" class="main-label-text">ช่อง / COUNTER</div>
-                    <div id="location-sublabels" class="sub-label-text">Loket / ကောင်တာ / 櫃檯 / 窗口 / 窓口 / កុងទ័រ / 창구 /
-                        Quầy</div>
+                    <div class="counter-copy">
+                        <p id="location-label" class="main-label-text">ช่องบริการ</p>
+                        <p id="location-sublabels" class="sub-label-text">COUNTER</p>
+                    </div>
                     <div id="current-location" class="counter-display">----</div>
                 </div>
-                <div id="sse-status-indicator" title="SSE Connection Status" data-status="connecting">Connecting…</div>
+
+                <div id="sse-status-indicator" title="SSE Connection Status" data-status="connecting">Connecting...</div>
             </section>
 
             <aside class="side-panel">
                 <div id="announcement-area" class="glass-card">
                     <div id="announcement-banner-container">
-                        <span id="announcement-placeholder" class="text-gray-600">Announcements</span>
+                        <span id="announcement-placeholder">ประกาศ / ANNOUNCEMENTS</span>
                     </div>
                 </div>
 
-                <div class="cards-row">
-                    <div class="glass-card list-card">
-                        <header class="list-title"><span style="color: #86efac">Served</span> <span>Tokens</span>
-                        </header>
-                        <div class="list-scroll">
-                            <ul id="list-history-calls">
-                                <li class="history-item italic text-gray-400">---</li>
-                            </ul>
-                        </div>
+                <div class="glass-card list-card">
+                    <header>
+                        <h2 class="list-title">
+                            <span class="list-title-th">เรียกแล้ว</span>
+                            <span class="list-title-en">SERVED</span>
+                        </h2>
+                        <span class="list-title-note">NUMBER</span>
+                    </header>
+                    <div class="list-scroll">
+                        <ul id="list-history-calls">
+                            <li class="history-item italic text-gray-400">----</li>
+                        </ul>
                     </div>
                 </div>
-                <div class="cards-row">
-                    <div id="missed-tokens-card" class="glass-card list-card">
-                        <header class="list-title"><span style="color: #fcd34d">Missed</span> <span>Tokens</span>
-                        </header>
-                        <div class="list-scroll">
-                            <ul id="list-skipped-calls">
-                                <li class="history-item italic text-gray-400">---</li>
-                            </ul>
-                        </div>
+
+                <div id="missed-tokens-card" class="glass-card list-card missed-card">
+                    <header>
+                        <h2 class="list-title">
+                            <span class="list-title-th">ติดต่อเจ้าหน้าที่</span>
+                            <span class="list-title-en">CONTACT STAFF</span>
+                        </h2>
+                        <span class="list-title-note">NUMBER</span>
+                    </header>
+                    <div class="list-scroll">
+                        <ul id="list-skipped-calls">
+                            <li class="history-item italic text-gray-400">----</li>
+                        </ul>
                     </div>
                 </div>
             </aside>
