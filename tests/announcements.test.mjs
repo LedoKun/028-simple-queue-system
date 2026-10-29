@@ -88,6 +88,8 @@ test('operator keeps next disabled while off or without eligible slots', () => {
   page.renderAnnouncementSlotButtons = () => {};
   for (const [enabled, available_slots, expected] of [
     [false, [{ id: 'daily' }], true], [true, [], true], [true, [{ id: 'daily' }], false],
+    [true, [{ id: 'lab', available_today: false }], true],
+    [true, [{ id: 'lab', available_today: false }, { id: 'daily', available_today: true }], false],
   ]) {
     page.updateAnnouncementStatusDisplay({ enabled, available_slots, cooldown_remaining_seconds: 0 });
     assert.equal(page.dom.btnNextAnnouncement.disabled, expected);
@@ -95,6 +97,65 @@ test('operator keeps next disabled while off or without eligible slots', () => {
   page.updateAnnouncementStatusDisplay(null);
   assert.equal(page.dom.btnToggleAnnouncements.disabled, true);
   assert.equal(page.dom.btnNextAnnouncement.disabled, true);
+});
+
+test('operator renders all slots and grays out those not scheduled today', (t) => {
+  const element = () => ({
+    children: [], disabled: false,
+    classList: { add() {} },
+    appendChild(child) { this.children.push(child); },
+    addEventListener() {},
+  });
+  globalThis.document.createElement = element;
+  t.after(() => { delete globalThis.document.createElement; });
+  const page = Object.create(OperatorPage.prototype);
+  page.dom = { announcementSlotList: element() };
+  page.renderAnnouncementSlotButtons({
+    enabled: true, cooldown_active: false,
+    available_slots: [
+      { id: 'daily', available_today: true, audio_playlist: ['/daily.mp3'] },
+      { id: 'lab', available_today: false, audio_playlist: ['/lab.mp3'] },
+    ],
+  });
+  const [daily, lab] = page.dom.announcementSlotList.children;
+  assert.equal(daily.disabled, false);
+  assert.equal(lab.disabled, true);
+  assert.equal(lab.children[0].textContent, 'Trigger lab');
+  assert.match(lab.children[1].textContent, /not scheduled today/);
+  assert.match(lab.className, /bg-gray-600/);
+  assert.match(daily.className, /bg-purple-700/);
+});
+
+test('Enter on the translator control submits the queue form without calling a translator', () => {
+  const handlers = {};
+  let queueCalls = 0, translatorCalls = 0, focused = 0, prevented = 0;
+  const page = Object.create(OperatorPage.prototype);
+  const callButton = { disabled: false };
+  page.dom = {
+    callForm: {
+      addEventListener() {},
+      requestSubmit(button) { assert.equal(button, callButton); queueCalls++; },
+    },
+    btnCall: callButton,
+    btnCallTranslator: { addEventListener(name, handler) { handlers[name] = handler; } },
+    originalIdInput: { addEventListener() {}, focus() { focused++; } },
+  };
+  page.handleCallTranslator = () => { translatorCalls++; };
+  page.attachEventHandlers();
+  const enter = { key: 'Enter', preventDefault() { prevented++; } };
+  handlers.keydown(enter);
+  assert.equal(queueCalls, 1);
+  assert.equal(translatorCalls, 0);
+  handlers.keydown({ ...enter, repeat: true });
+  assert.equal(queueCalls, 1, 'holding Enter must not repeat a submission');
+  callButton.disabled = true;
+  handlers.keydown(enter);
+  assert.equal(queueCalls, 1);
+  assert.equal(focused, 1, 'an incomplete or pending call returns focus to its input');
+  handlers.keydown({ key: ' ', preventDefault() { throw new Error('Space must retain native button activation'); } });
+  handlers.click({});
+  assert.equal(translatorCalls, 1, 'explicit button activation remains available');
+  assert.equal(prevented, 3);
 });
 
 test('toggle API sends an explicit boolean state', async () => {

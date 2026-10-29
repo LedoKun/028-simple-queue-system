@@ -156,8 +156,8 @@ ANNOUNCEMENT_02_BRING_THAI_ID_DAYS=off
 Use comma-separated weekday names (short or full names, case insensitive), `all`
 for every day, or `off` to disable one slot. Invalid or empty schedules log an
 error and exclude that slot. Day changes take effect without a restart. Automatic
-cycling and manual triggers both obey these schedules; unavailable slots are
-hidden from the operator panel.
+cycling and manual triggers both obey these schedules; unavailable slots remain
+visible but grayed out in the operator panel.
 
 The operator's **Turn Announcements Off** button stops current and queued
 prerecorded playback on connected signage displays. Turning announcements back on
@@ -166,8 +166,9 @@ The initial state comes from `ANNOUNCEMENTS_ENABLED` after every server restart.
 Use `ANNOUNCEMENT_AUTO_CYCLE_INTERVAL_SECONDS=0` for manual playback only.
 
 API: `PUT /api/announcements/enabled` with `{"enabled": false}` or
-`{"enabled": true}`. `GET /api/announcements/status` includes `enabled` and today's
-`available_slots`. Disabled or out-of-schedule manual triggers return HTTP 409.
+`{"enabled": true}`. `GET /api/announcements/status` includes `enabled` and all
+`available_slots`, each with an `available_today` flag. Disabled or out-of-schedule
+manual triggers return HTTP 409. Advancing with no eligible slots returns HTTP 503.
 
 ### Validation
 

@@ -195,6 +195,13 @@ export class OperatorPage {
 
     if (btnCallTranslator) {
       btnCallTranslator.addEventListener('click', (event) => this.handleCallTranslator(event));
+      btnCallTranslator.addEventListener('keydown', (event) => {
+        if (event.key !== 'Enter') return;
+        event.preventDefault();
+        if (event.repeat) return;
+        if (this.dom.btnCall?.disabled) originalIdInput?.focus();
+        else callForm?.requestSubmit(this.dom.btnCall);
+      });
     }
 
     if (originalIdInput) {
@@ -331,9 +338,11 @@ export class OperatorPage {
     const activeSlotId = announcementStatus.current_slot_id || null;
 
     announcementStatus.available_slots.forEach((slot) => {
+      const availableToday = slot.available_today !== false;
       const button = document.createElement('button');
       button.type = 'button';
-      button.className = 'flex items-center justify-between gap-2 w-full bg-purple-700 hover:bg-purple-800 text-white font-semibold py-2 px-3 rounded-md shadow focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-opacity-50 transition duration-150 text-left';
+      button.className = 'flex items-center justify-between gap-2 w-full font-semibold py-2 px-3 rounded-md shadow focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-opacity-50 transition duration-150 text-left';
+      button.className += availableToday ? ' bg-purple-700 hover:bg-purple-800 text-white' : ' bg-gray-600 text-gray-400';
 
       if (slot.id === activeSlotId) {
         button.classList.add('border', 'border-purple-300');
@@ -347,15 +356,18 @@ export class OperatorPage {
       button.appendChild(labelSpan);
 
       const metaSpan = document.createElement('span');
-      metaSpan.className = 'slot-trigger-meta text-xs text-purple-200 uppercase tracking-wide';
+      metaSpan.className = 'slot-trigger-meta text-xs uppercase tracking-wide';
+      metaSpan.className += availableToday ? ' text-purple-200' : ' text-gray-400';
       const metaParts = [`${audioCount} file${audioCount === 1 ? '' : 's'}`];
+      if (!availableToday) metaParts.push('not scheduled today');
       if (slot.id === activeSlotId) metaParts.push('current');
       metaSpan.textContent = metaParts.join(' • ');
       button.appendChild(metaSpan);
 
-      if (cooldownActive) {
+      if (cooldownActive || !availableToday) {
         button.disabled = true;
-        button.classList.add('opacity-50', 'cursor-not-allowed');
+        button.classList.add('cursor-not-allowed');
+        if (availableToday) button.classList.add('opacity-50');
       }
 
       button.addEventListener('click', () => this.handleManualAnnouncementTrigger(slot.id, button));
@@ -380,7 +392,7 @@ export class OperatorPage {
 
     const enabled = Boolean(status?.enabled);
     const remaining = Number(status?.cooldown_remaining_seconds) || 0;
-    const ready = enabled && remaining === 0 && status.available_slots?.length > 0;
+    const ready = enabled && remaining === 0 && status.available_slots?.some(slot => slot.available_today !== false);
     if (this.dom.btnToggleAnnouncements) {
       this.dom.btnToggleAnnouncements.disabled = !status;
       this.dom.btnToggleAnnouncements.textContent = enabled ? 'Turn Announcements Off' : 'Turn Announcements On';

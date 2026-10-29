@@ -22,7 +22,7 @@ function createFeedbackController({ elementId = 'feedback-area', root = document
   };
 
   const applyTypeClasses = (element, type) => {
-    const baseClasses = 'mb-4 p-3 rounded-md text-sm transition-opacity duration-300 ease-in-out';
+    const baseClasses = 'p-3 rounded-md text-sm transition-opacity duration-300 ease-in-out';
     const typeMap = {
       success: 'bg-green-600 text-white',
       warning: 'bg-yellow-500 text-black',

@@ -28,6 +28,7 @@ pub struct AnnouncementSlot {
 pub struct AnnouncementSlotSummary {
     pub id: String,
     pub audio_playlist: Vec<String>,
+    pub available_today: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -40,7 +41,7 @@ pub struct AnnouncementStatus {
     pub cooldown_seconds: u64,
     pub cooldown_remaining_seconds: u64,
     pub cooldown_active: bool,
-    /// Slots eligible on the current day, including when playback is disabled.
+    /// All discovered slots, with their availability on the current day.
     pub available_slots: Vec<AnnouncementSlotSummary>,
 }
 
@@ -486,10 +487,10 @@ impl AnnouncementManager {
             available_slots: self
                 .slots
                 .iter()
-                .filter(|slot| slot.weekdays.contains(&today))
                 .map(|slot| AnnouncementSlotSummary {
                     id: slot.id.clone(),
                     audio_playlist: playlist(&slot.audio_files),
+                    available_today: slot.weekdays.contains(&today),
                 })
                 .collect(),
         }
@@ -694,15 +695,16 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn unavailable_slots_are_hidden_and_rejected_without_consuming_cooldown() {
+    async fn unavailable_slots_remain_visible_and_rejected_without_consuming_cooldown() {
         let mut manager = manager();
         manager.slots[0].weekdays.clear();
         manager.slots[1].weekdays.clear();
-        assert!(manager
-            .get_current_status()
-            .await
+        let status = manager.get_current_status().await;
+        assert_eq!(status.available_slots.len(), 2);
+        assert!(status
             .available_slots
-            .is_empty());
+            .iter()
+            .all(|slot| !slot.available_today));
         assert!(matches!(
             manager.manual_trigger_slot("daily").await,
             Err(ManualTriggerError::SlotUnavailable(_))
@@ -718,6 +720,23 @@ mod tests {
         manager.advance_slot().await;
         assert!(manager.get_current_status().await.current_slot_id.is_none());
         assert!(manager.last_manual_trigger.is_none());
+    }
+
+    #[tokio::test]
+    async fn slot_availability_is_separate_from_the_global_toggle() {
+        let mut manager = manager();
+        manager.slots[1].weekdays.clear();
+        for enabled in [true, false] {
+            manager.set_enabled(enabled).await;
+            let status = manager.get_current_status().await;
+            assert_eq!(status.enabled, enabled);
+            assert_eq!(status.available_slots.len(), 2);
+            assert!(status.available_slots[0].available_today);
+            assert!(!status.available_slots[1].available_today);
+            assert!(!status.available_slots[1].audio_playlist.is_empty());
+        }
+        manager.slots[1].weekdays = parse_weekdays("all").unwrap();
+        assert!(manager.get_current_status().await.available_slots[1].available_today);
     }
 
     #[tokio::test]
