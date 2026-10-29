@@ -4,9 +4,14 @@
 RUST_LOG=info
 SERVER_ADDRESS=0.0.0.0
 SERVER_PORT=3000
-MAX_HISTORY_SIZE=5
+MAX_HISTORY_SIZE=7
 MAX_SKIPPED_HISTORY_SIZE=5
 SERVE_DIR_PATH=./public
+ANNOUNCEMENTS_ENABLED=true
+ANNOUNCEMENT_UTC_OFFSET_HOURS=7
+# Optional per-slot overrides: all (default), off, or comma-separated weekdays.
+# 03-lab-done already defaults to Tuesday, Wednesday and Thursday.
+# ANNOUNCEMENT_03_LAB_DONE_DAYS=tue,wed,thu
 ANNOUNCEMENTS_AUDIO_SUB_PATH=media/announcements
 BANNERS_SUB_PATH=media/banners
 ANNOUNCEMENT_AUTO_CYCLE_INTERVAL_SECONDS=1200

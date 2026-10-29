@@ -13,6 +13,7 @@ pub mod tts;
 
 use announcements::{
     get_announcement_status, manual_advance_announcement, manual_trigger_specific_announcement,
+    set_announcements_enabled,
 };
 use events::sse_events;
 use queue::{complete_call, force_skip_new_call, get_queue_state, queue_call, skip_call};
@@ -37,6 +38,10 @@ pub fn router() -> Router<Arc<AppState>> {
         .route("/queue/force_skip", post(force_skip_new_call))
         .route("/queue/state", get(get_queue_state))
         .route("/announcements/status", get(get_announcement_status))
+        .route(
+            "/announcements/enabled",
+            axum::routing::put(set_announcements_enabled),
+        )
         .route("/announcements/next", post(manual_advance_announcement))
         .route(
             "/announcements/trigger/:slot_id",

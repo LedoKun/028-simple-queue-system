@@ -75,9 +75,8 @@ impl QueueService {
             .ok_or(QueueError::InconsistentState("add_call"))?;
         let current_call = call_ref.clone();
         let queue_state = manager.snapshot();
-        drop(manager);
-
         self.broadcast_queue_update(queue_state);
+        drop(manager);
         self.trigger_tts_for_call(&current_call);
 
         Ok(current_call)
@@ -90,9 +89,8 @@ impl QueueService {
         let mut manager = self.manager.lock().await;
         let skipped_call = manager.skip_current_call();
         let queue_state = manager.snapshot();
-        drop(manager);
-
         self.broadcast_queue_update(queue_state);
+        drop(manager);
         skipped_call
     }
 
@@ -103,9 +101,8 @@ impl QueueService {
         let mut manager = self.manager.lock().await;
         let completed_call = manager.complete_current_call();
         let queue_state = manager.snapshot();
-        drop(manager);
-
         self.broadcast_queue_update(queue_state);
+        drop(manager);
         completed_call
     }
 
@@ -125,9 +122,8 @@ impl QueueService {
             .add_to_skipped_directly(original_id.to_string(), location.to_string())
             .ok_or(QueueError::InconsistentState("force_skip_call"))?;
         let queue_state = manager.snapshot();
-        drop(manager);
-
         self.broadcast_queue_update(queue_state);
+        drop(manager);
         Ok(skipped_call)
     }
 
@@ -193,15 +189,17 @@ mod tests {
             max_skipped_history_size: 5,
             queue_identifier_prefix_required: true,
             serve_dir_path: Default::default(),
+            announcements_enabled: true,
+            announcement_utc_offset_hours: 7,
             announcements_audio_sub_path: Default::default(),
             banners_sub_path: Default::default(),
             banner_rotation_interval_seconds: 1,
             announcement_auto_cycle_interval_seconds: 1,
             announcement_manual_trigger_cooldown_seconds: 1,
-            gtts_cache_base_path: Default::default(),
+            gtts_cache_base_path: std::env::temp_dir(),
             tts_cache_maximum_files: 10,
             tts_external_service_timeout_seconds: 5,
-            tts_supported_languages: "th:Thai,en-GB:British English".to_string(),
+            tts_supported_languages: String::new(),
             tts_announcement_template_th: crate::config::DEFAULT_TTS_ANNOUNCEMENT_TEMPLATE_TH
                 .to_string(),
             tts_announcement_template_en: crate::config::DEFAULT_TTS_ANNOUNCEMENT_TEMPLATE_EN
@@ -211,10 +209,46 @@ mod tests {
             tts_cache_web_path: "/tts".to_string(),
         });
 
-        let (sender, receiver) = broadcast::channel(8);
+        let (sender, receiver) = broadcast::channel(64);
         let tts = TtsService::new(Arc::clone(&config), sender.clone());
         let queue_service = QueueService::new(config, sender, tts);
         (queue_service, receiver)
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn concurrent_operators_broadcast_queue_changes_in_order() {
+        let (service, mut receiver) = test_services();
+        let barrier = Arc::new(tokio::sync::Barrier::new(33));
+        let mut tasks = Vec::new();
+        for number in 1..=32 {
+            let service = service.clone();
+            let barrier = Arc::clone(&barrier);
+            tasks.push(tokio::spawn(async move {
+                barrier.wait().await;
+                service
+                    .add_call(&format!("A{}", number), "1")
+                    .await
+                    .unwrap();
+            }));
+        }
+        barrier.wait().await;
+        let mut previous = None;
+        for _ in 0..32 {
+            let AppEvent::QueueUpdate(state) = receiver.recv().await.unwrap() else {
+                panic!("expected queue event");
+            };
+            if let Some(previous) = previous {
+                assert_eq!(state.completed_history.back().unwrap().id, previous);
+            }
+            previous = state.current_call.map(|call| call.id);
+        }
+        for task in tasks {
+            task.await.unwrap();
+        }
+        assert_eq!(
+            service.snapshot().await.current_call.unwrap().id,
+            previous.unwrap()
+        );
     }
 
     #[tokio::test]

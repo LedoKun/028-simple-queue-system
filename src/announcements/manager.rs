@@ -1,260 +1,171 @@
-// src/announcements/manager.rs
+//! Discovery, scheduling and playback of prerecorded announcements.
 
-//! Manages the scheduling, cycling, and status of audio and banner announcements.
-//!
-//! This module defines the `AnnouncementManager` which:
-//! - Scans a configured directory for announcement "slots" (subdirectories containing audio and banner files).
-//! - Cycles through these slots automatically at a configurable interval or manually.
-//! - Maintains the current announcement status, including active slot, playlists, and manual trigger cooldown.
-//! - Broadcasts `AppEvent::AnnouncementStatus` updates to inform other parts of the application and SSE clients.
-
+use chrono::{Datelike, Timelike, Utc, Weekday};
 use serde::Serialize;
 use std::{
     fmt,
     path::{Path, PathBuf},
-    sync::Arc,
+    sync::{Arc, Weak},
     time::{Duration, Instant},
 };
 use tokio::{
-    fs,                       // Async file system operations
-    sync::{broadcast, Mutex}, // Async synchronization primitives
-    task::JoinHandle,         // For managing the auto-cycle background task
-    time::sleep,              // For asynchronous timers
+    fs,
+    sync::{broadcast, Mutex, Notify},
+    time::sleep,
 };
-use tracing::{debug, error, info, trace, warn}; // Import tracing macros
+use tracing::{debug, error, info, trace, warn};
 
-use crate::config::AppConfig;
-use crate::AppEvent;
+use crate::{config::AppConfig, AppEvent};
 
-/// Represents a single announcement slot, containing a collection of audio and banner files.
-///
-/// An announcement slot is typically a subdirectory within the configured announcements base path,
-/// housing media files meant to be played or displayed together.
 #[derive(Debug, Clone, Serialize)]
 pub struct AnnouncementSlot {
-    /// A unique identifier for the announcement slot, usually derived from its directory name.
     pub id: String,
-    /// A list of paths to audio files (e.g., MP3, WAV) within this slot.
-    /// These paths are relative to the project root for internal use.
     pub audio_files: Vec<PathBuf>,
+    pub weekdays: Vec<Weekday>,
 }
 
-/// Provides a lightweight summary of an announcement slot used for API responses and SSE updates.
 #[derive(Debug, Clone, Serialize)]
 pub struct AnnouncementSlotSummary {
-    /// The slot identifier.
     pub id: String,
-    /// Web-accessible URLs for the audio files contained in this slot.
     pub audio_playlist: Vec<String>,
 }
 
-/// Provides a snapshot of the current status of the announcement system.
-///
-/// This struct is designed for serialization and broadcasting to inform clients
-/// about which announcement is active, its content, and the state of manual trigger cooldowns.
 #[derive(Debug, Clone, Serialize)]
 pub struct AnnouncementStatus {
-    /// The ID of the currently active announcement slot, if any.
+    pub enabled: bool,
     pub current_slot_id: Option<String>,
-    /// A list of web-accessible URLs for the audio files in the current slot.
     pub current_audio_playlist: Vec<String>,
-    /// A list of web-accessible URLs for the banner files in the current slot.
     pub current_banner_playlist: Vec<String>,
-    /// The configured interval in seconds for rotating banner media on clients.
     pub banner_cycle_interval_seconds: u64,
-    /// The configured cooldown duration in seconds for manual announcement triggers.
     pub cooldown_seconds: u64,
-    /// The estimated remaining seconds until a manual trigger is allowed again.
     pub cooldown_remaining_seconds: u64,
-    /// A flag indicating if the manual trigger cooldown is currently active.
     pub cooldown_active: bool,
-    /// All available announcement slots and their audio playlists.
+    /// Slots eligible on the current day, including when playback is disabled.
     pub available_slots: Vec<AnnouncementSlotSummary>,
 }
 
-/// Errors that can occur when attempting to manually trigger announcements.
 #[derive(Debug)]
 pub enum ManualTriggerError {
-    /// The manual trigger is within the cooldown period.
+    Disabled,
     CooldownActive { remaining_seconds: u64 },
-    /// The requested slot ID does not exist.
     SlotNotFound(String),
-    /// No announcement slots are available to trigger.
+    SlotUnavailable(String),
     NoSlotsAvailable,
 }
 
 impl fmt::Display for ManualTriggerError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            ManualTriggerError::CooldownActive { remaining_seconds } => {
-                write!(
-                    f,
-                    "Manual trigger is on cooldown ({} seconds remaining)",
-                    remaining_seconds
-                )
+            Self::Disabled => write!(f, "Announcements are disabled"),
+            Self::CooldownActive { remaining_seconds } => write!(
+                f,
+                "Manual trigger is on cooldown ({} seconds remaining)",
+                remaining_seconds
+            ),
+            Self::SlotNotFound(id) => write!(f, "Announcement slot '{}' was not found", id),
+            Self::SlotUnavailable(id) => {
+                write!(f, "Announcement '{}' is not scheduled for today", id)
             }
-            ManualTriggerError::SlotNotFound(slot_id) => {
-                write!(f, "Announcement slot '{}' was not found", slot_id)
-            }
-            ManualTriggerError::NoSlotsAvailable => {
-                write!(f, "No announcement slots are available to trigger")
-            }
+            Self::NoSlotsAvailable => write!(f, "No announcement slots are available today"),
         }
     }
 }
 
 impl std::error::Error for ManualTriggerError {}
 
-/// Manages the discovery, cycling, and state of announcements.
-///
-/// This manager handles:
-/// - Scanning a designated directory for `AnnouncementSlot`s.
-/// - Automatically advancing through slots based on a configurable interval.
-/// - Handling manual slot advancement requests, respecting a cooldown period.
-/// - Providing the current status of the announcement system.
-/// - Broadcasting status updates via the application's event bus.
+fn schedule_env_key(slot_id: &str) -> String {
+    let name: String = slot_id
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() {
+                c.to_ascii_uppercase()
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    format!("ANNOUNCEMENT_{}_DAYS", name)
+}
+
+fn parse_weekdays(value: &str) -> Result<Vec<Weekday>, String> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "all" => Ok(vec![
+            Weekday::Mon,
+            Weekday::Tue,
+            Weekday::Wed,
+            Weekday::Thu,
+            Weekday::Fri,
+            Weekday::Sat,
+            Weekday::Sun,
+        ]),
+        "off" => Ok(Vec::new()),
+        _ => value
+            .split(',')
+            .map(|day| {
+                day.trim()
+                    .parse::<Weekday>()
+                    .map_err(|_| format!("Invalid weekday '{}'", day))
+            })
+            .collect(),
+    }
+}
+
+fn announcement_days(slot_id: &str) -> Result<Vec<Weekday>, String> {
+    let key = schedule_env_key(slot_id);
+    let value = match std::env::var(&key) {
+        Ok(value) => value,
+        Err(std::env::VarError::NotPresent) => if slot_id == "03-lab-done" {
+            "tue,wed,thu"
+        } else {
+            "all"
+        }
+        .to_string(),
+        Err(error) => return Err(format!("{}: {}", key, error)),
+    };
+    parse_weekdays(&value).map_err(|error| format!("{}: {}", key, error))
+}
+
 #[derive(Debug)]
 pub struct AnnouncementManager {
-    /// Application configuration, providing paths, intervals, and cooldowns.
     config: Arc<AppConfig>,
-    /// A sorted list of all discovered announcement slots.
     slots: Vec<AnnouncementSlot>,
-    /// Collected banner media files served to clients.
     banner_files: Vec<PathBuf>,
-    /// The index of the currently active announcement slot within the `slots` vector.
-    current_slot_index: usize,
-    /// The `Instant` when the last manual announcement trigger occurred, used for cooldown.
-    last_manual_trigger: Instant,
-    /// Tracks when the auto-cycle timer was most recently reset.
+    enabled: bool,
+    current_slot_index: Option<usize>,
+    last_manual_trigger: Option<Instant>,
     last_auto_cycle_reset: Instant,
-    /// Tracks whether announcements have been activated yet (auto-cycle tick or manual trigger).
-    auto_cycle_started: bool,
-    /// Sender for the application-wide event bus, used to broadcast `AnnouncementStatus` updates.
     event_bus_sender: broadcast::Sender<AppEvent>,
-    /// Handle to the background task responsible for automatically cycling through announcement slots.
-    /// Stored as `_auto_cycle_task` to indicate it's not directly read, but its lifecycle is managed.
-    _auto_cycle_task: Option<JoinHandle<()>>,
+    timer_changed: Arc<Notify>,
 }
 
 impl AnnouncementManager {
-    const INITIAL_STATUS_BROADCAST_DELAY_SECS: u64 = 30;
-
-    /// Creates a new `AnnouncementManager` instance.
-    ///
-    /// This asynchronous function scans for announcement slots, sorts them,
-    /// and optionally starts a background task for auto-cycling if configured.
-    ///
-    /// # Arguments
-    /// - `config`: An `Arc` to the shared application configuration.
-    /// - `event_bus_sender`: A `broadcast::Sender` for `AppEvent`s, used to
-    ///   broadcast `AnnouncementStatus` updates.
-    ///
-    /// # Returns
-    /// An `Arc<Mutex<Self>>` containing the newly created `AnnouncementManager` instance.
-    /// The `Mutex` wrapper is necessary as the manager's state is modified by both
-    /// API routes and the internal auto-cycle task.
     pub async fn new(
         config: Arc<AppConfig>,
         event_bus_sender: broadcast::Sender<AppEvent>,
     ) -> Arc<Mutex<Self>> {
-        info!("Initializing AnnouncementManager...");
-        debug!("AnnouncementManager new: Using config: {:?}", config);
-
-        // Scan the configured base paths for announcement slot directories.
-        let audio_base_path = config.announcement_audio_base_path();
-        let banner_base_path = config.banner_base_path();
-        let mut slots = Self::scan_announcement_slots(&audio_base_path).await;
-        let banner_files = Self::scan_banner_files(&banner_base_path).await;
-        // Sort slots by their ID for consistent ordering.
+        let mut slots = Self::scan_announcement_slots(&config.announcement_audio_base_path()).await;
         slots.sort_by(|a, b| a.id.cmp(&b.id));
-
-        info!(
-            "Found {} announcement slots (audio path: {:?}).",
-            slots.len(),
-            audio_base_path
-        );
-        // Log details of each discovered slot.
-        for slot in &slots {
-            debug!("  - Slot: {}", slot.id);
-            debug!("    Audio files: {}", slot.audio_files.len());
-        }
-
-        // Create the core manager instance.
-        let manager_core = Self {
-            config: Arc::clone(&config),
+        let banner_files = Self::scan_banner_files(&config.banner_base_path()).await;
+        let manager = Arc::new(Mutex::new(Self {
+            enabled: config.announcements_enabled,
+            config,
             slots,
             banner_files,
-            current_slot_index: 0, // Start with the first slot.
-            last_manual_trigger: {
-                let now = Instant::now();
-                let cooldown = config.announcement_manual_trigger_cooldown_seconds;
-                if cooldown == 0 {
-                    now
-                } else {
-                    let cooldown_duration = Duration::from_secs(cooldown);
-                    now.checked_sub(cooldown_duration).unwrap_or(now)
-                }
-            },
+            current_slot_index: None,
+            last_manual_trigger: None,
             last_auto_cycle_reset: Instant::now(),
-            auto_cycle_started: false,
             event_bus_sender,
-            _auto_cycle_task: None, // Will be set if auto-cycling is enabled.
-        };
-
-        // Wrap the manager in Arc<Mutex> for shared, mutable access.
-        let manager_arc_mutex = Arc::new(Mutex::new(manager_core));
-
-        // Get configuration values relevant to auto-cycling.
-        // Acquire a temporary lock to read the number of slots from the newly created manager.
-        let num_slots = manager_arc_mutex.lock().await.slots.len();
-        let auto_cycle_interval_seconds = config.announcement_auto_cycle_interval_seconds;
-
-        // Start the auto-cycle background task if enabled and slots are available.
-        if auto_cycle_interval_seconds > 0 && num_slots > 0 {
-            info!(
-                "Starting announcement auto-cycle task with interval {} seconds.",
-                auto_cycle_interval_seconds
-            );
-            // Clone the Arc for the task, so it has its own reference to the manager.
-            let task_manager_clone = Arc::clone(&manager_arc_mutex);
-            let task_handle = tokio::spawn(async move {
-                Self::run_auto_cycle_task(task_manager_clone, auto_cycle_interval_seconds).await;
-            });
-            // Store the JoinHandle to keep the task running.
-            manager_arc_mutex.lock().await._auto_cycle_task = Some(task_handle);
-        } else {
-            // Log reasons why auto-cycling is not started.
-            if auto_cycle_interval_seconds == 0 {
-                info!("Announcement auto-cycling is disabled (interval is 0).");
-            } else if num_slots == 0 {
-                warn!("No announcement slots found, auto-cycling task not started.");
-            }
-        }
-
-        // Broadcast the initial status after a short delay so SSE clients have
-        // a chance to subscribe before the first event is emitted.
-        let initial_broadcast_manager = Arc::clone(&manager_arc_mutex);
-        tokio::spawn(async move {
-            sleep(Duration::from_secs(
-                Self::INITIAL_STATUS_BROADCAST_DELAY_SECS,
-            ))
-            .await;
-            let manager = initial_broadcast_manager.lock().await;
-            manager.broadcast_status().await;
-        });
-
-        manager_arc_mutex
+            timer_changed: Arc::new(Notify::new()),
+        }));
+        // A weak reference lets the background task end when the service is dropped.
+        tokio::spawn(Self::run_auto_cycle_task(Arc::downgrade(&manager)));
+        manager
     }
 
-    /// Scans the configured audio directory for announcement slots.
-    ///
-    /// Each subdirectory in the audio base path is treated as a slot whose audio files are
-    /// played together when the slot becomes active.
     async fn scan_announcement_slots(audio_base_path: &Path) -> Vec<AnnouncementSlot> {
         info!("Scanning for announcement slots in {:?}.", audio_base_path);
         let mut slots = Vec::new();
 
-        // Validate the audio base path exists and is a directory.
         if !audio_base_path.exists() || !audio_base_path.is_dir() {
             error!(
                 "Announcement audio base path does not exist or is not a directory: {:?}",
@@ -263,7 +174,6 @@ impl AnnouncementManager {
             return slots;
         }
 
-        // Read entries in the audio base directory.
         let mut dir_entries = match fs::read_dir(audio_base_path).await {
             Ok(entries) => entries,
             Err(e) => {
@@ -275,7 +185,6 @@ impl AnnouncementManager {
             }
         };
 
-        // Iterate over each entry in the base directory.
         while let Some(entry_result) = dir_entries.next_entry().await.transpose() {
             match entry_result {
                 Ok(entry) => {
@@ -288,9 +197,15 @@ impl AnnouncementManager {
                             .into_owned();
                         debug!("Found potential slot directory: {}", slot_id);
 
+                        let schedule = match announcement_days(&slot_id) {
+                            Ok(days) => days,
+                            Err(error) => {
+                                error!("Skipping announcement '{}': {}", slot_id, error);
+                                continue;
+                            }
+                        };
                         let mut audio_files = Vec::new();
 
-                        // Read files within the audio slot directory.
                         let mut slot_dir_entries = match fs::read_dir(&path).await {
                             Ok(entries) => entries,
                             Err(e) => {
@@ -352,6 +267,7 @@ impl AnnouncementManager {
                         slots.push(AnnouncementSlot {
                             id: slot_id,
                             audio_files,
+                            weekdays: schedule,
                         });
                     } else {
                         trace!(
@@ -376,10 +292,6 @@ impl AnnouncementManager {
         slots
     }
 
-    /// Collects all banner media files located under the provided base path.
-    ///
-    /// The scanner looks for supported image and video formats in the root directory
-    /// and within its immediate subdirectories, allowing flexible organization.
     async fn scan_banner_files(banner_base_path: &Path) -> Vec<PathBuf> {
         info!("Scanning for banner media in {:?}.", banner_base_path);
 
@@ -472,323 +384,387 @@ impl AnnouncementManager {
         }
     }
 
-    /// Advances the `current_slot_index` to the next slot in sequence.
-    ///
-    /// If there are no slots, a warning is logged and no action is taken.
-    /// The index wraps around to 0 after reaching the last slot.
-    /// After advancing, it broadcasts the new announcement status.
+    fn now(&self) -> chrono::DateTime<Utc> {
+        Utc::now() + chrono::Duration::hours(i64::from(self.config.announcement_utc_offset_hours))
+    }
+
+    fn next_slot_index(&self, day: Weekday) -> Option<usize> {
+        let start = self.current_slot_index.map_or(0, |index| index + 1);
+        (0..self.slots.len())
+            .map(|offset| (start + offset) % self.slots.len())
+            .find(|&index| self.slots[index].weekdays.contains(&day))
+    }
+
     fn manual_cooldown_remaining_seconds(&self) -> Option<u64> {
-        let cooldown_seconds = self.config.announcement_manual_trigger_cooldown_seconds;
-        if cooldown_seconds == 0 {
-            return None;
+        let remaining =
+            Duration::from_secs(self.config.announcement_manual_trigger_cooldown_seconds)
+                .saturating_sub(self.last_manual_trigger?.elapsed());
+        (!remaining.is_zero())
+            .then(|| remaining.as_secs() + u64::from(remaining.subsec_nanos() > 0))
+    }
+
+    fn check_manual_trigger(&self) -> Result<(), ManualTriggerError> {
+        if !self.enabled {
+            return Err(ManualTriggerError::Disabled);
         }
-        let elapsed_since_last_trigger = self.last_manual_trigger.elapsed();
-        if elapsed_since_last_trigger >= Duration::from_secs(cooldown_seconds) {
-            None
-        } else {
-            Some(cooldown_seconds.saturating_sub(elapsed_since_last_trigger.as_secs()))
+        if let Some(remaining_seconds) = self.manual_cooldown_remaining_seconds() {
+            return Err(ManualTriggerError::CooldownActive { remaining_seconds });
+        }
+        Ok(())
+    }
+
+    pub async fn set_enabled(&mut self, enabled: bool) {
+        if self.enabled != enabled {
+            self.enabled = enabled;
+            self.timer_changed.notify_one();
+            self.current_slot_index = None;
+            self.last_auto_cycle_reset = Instant::now();
+            self.broadcast_status().await;
         }
     }
 
     pub async fn advance_slot(&mut self) {
-        debug!("Attempting to advance announcement slot.");
-        if self.slots.is_empty() {
-            warn!("Cannot advance slot, no announcement slots available.");
+        self.last_auto_cycle_reset = Instant::now();
+        if !self.enabled {
             return;
         }
-        self.auto_cycle_started = true;
-        self.current_slot_index = (self.current_slot_index + 1) % self.slots.len();
-        self.last_auto_cycle_reset = Instant::now();
-        info!(
-            "Advanced announcement slot to index {} (ID: {:?}).",
-            self.current_slot_index,
-            self.slots.get(self.current_slot_index).map(|s| &s.id)
-        );
+        self.current_slot_index = self.next_slot_index(self.now().weekday());
         self.broadcast_status().await;
     }
 
-    /// Triggers a manual advancement of the announcement slot.
-    ///
-    /// This function respects a configured cooldown period to prevent rapid
-    /// manual advancements. If the cooldown is active, a warning is logged
-    /// and an error is returned.
     pub async fn manual_advance_slot(&mut self) -> Result<(), ManualTriggerError> {
-        info!("Manual announcement slot advancement triggered.");
-        if self.slots.is_empty() {
-            warn!("Manual advance requested but no announcement slots are available.");
+        self.check_manual_trigger()?;
+        if self.next_slot_index(self.now().weekday()).is_none() {
             return Err(ManualTriggerError::NoSlotsAvailable);
         }
-
-        if let Some(remaining) = self.manual_cooldown_remaining_seconds() {
-            warn!(
-                "Manual trigger on cooldown. {} seconds remaining.",
-                remaining
-            );
-            // Broadcast to refresh clients with updated cooldown status.
-            self.broadcast_status().await;
-            return Err(ManualTriggerError::CooldownActive {
-                remaining_seconds: remaining,
-            });
-        }
-
-        debug!("Cooldown period passed or disabled, performing manual advancement.");
-        self.last_manual_trigger = Instant::now();
+        self.last_manual_trigger = Some(Instant::now());
         self.advance_slot().await;
         Ok(())
     }
 
-    /// Triggers a manual activation of a specific announcement slot by ID.
     pub async fn manual_trigger_slot(&mut self, slot_id: &str) -> Result<(), ManualTriggerError> {
-        info!(
-            "Manual trigger requested for announcement slot '{}'.",
-            slot_id
-        );
-        if self.slots.is_empty() {
-            warn!("Manual trigger requested but no announcement slots are available.");
-            return Err(ManualTriggerError::NoSlotsAvailable);
+        self.check_manual_trigger()?;
+        let index = self
+            .slots
+            .iter()
+            .position(|slot| slot.id == slot_id)
+            .ok_or_else(|| ManualTriggerError::SlotNotFound(slot_id.to_string()))?;
+        if !self.slots[index].weekdays.contains(&self.now().weekday()) {
+            return Err(ManualTriggerError::SlotUnavailable(slot_id.to_string()));
         }
-
-        let Some(target_index) = self.slots.iter().position(|slot| slot.id == slot_id) else {
-            warn!("Manual trigger requested for unknown slot '{}'.", slot_id);
-            return Err(ManualTriggerError::SlotNotFound(slot_id.to_string()));
-        };
-
-        if let Some(remaining) = self.manual_cooldown_remaining_seconds() {
-            warn!(
-                "Manual trigger on cooldown. {} seconds remaining.",
-                remaining
-            );
-            self.broadcast_status().await;
-            return Err(ManualTriggerError::CooldownActive {
-                remaining_seconds: remaining,
-            });
-        }
-
-        self.last_manual_trigger = Instant::now();
-        self.current_slot_index = target_index;
+        self.last_manual_trigger = Some(Instant::now());
         self.last_auto_cycle_reset = Instant::now();
-        self.auto_cycle_started = true;
-        info!(
-            "Manual trigger activated slot {} (index {}).",
-            slot_id, target_index
-        );
+        self.current_slot_index = Some(index);
         self.broadcast_status().await;
         Ok(())
     }
 
-    /// Retrieves the current `AnnouncementStatus` based on the manager's state.
-    ///
-    /// This function constructs a snapshot of the current announcement state,
-    /// including web-accessible paths for audio and banner files.
-    ///
-    /// # Returns
-    /// An `AnnouncementStatus` struct representing the current state.
     pub async fn get_current_status(&self) -> AnnouncementStatus {
-        debug!("Getting current announcement status.");
-        let current_slot = if self.auto_cycle_started {
-            self.slots.get(self.current_slot_index)
-        } else {
-            None
+        let today = self.now().weekday();
+        let current_slot = self
+            .current_slot_index
+            .and_then(|index| self.slots.get(index))
+            .filter(|slot| self.enabled && slot.weekdays.contains(&today));
+        let playlist = |paths: &[PathBuf]| {
+            paths
+                .iter()
+                .filter_map(|path| self.to_web_accessible_path(path))
+                .collect::<Vec<_>>()
         };
-        let serve_dir_path = &self.config.serve_dir_path; // Path for static file serving.
-
-        let current_slot_id = current_slot.map(|s| s.id.clone());
-
-        // Convert file system paths of audio files to web-accessible URLs.
-        let current_audio_playlist = current_slot
-            .map(|slot| {
-                slot.audio_files
-                    .iter()
-                    .filter_map(|p| self.to_web_accessible_path(p, serve_dir_path))
-                    .collect()
-            })
-            .unwrap_or_default();
-
-        // Convert banner media paths to web-accessible URLs.
-        let current_banner_playlist = self
-            .banner_files
-            .iter()
-            .filter_map(|p| self.to_web_accessible_path(p, serve_dir_path))
-            .collect();
-
-        // Calculate cooldown status.
-        let cooldown_seconds = self.config.announcement_manual_trigger_cooldown_seconds;
-        let cooldown_remaining = self.manual_cooldown_remaining_seconds();
-        let cooldown_active = cooldown_remaining.is_some();
-        let cooldown_remaining_seconds = cooldown_remaining.unwrap_or(0);
-
-        // Build summaries for all available slots (audio only).
-        let available_slots = self
-            .slots
-            .iter()
-            .map(|slot| AnnouncementSlotSummary {
-                id: slot.id.clone(),
-                audio_playlist: slot
-                    .audio_files
-                    .iter()
-                    .filter_map(|p| self.to_web_accessible_path(p, serve_dir_path))
-                    .collect(),
-            })
-            .collect();
-
-        let status = AnnouncementStatus {
-            current_slot_id,
-            current_audio_playlist,
-            current_banner_playlist,
+        let cooldown_remaining_seconds = self.manual_cooldown_remaining_seconds().unwrap_or(0);
+        AnnouncementStatus {
+            enabled: self.enabled,
+            current_slot_id: current_slot.map(|slot| slot.id.clone()),
+            current_audio_playlist: current_slot
+                .map(|slot| playlist(&slot.audio_files))
+                .unwrap_or_default(),
+            current_banner_playlist: playlist(&self.banner_files),
             banner_cycle_interval_seconds: self.config.banner_rotation_interval_seconds,
-            cooldown_seconds,
+            cooldown_seconds: self.config.announcement_manual_trigger_cooldown_seconds,
             cooldown_remaining_seconds,
-            cooldown_active,
-            available_slots,
-        };
-        trace!("Current announcement status: {:?}", status);
-        status
+            cooldown_active: cooldown_remaining_seconds > 0,
+            available_slots: self
+                .slots
+                .iter()
+                .filter(|slot| slot.weekdays.contains(&today))
+                .map(|slot| AnnouncementSlotSummary {
+                    id: slot.id.clone(),
+                    audio_playlist: playlist(&slot.audio_files),
+                })
+                .collect(),
+        }
     }
 
-    /// Broadcasts the current `AnnouncementStatus` to the application's event bus.
-    ///
-    /// This method is called after any state change that affects the current announcement,
-    /// ensuring connected clients are always up-to-date.
     async fn broadcast_status(&self) {
-        let status = self.get_current_status().await;
-        debug!("Broadcasting announcement status: {:?}", status);
-        let event = AppEvent::AnnouncementStatus(status);
-        // Log send errors as debug, as it's expected if no clients are connected.
-        if let Err(e) = self.event_bus_sender.send(event) {
-            debug!(
-                "Could not broadcast announcement status (possibly no active SSE subscribers yet): {}",
-                e
-            );
-        }
+        let _ = self.event_bus_sender.send(AppEvent::AnnouncementStatus(
+            self.get_current_status().await,
+        ));
     }
 
-    /// The background task that automatically cycles the announcement slot.
-    ///
-    /// This task runs indefinitely, advancing the slot at the configured interval.
-    /// It acquires a lock on the `AnnouncementManager` to ensure safe mutable access.
-    ///
-    /// # Arguments
-    /// - `manager_arc`: An `Arc<Mutex<AnnouncementManager>>` to the manager instance.
-    /// - `interval_seconds`: The duration in seconds between automatic slot advancements.
-    async fn run_auto_cycle_task(
-        manager_arc: Arc<Mutex<AnnouncementManager>>,
-        interval_seconds: u64,
-    ) {
-        if interval_seconds == 0 {
-            info!("Auto-cycle interval is 0, task will not run.");
-            return;
-        }
-        let interval_duration = Duration::from_secs(interval_seconds);
-
-        // Reset the timer when the background task starts so the first cycle waits a full interval.
-        {
-            let mut manager = manager_arc.lock().await;
-            manager.last_auto_cycle_reset = Instant::now();
-        }
-
+    async fn run_auto_cycle_task(manager: Weak<Mutex<Self>>) {
         loop {
-            // Determine how long to sleep based on when the timer was last reset.
-            let sleep_duration = {
-                let manager = manager_arc.lock().await;
-                if manager.slots.is_empty() {
-                    debug!(
-                        "Auto-cycle task found no announcement slots; sleeping for the configured interval."
-                    );
-                    interval_duration
+            let (delay, date, timer_changed) = {
+                let Some(manager) = manager.upgrade() else {
+                    return;
+                };
+                let manager = manager.lock().await;
+                let now = manager.now();
+                let until_midnight =
+                    Duration::from_secs(u64::from(86_400 - now.num_seconds_from_midnight()));
+                let interval = manager.config.announcement_auto_cycle_interval_seconds;
+                let delay = if manager.enabled && interval > 0 {
+                    Duration::from_secs(interval)
+                        .saturating_sub(manager.last_auto_cycle_reset.elapsed())
+                        .min(until_midnight)
                 } else {
-                    let elapsed = manager.last_auto_cycle_reset.elapsed();
-                    interval_duration.saturating_sub(elapsed)
-                }
+                    until_midnight
+                };
+                (delay, now.date_naive(), Arc::clone(&manager.timer_changed))
             };
-
-            if !sleep_duration.is_zero() {
-                trace!(
-                    "Auto-cycle timer sleeping for {:?} before checking announcements again.",
-                    sleep_duration
-                );
-                sleep(sleep_duration).await;
-                continue;
+            tokio::select! {
+                _ = sleep(delay) => {},
+                _ = timer_changed.notified() => continue,
             }
-
-            debug!("Auto-cycle interval elapsed; attempting to advance announcement slot.");
-            let mut manager = manager_arc.lock().await;
-
-            if manager.slots.is_empty() {
-                debug!(
-                    "Auto-cycle wake found no available slots; sleeping for the configured interval."
-                );
-                drop(manager);
-                sleep(interval_duration).await;
-                continue;
-            }
-
-            if manager.last_auto_cycle_reset.elapsed() < interval_duration {
-                trace!(
-                    "Auto-cycle timer was reset by a manual action after waking; restarting wait."
-                );
-                drop(manager);
-                continue;
-            }
-
-            if !manager.auto_cycle_started {
-                manager.auto_cycle_started = true;
-                manager.last_auto_cycle_reset = Instant::now();
+            let Some(manager) = manager.upgrade() else {
+                return;
+            };
+            let mut manager = manager.lock().await;
+            if manager.now().date_naive() != date {
+                // Clear yesterday's playlist without replaying it when today's buttons refresh.
+                manager.current_slot_index = None;
                 manager.broadcast_status().await;
-                debug!("Auto-cycle started; broadcasting initial announcement slot.");
-                drop(manager);
-                continue;
             }
-
-            manager.advance_slot().await;
-            debug!("Auto-cycle advanced announcement slot and reset timer.");
-            drop(manager);
+            let interval = manager.config.announcement_auto_cycle_interval_seconds;
+            if manager.enabled
+                && interval > 0
+                && manager.last_auto_cycle_reset.elapsed() >= Duration::from_secs(interval)
+            {
+                manager.advance_slot().await;
+            }
         }
     }
 
-    /// Converts a file system `Path` to a web-accessible URL string.
-    ///
-    /// This function assumes that `file_path` is located *within* the `serve_dir_path`
-    /// and constructs a URL relative to the web root.
-    ///
-    /// # Arguments
-    /// - `file_path`: The absolute file system path to the resource.
-    /// - `serve_dir_path`: The base directory from which static files are served via HTTP.
-    ///
-    /// # Returns
-    /// An `Option<String>`:
-    /// - `Some(String)` if the `file_path` is successfully converted to a web URL.
-    /// - `None` if the `file_path` is not under `serve_dir_path` or conversion fails.
-    fn to_web_accessible_path(&self, file_path: &Path, serve_dir_path: &Path) -> Option<String> {
-        trace!(
-            "Converting file path {:?} to web-accessible path relative to serve_dir_path: {:?}",
-            file_path,
-            serve_dir_path
-        );
-        match file_path.strip_prefix(serve_dir_path) {
-            Ok(relative_path) => {
-                let mut web_path_str = "/".to_string();
-                // Ensure no double leading slash.
-                let relative_lossy = relative_path.to_string_lossy();
-                if relative_lossy.starts_with('/') {
-                    web_path_str.push_str(relative_lossy.trim_start_matches('/'));
-                } else {
-                    web_path_str.push_str(&relative_lossy);
-                }
-                // Replace Windows-style backslashes with forward slashes for URLs.
-                let final_path = web_path_str.replace('\\', "/");
-                debug!(
-                    "Converted file path {:?} to web-accessible URL: {}",
-                    file_path, final_path
-                );
-                Some(final_path)
-            }
+    fn to_web_accessible_path(&self, file_path: &Path) -> Option<String> {
+        match file_path.strip_prefix(&self.config.serve_dir_path) {
+            Ok(path) => Some(format!(
+                "/{}",
+                path.components()
+                    .map(
+                        |part| urlencoding::encode(&part.as_os_str().to_string_lossy())
+                            .into_owned()
+                    )
+                    .collect::<Vec<_>>()
+                    .join("/")
+            )),
             Err(_) => {
-                warn!(
-                    "File {:?} is not within served directory {:?}, cannot create web path.",
-                    file_path, serve_dir_path
-                );
+                warn!("File {:?} is outside the served directory", file_path);
                 None
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use envconfig::Envconfig;
+
+    fn manager() -> AnnouncementManager {
+        let config = AppConfig {
+            serve_dir_path: PathBuf::from("/public"),
+            announcements_enabled: true,
+            announcement_utc_offset_hours: 7,
+            announcement_auto_cycle_interval_seconds: 0,
+            announcement_manual_trigger_cooldown_seconds: 0,
+            ..AppConfig::init_from_env().unwrap()
+        };
+        AnnouncementManager {
+            config: Arc::new(config),
+            slots: vec![
+                AnnouncementSlot {
+                    id: "daily".into(),
+                    audio_files: vec![PathBuf::from("/public/media/daily.mp3")],
+                    weekdays: parse_weekdays("all").unwrap(),
+                },
+                AnnouncementSlot {
+                    id: "lab".into(),
+                    audio_files: vec![PathBuf::from("/public/media/lab.mp3")],
+                    weekdays: parse_weekdays("tue,wed,thu").unwrap(),
+                },
+            ],
+            banner_files: vec![PathBuf::from("/public/media/banner.png")],
+            enabled: true,
+            current_slot_index: None,
+            last_manual_trigger: None,
+            last_auto_cycle_reset: Instant::now(),
+            event_bus_sender: broadcast::channel(16).0,
+            timer_changed: Arc::new(Notify::new()),
+        }
+    }
+
+    #[test]
+    fn media_urls_escape_url_delimiters_in_filenames() {
+        assert_eq!(
+            manager().to_web_accessible_path(Path::new("/public/media/banner #1?.webp")),
+            Some("/media/banner%20%231%3F.webp".into())
+        );
+        assert!(manager()
+            .to_web_accessible_path(Path::new("/elsewhere/audio.mp3"))
+            .is_none());
+    }
+
+    #[test]
+    fn parses_weekdays_and_rejects_invalid_schedules() {
+        assert_eq!(
+            schedule_env_key("03-lab-done"),
+            "ANNOUNCEMENT_03_LAB_DONE_DAYS"
+        );
+        assert_eq!(parse_weekdays("all").unwrap().len(), 7);
+        assert_eq!(
+            parse_weekdays(" Tuesday, WED, thu ").unwrap(),
+            vec![Weekday::Tue, Weekday::Wed, Weekday::Thu]
+        );
+        assert!(parse_weekdays("off").unwrap().is_empty());
+        for invalid in ["", "tue,", "all,tue", "mondayy", "tue,,wed"] {
+            assert!(parse_weekdays(invalid).is_err(), "{invalid}");
+        }
+    }
+
+    #[test]
+    fn cycling_starts_with_first_slot_and_skips_disallowed_weekdays() {
+        let mut manager = manager();
+        assert_eq!(manager.next_slot_index(Weekday::Tue), Some(0));
+        manager.current_slot_index = Some(0);
+        for day in [Weekday::Tue, Weekday::Wed, Weekday::Thu] {
+            assert_eq!(manager.next_slot_index(day), Some(1));
+        }
+        for day in [Weekday::Mon, Weekday::Fri, Weekday::Sat, Weekday::Sun] {
+            assert_eq!(manager.next_slot_index(day), Some(0));
+        }
+        manager.current_slot_index = Some(1);
+        assert_eq!(manager.next_slot_index(Weekday::Tue), Some(0));
+        manager.slots.clear();
+        assert_eq!(manager.next_slot_index(Weekday::Tue), None);
+    }
+
+    #[tokio::test]
+    async fn toggle_blocks_both_trigger_paths_and_clears_audio_but_keeps_banners() {
+        let mut manager = manager();
+        manager.manual_advance_slot().await.unwrap();
+        assert_eq!(
+            manager
+                .get_current_status()
+                .await
+                .current_slot_id
+                .as_deref(),
+            Some("daily")
+        );
+        let mut events = manager.event_bus_sender.subscribe();
+        manager.set_enabled(false).await;
+        assert!(matches!(
+            events.try_recv(),
+            Ok(AppEvent::AnnouncementStatus(AnnouncementStatus {
+                enabled: false,
+                ..
+            }))
+        ));
+        assert!(matches!(
+            manager.manual_advance_slot().await,
+            Err(ManualTriggerError::Disabled)
+        ));
+        assert!(matches!(
+            manager.manual_trigger_slot("daily").await,
+            Err(ManualTriggerError::Disabled)
+        ));
+        manager.advance_slot().await;
+        let status = manager.get_current_status().await;
+        assert!(status.current_audio_playlist.is_empty());
+        assert!(!status.current_banner_playlist.is_empty());
+        manager.set_enabled(true).await;
+        assert!(manager.get_current_status().await.current_slot_id.is_none());
+        manager.manual_advance_slot().await.unwrap();
+        assert_eq!(
+            manager
+                .get_current_status()
+                .await
+                .current_slot_id
+                .as_deref(),
+            Some("daily")
+        );
+    }
+
+    #[tokio::test]
+    async fn unavailable_slots_are_hidden_and_rejected_without_consuming_cooldown() {
+        let mut manager = manager();
+        manager.slots[0].weekdays.clear();
+        manager.slots[1].weekdays.clear();
+        assert!(manager
+            .get_current_status()
+            .await
+            .available_slots
+            .is_empty());
+        assert!(matches!(
+            manager.manual_trigger_slot("daily").await,
+            Err(ManualTriggerError::SlotUnavailable(_))
+        ));
+        assert!(matches!(
+            manager.manual_trigger_slot("missing").await,
+            Err(ManualTriggerError::SlotNotFound(_))
+        ));
+        assert!(matches!(
+            manager.manual_advance_slot().await,
+            Err(ManualTriggerError::NoSlotsAvailable)
+        ));
+        manager.advance_slot().await;
+        assert!(manager.get_current_status().await.current_slot_id.is_none());
+        assert!(manager.last_manual_trigger.is_none());
+    }
+
+    #[tokio::test]
+    async fn cooldown_prevents_repeat_manual_triggers() {
+        let mut manager = manager();
+        Arc::make_mut(&mut manager.config).announcement_manual_trigger_cooldown_seconds = 5;
+        manager.manual_trigger_slot("daily").await.unwrap();
+        assert!(matches!(
+            manager.manual_advance_slot().await,
+            Err(ManualTriggerError::CooldownActive { .. })
+        ));
+        assert!(matches!(
+            manager.manual_trigger_slot("daily").await,
+            Err(ManualTriggerError::CooldownActive { .. })
+        ));
+        assert!(manager.get_current_status().await.cooldown_active);
+    }
+
+    #[tokio::test]
+    async fn enabling_wakes_timer_and_task_does_not_keep_manager_alive() {
+        let mut manager = manager();
+        Arc::make_mut(&mut manager.config).announcement_auto_cycle_interval_seconds = 1;
+        manager.enabled = false;
+        let manager = Arc::new(Mutex::new(manager));
+        let weak = Arc::downgrade(&manager);
+        let task = tokio::spawn(AnnouncementManager::run_auto_cycle_task(weak.clone()));
+        tokio::task::yield_now().await;
+        let mut events = {
+            let mut manager = manager.lock().await;
+            manager.set_enabled(true).await;
+            manager.last_auto_cycle_reset = Instant::now() - Duration::from_secs(2);
+            manager.event_bus_sender.subscribe()
+        };
+        let event = tokio::time::timeout(Duration::from_secs(2), events.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(matches!(
+            event,
+            AppEvent::AnnouncementStatus(AnnouncementStatus {
+                current_slot_id: Some(_),
+                ..
+            })
+        ));
+        drop(manager);
+        tokio::task::yield_now().await;
+        assert!(weak.upgrade().is_none());
+        task.abort();
     }
 }

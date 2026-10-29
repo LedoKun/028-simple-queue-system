@@ -1,0 +1,775 @@
+import { API_BASE_URL, SSE_URL, getLabels, setCurrentLanguage } from '../../core/constants.js';
+import { renderCallList, createSseIndicatorUpdater } from '../../core/uiHelpers.js';
+import { sanitizeText, formatDisplayTime } from '../../core/formatting.js';
+import { scheduleAutoRefresh } from '../../core/refresh.js';
+import { EventStream } from '../../sse/eventStream.js';
+
+const MAX_HISTORY_ITEMS_DISPLAY = 7;
+const TTS_TIMEOUT_DURATION = 10_000;
+const SIGNAGE_PLACEHOLDERS = {
+  history: '-',
+  announcement: 'ประกาศ / ANNOUNCEMENTS',
+};
+
+function normalizeTokenId(value) {
+  return value == null ? '' : String(value).trim().toUpperCase();
+}
+
+function getEntryTime(entry) {
+  const time = entry?.timestamp ? new Date(entry.timestamp).getTime() : 0;
+  return time === time ? time : 0;
+}
+
+export class SignagePage {
+  constructor() {
+    this.dom = this.queryDom();
+    this.eventStream = new EventStream(SSE_URL, { labelProvider: () => getLabels('en') });
+    this.updateSseIndicator = createSseIndicatorUpdater(this.dom.sseStatusIndicator, {
+      setDataset: true,
+      keepClasses: true,
+    });
+
+    this.queueStatusVersion = 0;
+    this.announcementStatusVersion = 0;
+    this.lastObservedCall = null;
+    this.orderedTtsLangCodes = [];
+    this.eventQueue = [];
+    this.currentProcessingEvent = null;
+    this.audioPlaybackQueue = [];
+    this.isAudioFilePlaying = false;
+    this.bannerIntervalId = null;
+    this.lastShownCallData = null;
+    this.autoRefreshCancel = () => { };
+    this.clock = this.createClock();
+  }
+
+  queryDom() {
+    const byId = (id) => document.getElementById(id);
+    return {
+      callIdElement: byId('current-call-id'),
+      locationElement: byId('current-location'),
+      listHistoryCalls: byId('list-history-calls'),
+      announcementBannerContainer: byId('announcement-banner-container'),
+      announcementPlaceholder: byId('announcement-placeholder'),
+      chimeAudio: byId('chimeAudio'),
+      announcementAudioPlayer: byId('announcement-audio-player'),
+      ttsAudioPlayer: byId('tts-audio-player'),
+      sseStatusIndicator: byId('sse-status-indicator'),
+      dateElement: byId('date'),
+      timeElement: byId('time'),
+    };
+  }
+
+  ensureRequiredElements() {
+    const required = {
+      callIdElement: this.dom.callIdElement,
+      locationElement: this.dom.locationElement,
+      listHistoryCalls: this.dom.listHistoryCalls,
+      announcementBannerContainer: this.dom.announcementBannerContainer,
+      chimeAudio: this.dom.chimeAudio,
+      announcementAudioPlayer: this.dom.announcementAudioPlayer,
+      ttsAudioPlayer: this.dom.ttsAudioPlayer,
+    };
+
+    const missing = Object.entries(required)
+      .filter(([, value]) => !value)
+      .map(([key]) => key);
+
+    if (missing.length > 0) {
+      console.error('SignageUI', 'Missing required DOM elements:', missing.join(', '));
+      return false;
+    }
+
+    return true;
+  }
+
+  async init() {
+    if (!this.ensureRequiredElements()) {
+      return;
+    }
+
+    const pageLanguage = document.documentElement.lang || 'en';
+    setCurrentLanguage(pageLanguage);
+    this.updateStaticPlaceholders();
+    this.setupAutoRefresh();
+    await this.fetchOrderedLanguages();
+    this.attachEventStreamHandlers();
+    await this.fetchInitialState();
+
+    this.clock.start();
+  }
+
+  setupAutoRefresh() {
+    this.autoRefreshCancel = scheduleAutoRefresh({
+      shouldDelay: () => this.shouldDelayRefresh(),
+    });
+
+    window.addEventListener('beforeunload', () => {
+      this.autoRefreshCancel();
+      this.clock.stop();
+    });
+  }
+
+  attachEventStreamHandlers() {
+    this.eventStream.on('queueupdate', ({ detail }) => this.handleQueueUpdate(detail));
+    this.eventStream.on('announcementstatus', ({ detail }) => this.handleAnnouncementStatus(detail));
+    this.eventStream.on('ttscomplete', ({ detail }) => this.handleTtsComplete(detail));
+    this.eventStream.on('translatorcall', ({ detail }) => this.handleTranslatorCall(detail));
+    this.eventStream.on('status', ({ detail }) => {
+      this.updateSseIndicator(detail);
+      if (detail.status === 'connected') this.fetchInitialState();
+    });
+    this.eventStream.connect();
+  }
+
+  async fetchOrderedLanguages() {
+    try {
+      const response = await fetch(`${API_BASE_URL}/tts/ordered-languages`);
+      if (response.ok) {
+        this.orderedTtsLangCodes = await response.json();
+      } else {
+        console.error('SignageUI', 'Failed to fetch ordered TTS languages', response.status, response.statusText);
+        this.orderedTtsLangCodes = [];
+      }
+    } catch (error) {
+      console.error('SignageUI', 'Network error while fetching ordered TTS languages', error);
+      this.orderedTtsLangCodes = [];
+    }
+  }
+
+  async fetchInitialState() {
+    const queueVersion = ++this.queueStatusVersion;
+    const announcementVersion = this.announcementStatusVersion;
+    try {
+      const [queueRes, annRes] = await Promise.allSettled([
+        fetch(`${API_BASE_URL}/queue/state`),
+        fetch(`${API_BASE_URL}/announcements/status`),
+      ]);
+
+      if (queueRes.status === 'fulfilled' && queueRes.value.ok) {
+        const queueState = await queueRes.value.json();
+        if (queueVersion === this.queueStatusVersion) {
+          this.lastObservedCall = queueState.current_call || null;
+          this.updateQueueDisplay(queueState);
+          if (!this.currentProcessingEvent && this.eventQueue.length === 0) {
+            this.updateCurrentCallDisplay(this.lastObservedCall);
+            this.lastShownCallData = this.lastObservedCall;
+          }
+        }
+      } else {
+        console.error('SignageUI', 'Failed to fetch queue state');
+      }
+
+      if (annRes.status === 'fulfilled' && annRes.value.ok) {
+        const status = await annRes.value.json();
+        if (announcementVersion === this.announcementStatusVersion) this.updateAnnouncementDisplay(status);
+      } else {
+        console.error('SignageUI', 'Failed to fetch announcement status');
+      }
+    } catch (error) {
+      console.error('SignageUI', 'Network error during state fetch', error);
+    } finally {
+      this.processNextEventFromQueue();
+    }
+  }
+
+  updateCurrentCallDisplay(callData) {
+    const id = callData?.id ? sanitizeText(callData.id) : '----';
+    const location = callData?.location ? sanitizeText(callData.location) : '----';
+    if (this.dom.callIdElement) this.dom.callIdElement.textContent = id;
+    if (this.dom.locationElement) this.dom.locationElement.textContent = location;
+  }
+
+  updateQueueDisplay(queueState) {
+    renderCallList(this.dom.listHistoryCalls, this.getDisplayHistory(queueState), {
+      maxItems: MAX_HISTORY_ITEMS_DISPLAY,
+      placeholderText: SIGNAGE_PLACEHOLDERS.history,
+      itemClass: 'history-item flex justify-between items-center',
+      placeholderClass: 'history-item italic text-gray-500',
+      timestampClass: 'timestamp',
+      timestampFormatter: formatDisplayTime,
+      sanitizer: sanitizeText,
+    });
+  }
+
+  getDisplayHistory(queueState) {
+    const activeCall = queueState?.current_call === undefined
+      ? this.currentProcessingEvent?.callData || this.lastShownCallData
+      : queueState.current_call;
+    const activeId = normalizeTokenId(activeCall?.id);
+    const latestByToken = Object.create(null);
+    const history = Array.isArray(queueState?.completed_history) ? queueState.completed_history : [];
+
+    history.forEach((item) => {
+      const id = normalizeTokenId(item?.id);
+      if (!id || id === activeId) return;
+      const previous = latestByToken[id];
+      if (!previous || getEntryTime(item) > getEntryTime(previous)) {
+        latestByToken[id] = item;
+      }
+    });
+
+    return Object.values(latestByToken).sort((a, b) => getEntryTime(b) - getEntryTime(a));
+  }
+
+  updateAnnouncementDisplay(announcementStatus) {
+    const container = this.dom.announcementBannerContainer;
+    if (!container) return;
+
+    if (this.bannerIntervalId) {
+      clearInterval(this.bannerIntervalId);
+      this.bannerIntervalId = null;
+    }
+
+    const { wrapper, span } = this.ensureBannerPlaceholder();
+    this.clearBannerContainer(wrapper);
+
+    if (!announcementStatus || !Array.isArray(announcementStatus.current_banner_playlist) || announcementStatus.current_banner_playlist.length === 0) {
+      if (wrapper && !container.contains(wrapper)) {
+        container.appendChild(wrapper);
+      }
+      if (span) {
+        span.textContent = SIGNAGE_PLACEHOLDERS.announcement;
+      }
+      return;
+    }
+
+    if (wrapper) {
+      wrapper.classList.add('hidden');
+    }
+
+    const imageExtensions = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg'];
+    const videoExtensions = ['mp4', 'webm', 'ogg', 'mov'];
+    const playlist = announcementStatus.current_banner_playlist
+      .slice()
+      .map((mediaUrl) => {
+        const extension = String(mediaUrl || '').split('.').pop().toLowerCase();
+        if (imageExtensions.includes(extension)) return { mediaUrl, type: 'image' };
+        if (videoExtensions.includes(extension)) return { mediaUrl, type: 'video' };
+        console.warn('SignageUI', 'Unsupported banner media type', mediaUrl);
+        return null;
+      })
+      .filter(Boolean);
+
+    if (playlist.length === 0) {
+      if (wrapper && !container.contains(wrapper)) {
+        container.appendChild(wrapper);
+      }
+      if (wrapper) {
+        wrapper.classList.remove('hidden');
+      }
+      if (span) {
+        span.textContent = SIGNAGE_PLACEHOLDERS.announcement;
+      }
+      return;
+    }
+
+    let currentIndex = 0;
+    const cycleMs = (announcementStatus.banner_cycle_interval_seconds || 10) * 1000;
+
+    const showNextBanner = () => {
+      if (playlist.length <= 1) return;
+      currentIndex = (currentIndex + 1) % playlist.length;
+      displayBanner();
+    };
+
+    const displayBanner = () => {
+      if (this.bannerIntervalId) {
+        clearInterval(this.bannerIntervalId);
+        this.bannerIntervalId = null;
+      }
+
+      if (playlist.length === 0) return;
+      const current = playlist[currentIndex];
+      this.clearBannerContainer(wrapper);
+
+      if (current.type === 'image') {
+        const img = document.createElement('img');
+        img.src = current.mediaUrl;
+        img.alt = 'Announcement Banner';
+        img.className = 'banner-media';
+        container.appendChild(img);
+        if (playlist.length > 1) {
+          this.bannerIntervalId = setTimeout(showNextBanner, cycleMs);
+        }
+      } else if (current.type === 'video') {
+        const video = document.createElement('video');
+        video.src = current.mediaUrl;
+        video.className = 'banner-media';
+        video.autoplay = true;
+        video.muted = true;
+        video.playsInline = true;
+        video.loop = playlist.length === 1;
+
+        let advanced = false;
+        const advanceOnce = () => {
+          if (advanced) return;
+          advanced = true;
+          showNextBanner();
+        };
+
+        if (playlist.length > 1) {
+          video.onended = advanceOnce;
+          video.onerror = advanceOnce;
+        }
+        container.appendChild(video);
+        video.play().catch((error) => {
+          console.error('SignageUI', 'Error playing banner video', current.mediaUrl, error);
+          if (playlist.length > 1 && !advanced) {
+            this.bannerIntervalId = setTimeout(advanceOnce, cycleMs);
+          }
+        });
+      } else {
+        if (wrapper && !container.contains(wrapper)) {
+          container.appendChild(wrapper);
+        }
+      }
+    };
+
+    displayBanner();
+  }
+
+  ensureBannerPlaceholder() {
+    const container = this.dom.announcementBannerContainer;
+    let placeholder = this.dom.announcementPlaceholder;
+    if (!placeholder || !placeholder.parentElement) {
+      const wrapper = document.createElement('div');
+      wrapper.className = 'w-full h-full flex justify-center items-center bg-gray-750 rounded';
+      placeholder = document.createElement('span');
+      placeholder.id = 'announcement-placeholder';
+      placeholder.className = 'text-gray-500 text-sm md:text-base';
+      placeholder.textContent = SIGNAGE_PLACEHOLDERS.announcement;
+      wrapper.appendChild(placeholder);
+      if (container) {
+        container.appendChild(wrapper);
+      }
+      this.dom.announcementPlaceholder = placeholder;
+      return { wrapper, span: placeholder };
+    }
+
+    return { wrapper: placeholder.parentElement, span: placeholder };
+  }
+
+  clearBannerContainer(placeholderWrapper = null) {
+    const container = this.dom.announcementBannerContainer;
+    if (!container) return;
+    Array.from(container.children).forEach((child) => {
+      if (!placeholderWrapper || child !== placeholderWrapper) {
+        container.removeChild(child);
+      }
+    });
+  }
+
+  handleQueueUpdate(queueState) {
+    this.queueStatusVersion += 1;
+    this.updateQueueDisplay(queueState);
+    const newCall = queueState?.current_call;
+    const previous = this.lastObservedCall;
+    this.lastObservedCall = newCall || null;
+    if (newCall) {
+      if (previous?.id === newCall.id && previous?.location === newCall.location && previous?.timestamp === newCall.timestamp) return;
+      this.eventQueue.push({
+        type: 'call',
+        id: newCall.id,
+        location: newCall.location,
+        callData: { ...newCall },
+        requiredTts: [...this.orderedTtsLangCodes],
+        receivedTtsUrls: [],
+        chimeFinished: false,
+        ttsReady: false,
+        timestamp: newCall.timestamp,
+      });
+      this.processNextEventFromQueue();
+    } else if (!this.currentProcessingEvent && this.eventQueue.length === 0) {
+      this.lastShownCallData = null;
+      this.processNextEventFromQueue();
+    }
+  }
+
+  handleAnnouncementStatus(announcementStatus) {
+    this.announcementStatusVersion += 1;
+    this.updateAnnouncementDisplay(announcementStatus);
+
+    const playlist = announcementStatus?.current_audio_playlist || [];
+    if (announcementStatus?.enabled === false || playlist.length === 0) {
+      this.eventQueue = this.eventQueue.filter((event) => event.type !== 'announcement' || event.source === 'translator');
+      if (this.currentProcessingEvent?.type === 'announcement' && this.currentProcessingEvent.source !== 'translator') {
+        [this.dom.chimeAudio, this.dom.announcementAudioPlayer].forEach((player) => {
+          this.removeAudioListeners(player);
+          player?.pause();
+        });
+        this.finishCurrentEvent();
+      }
+      return;
+    }
+
+    const primarySrc = playlist[0];
+    let shouldQueue = true;
+
+    if (this.currentProcessingEvent?.type === 'announcement' &&
+      this.currentProcessingEvent.audioSequence.some((item) => item.src === primarySrc)) {
+      shouldQueue = false;
+    }
+
+    if (shouldQueue && this.eventQueue.some((evt) => evt.type === 'announcement' && evt.audioSequence.some((item) => item.src === primarySrc))) {
+      shouldQueue = false;
+    }
+
+    if (!shouldQueue) {
+      return;
+    }
+
+    const announcementEvent = {
+      type: 'announcement',
+      audioSequence: playlist.map((src) => ({ src, playerType: 'announcement' })),
+    };
+
+    this.eventQueue.push(announcementEvent);
+    this.processNextEventFromQueue();
+  }
+
+  handleTranslatorCall(payload) {
+    if (!payload || !Array.isArray(payload.audio_urls) || payload.audio_urls.length === 0) {
+      console.warn('SignageUI', 'Translator call payload missing audio URLs', payload);
+      return;
+    }
+
+    const playlist = payload.audio_urls.filter(Boolean);
+    if (playlist.length === 0) {
+      return;
+    }
+
+    const dedupKey = `${payload.location || 'translator'}::${playlist[0]}`;
+
+    const isDuplicateActive =
+      this.currentProcessingEvent?.type === 'announcement' &&
+      this.currentProcessingEvent?.source === 'translator' &&
+      this.currentProcessingEvent?.dedupKey === dedupKey;
+
+    if (isDuplicateActive) {
+      return;
+    }
+
+    const isDuplicateQueued = this.eventQueue.some(
+      (evt) => evt.type === 'announcement' && evt.source === 'translator' && evt.dedupKey === dedupKey,
+    );
+
+    if (isDuplicateQueued) {
+      return;
+    }
+
+    const translatorEvent = {
+      type: 'announcement',
+      source: 'translator',
+      dedupKey,
+      audioSequence: playlist.map((src) => ({ src, playerType: 'announcement' })),
+    };
+
+    this.eventQueue.push(translatorEvent);
+    this.processNextEventFromQueue();
+  }
+
+  handleTtsComplete(ttsData) {
+    if (!ttsData || !ttsData.id || !ttsData.location || !Array.isArray(ttsData.audio_urls)) {
+      console.warn('SignageUI', 'Invalid TTS payload received', ttsData);
+      return;
+    }
+
+    const targets = [this.currentProcessingEvent, ...this.eventQueue].filter(event =>
+      event?.type === 'call' && event.id === ttsData.id && event.location === ttsData.location);
+    if (targets.length === 0) return;
+
+    for (const targetEvent of targets) {
+      if (!Array.isArray(targetEvent.requiredTts) || targetEvent.requiredTts.length === 0) {
+        targetEvent.requiredTts = [];
+      }
+
+      if (!Array.isArray(targetEvent.receivedTtsUrls)) {
+        targetEvent.receivedTtsUrls = [];
+      }
+
+      const langIndex = targetEvent.requiredTts.indexOf(ttsData.lang);
+      if (langIndex !== -1) {
+        targetEvent.requiredTts.splice(langIndex, 1);
+      }
+
+      if (targetEvent.receivedTtsUrls.length === 0) {
+        targetEvent.receivedTtsUrls = [...ttsData.audio_urls];
+      }
+
+      const allTtsAvailable = targetEvent.requiredTts.length === 0 || targetEvent.receivedTtsUrls.length > 0;
+
+      if (allTtsAvailable && !targetEvent.ttsReady) {
+        targetEvent.ttsReady = true;
+
+        if (targetEvent.ttsWaitTimeoutId) {
+          clearTimeout(targetEvent.ttsWaitTimeoutId);
+          targetEvent.ttsWaitTimeoutId = null;
+        }
+
+        if (this.currentProcessingEvent === targetEvent) {
+          const newItems = targetEvent.receivedTtsUrls
+            .filter((url) => url && !this.audioPlaybackQueue.some((item) => item.src === url && item.playerType === 'tts'))
+            .map((url) => ({ src: url, playerType: 'tts' }));
+
+          if (newItems.length > 0) {
+            const chimeIdx = this.audioPlaybackQueue.findIndex((item) => item.playerType === 'chime');
+            if (chimeIdx !== -1 && !targetEvent.chimeFinished) {
+              this.audioPlaybackQueue.splice(chimeIdx + 1, 0, ...newItems);
+            } else {
+              this.audioPlaybackQueue.push(...newItems);
+            }
+          }
+
+          if (targetEvent.chimeFinished && !this.isAudioFilePlaying) {
+            this.playNextAudioFileInSequence();
+          }
+        }
+      }
+    }
+  }
+
+  processNextEventFromQueue() {
+    if (this.currentProcessingEvent || this.isAudioFilePlaying) {
+      return;
+    }
+
+    if (this.eventQueue.length === 0) {
+      this.lastShownCallData = this.lastObservedCall;
+      this.updateCurrentCallDisplay(this.lastShownCallData);
+      return;
+    }
+
+    this.currentProcessingEvent = this.eventQueue.shift();
+    this.audioPlaybackQueue = [];
+    this.isAudioFilePlaying = false;
+
+    if (this.currentProcessingEvent.type === 'call') {
+      this.updateCurrentCallDisplay(this.currentProcessingEvent.callData);
+      this.lastShownCallData = { ...this.currentProcessingEvent.callData };
+      if (this.dom.chimeAudio?.src) {
+        this.audioPlaybackQueue.push({ src: this.dom.chimeAudio.src, playerType: 'chime' });
+      }
+      this.currentProcessingEvent.chimeFinished = false;
+      if (this.currentProcessingEvent.ttsReady && Array.isArray(this.currentProcessingEvent.receivedTtsUrls)) {
+        this.currentProcessingEvent.receivedTtsUrls.forEach((url) => {
+          if (url) this.audioPlaybackQueue.push({ src: url, playerType: 'tts' });
+        });
+      }
+    } else if (this.currentProcessingEvent.type === 'announcement') {
+      if (this.lastShownCallData) {
+        this.updateCurrentCallDisplay(this.lastShownCallData);
+      }
+      if (this.dom.chimeAudio?.src) {
+        const alreadyHasChime = this.currentProcessingEvent.audioSequence?.some(
+          (item) => item.playerType === 'chime' || item.src === this.dom.chimeAudio.src,
+        );
+        if (!alreadyHasChime) {
+          this.audioPlaybackQueue.push({ src: this.dom.chimeAudio.src, playerType: 'chime' });
+        }
+      }
+      this.currentProcessingEvent.audioSequence.forEach((item) => this.audioPlaybackQueue.push({ ...item }));
+    }
+
+    if (this.audioPlaybackQueue.length > 0) {
+      this.playNextAudioFileInSequence();
+    } else {
+      this.finishCurrentEvent();
+    }
+  }
+
+  playNextAudioFileInSequence() {
+    if (this.audioPlaybackQueue.length === 0) {
+      this.isAudioFilePlaying = false;
+      if (this.currentProcessingEvent?.type === 'call') {
+        const current = this.currentProcessingEvent;
+        if (!current.chimeFinished) {
+          return;
+        }
+        if (Array.isArray(current.requiredTts) && current.requiredTts.length > 0 && !current.ttsReady) {
+          if (!current.ttsWaitTimeoutId) {
+            current.ttsWaitTimeoutId = setTimeout(() => {
+              if (this.currentProcessingEvent === current && !current.ttsReady) {
+                console.warn('SignageUI', 'TTS timed out for call', current.id, current.location);
+                current.requiredTts = [];
+                current.ttsReady = true;
+                current.ttsWaitTimeoutId = null;
+                this.playNextAudioFileInSequence();
+              }
+            }, TTS_TIMEOUT_DURATION);
+          }
+          return;
+        }
+      }
+      this.finishCurrentEvent();
+      return;
+    }
+
+    const nextItem = this.audioPlaybackQueue.shift();
+    const player = this.getAudioPlayerForType(nextItem.playerType);
+    if (!player || !nextItem.src) {
+      console.warn('SignageUI', 'Missing audio player or source for item', nextItem);
+      this.playNextAudioFileInSequence();
+      return;
+    }
+
+    this.isAudioFilePlaying = true;
+    player.pause();
+    player.currentTime = 0;
+    player.src = nextItem.src;
+    if (typeof player.load === 'function') {
+      player.load();
+    }
+    if ('playbackRate' in player) {
+      player.playbackRate = nextItem.playerType === 'chime' ? 1 : 1.1;
+    }
+    this.attachAudioListeners(player);
+
+    const markChimeAsPlaying = () => {
+      if (nextItem.playerType === 'chime' && this.currentProcessingEvent) {
+        this.currentProcessingEvent.chimeFinished = false;
+      }
+    };
+
+    const playbackEvent = this.currentProcessingEvent;
+    let playResult;
+    try {
+      playResult = player.play();
+    } catch (error) {
+      console.error('SignageUI', 'Error during audio playback', nextItem, error);
+      this.handleAudioFileError({ target: player });
+      return;
+    }
+
+    if (playResult && typeof playResult.then === 'function') {
+      playResult
+        .then(() => {
+          if (this.currentProcessingEvent === playbackEvent) markChimeAsPlaying();
+        })
+        .catch((error) => {
+          if (this.currentProcessingEvent !== playbackEvent) return;
+          console.error('SignageUI', 'Error during audio playback', nextItem, error);
+          this.handleAudioFileError({ target: player });
+        });
+    } else {
+      markChimeAsPlaying();
+    }
+  }
+
+  handleAudioFileEnded = (event) => {
+    const player = event.target;
+    this.removeAudioListeners(player);
+    this.isAudioFilePlaying = false;
+
+    if (this.currentProcessingEvent && player === this.dom.chimeAudio && this.currentProcessingEvent.type === 'call') {
+      this.currentProcessingEvent.chimeFinished = true;
+    }
+
+    this.playNextAudioFileInSequence();
+  };
+
+  handleAudioFileError = (event) => {
+    const player = event.target;
+    console.error('SignageUI', 'Audio playback error', player?.currentSrc, player?.error);
+    this.removeAudioListeners(player);
+    this.isAudioFilePlaying = false;
+
+    if (this.currentProcessingEvent && player === this.dom.chimeAudio && this.currentProcessingEvent.type === 'call') {
+      this.currentProcessingEvent.chimeFinished = true;
+    }
+
+    this.playNextAudioFileInSequence();
+  };
+
+  attachAudioListeners(player) {
+    if (!player) return;
+    player.addEventListener('ended', this.handleAudioFileEnded);
+    player.addEventListener('error', this.handleAudioFileError);
+  }
+
+  removeAudioListeners(player) {
+    if (!player) return;
+    player.removeEventListener('ended', this.handleAudioFileEnded);
+    player.removeEventListener('error', this.handleAudioFileError);
+  }
+
+  finishCurrentEvent() {
+    if (this.currentProcessingEvent?.ttsWaitTimeoutId) {
+      clearTimeout(this.currentProcessingEvent.ttsWaitTimeoutId);
+      this.currentProcessingEvent.ttsWaitTimeoutId = null;
+    }
+    this.currentProcessingEvent = null;
+    this.audioPlaybackQueue = [];
+    this.isAudioFilePlaying = false;
+    this.processNextEventFromQueue();
+  }
+
+  getAudioPlayerForType(type) {
+    if (type === 'chime') return this.dom.chimeAudio;
+    if (type === 'tts') return this.dom.ttsAudioPlayer;
+    return this.dom.announcementAudioPlayer;
+  }
+
+  updateStaticPlaceholders() {
+    const historyLi = this.dom.listHistoryCalls?.querySelector('.italic');
+    if (historyLi && this.dom.listHistoryCalls.children.length <= 1) {
+      historyLi.textContent = SIGNAGE_PLACEHOLDERS.history;
+    }
+    if (this.dom.announcementPlaceholder) {
+      this.dom.announcementPlaceholder.textContent = SIGNAGE_PLACEHOLDERS.announcement;
+    }
+  }
+
+  shouldDelayRefresh() {
+    const audioPlayers = [this.dom.chimeAudio, this.dom.announcementAudioPlayer, this.dom.ttsAudioPlayer];
+    const audioPlaying = audioPlayers.some((player) => player && !player.paused && !player.ended && player.currentTime > 0);
+    return audioPlaying || Boolean(this.currentProcessingEvent) || this.eventQueue.length > 0;
+  }
+
+  createClock() {
+    let clockIntervalId = null;
+    let toggleIntervalId = null;
+    let useBuddhistYear = false;
+
+    const renderClock = () => {
+      const now = new Date();
+      const day = String(now.getDate()).padStart(2, '0');
+      const month = String(now.getMonth() + 1).padStart(2, '0');
+      const hours = String(now.getHours()).padStart(2, '0');
+      const minutes = String(now.getMinutes()).padStart(2, '0');
+      const seconds = String(now.getSeconds()).padStart(2, '0');
+      let year = now.getFullYear();
+      if (useBuddhistYear) {
+        year += 543;
+      }
+      if (this.dom.timeElement) {
+        this.dom.timeElement.textContent = `${hours}:${minutes}:${seconds}`;
+      }
+      if (this.dom.dateElement) {
+        this.dom.dateElement.textContent = `${day}-${month}-${year}`;
+      }
+    };
+
+    return {
+      start: () => {
+        if (clockIntervalId || toggleIntervalId) return;
+        renderClock();
+        clockIntervalId = setInterval(renderClock, 1000);
+        toggleIntervalId = setInterval(() => {
+          useBuddhistYear = !useBuddhistYear;
+          renderClock();
+        }, 30_000);
+      },
+      stop: () => {
+        if (clockIntervalId) {
+          clearInterval(clockIntervalId);
+          clockIntervalId = null;
+        }
+        if (toggleIntervalId) {
+          clearInterval(toggleIntervalId);
+          toggleIntervalId = null;
+        }
+      },
+    };
+  }
+}

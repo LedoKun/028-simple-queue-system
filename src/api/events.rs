@@ -50,7 +50,7 @@ pub async fn sse_events(
         }
     });
 
-    let event_stream = event_stream.map(|event| Ok::<Event, Infallible>(event));
+    let event_stream = event_stream.map(Ok::<Event, Infallible>);
 
     let initial_status = state.announcements.current_status().await;
     let initial_event = format_app_event(&AppEvent::AnnouncementStatus(initial_status));

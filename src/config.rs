@@ -42,11 +42,11 @@ pub struct AppConfig {
     #[envconfig(from = "SERVER_PORT", default = "3000")]
     pub server_port: u16,
 
-    /// The maximum number of completed or skipped calls to retain in the queue's history.
+    /// The maximum number of completed calls to retain in the queue's history.
     ///
     /// Corresponds to the `MAX_HISTORY_SIZE` environment variable.
-    /// Default: `5`.
-    #[envconfig(from = "MAX_HISTORY_SIZE", default = "5")]
+    /// Default: `7`.
+    #[envconfig(from = "MAX_HISTORY_SIZE", default = "7")]
     pub max_history_size: usize,
 
     /// The maximum number of explicitly skipped calls to retain in a separate history.
@@ -72,6 +72,14 @@ pub struct AppConfig {
     /// Default: `./public`.
     #[envconfig(from = "SERVE_DIR_PATH", default = "./public")]
     pub serve_dir_path: PathBuf,
+
+    /// Initial state for prerecorded announcements; operators can change it at runtime.
+    #[envconfig(from = "ANNOUNCEMENTS_ENABLED", default = "true")]
+    pub announcements_enabled: bool,
+
+    /// UTC offset for announcement weekdays (Bangkok by default).
+    #[envconfig(from = "ANNOUNCEMENT_UTC_OFFSET_HOURS", default = "7")]
+    pub announcement_utc_offset_hours: i8,
 
     /// The sub-path within `SERVE_DIR_PATH` where custom announcement audio files are stored.
     /// This path will be joined with `serve_dir_path` to form the full path.
@@ -217,13 +225,17 @@ impl AppConfig {
         // Attempt to load environment variables from a .env file.
         // This is primarily for local development environments and will fail gracefully
         // if no .env file is found or cannot be read.
-        dotenv::dotenv().ok();
+        dotenvy::dotenv().ok();
         info!("Attempting to load application configuration from environment variables...");
 
         // Initialize AppConfig from environment variables.
         // The `Envconfig` derive macro handles parsing and defaults.
         match Self::init_from_env() {
             Ok(mut config) => {
+                config
+                    .validate()
+                    .expect("Invalid application configuration");
+                config.tts_cache_web_path = normalize_cache_web_path(&config.tts_cache_web_path);
                 // Canonicalize serve_dir_path so that downstream path operations (e.g., strip_prefix)
                 // operate on consistent absolute paths. If canonicalization fails (e.g., path does not yet
                 // exist), fall back to joining with the current working directory to obtain an absolute path.
@@ -245,6 +257,19 @@ impl AppConfig {
                 panic!("Failed to load application configuration. Ensure all required environment variables are set or have valid defaults.");
             }
         }
+    }
+
+    fn validate(&self) -> Result<(), String> {
+        if !(-23..=23).contains(&self.announcement_utc_offset_hours) {
+            return Err("ANNOUNCEMENT_UTC_OFFSET_HOURS must be between -23 and 23".into());
+        }
+        if self.sse_event_buffer_size == 0 {
+            return Err("SSE_EVENT_BUFFER_SIZE must be greater than zero".into());
+        }
+        if self.sse_keep_alive_interval_seconds == 0 {
+            return Err("SSE_KEEP_ALIVE_INTERVAL_SECONDS must be greater than zero".into());
+        }
+        Ok(())
     }
 
     /// Constructs the full, absolute path to the base directory for custom announcement audio.
@@ -450,6 +475,11 @@ impl AppConfig {
     }
 }
 
+fn normalize_cache_web_path(path: &str) -> String {
+    let path = path.trim().trim_matches('/');
+    format!("/{}", if path.is_empty() { "tts_cache" } else { path })
+}
+
 pub(crate) fn normalize_language_code(raw: &str) -> String {
     if raw.eq_ignore_ascii_case("en-GB") {
         "en-uk".to_string()
@@ -475,6 +505,37 @@ fn stable_fnv1a_hash(input: &str) -> u64 {
 mod tests {
     use super::*;
     use std::env;
+
+    #[test]
+    fn validates_sse_settings_and_normalizes_cache_mounts() {
+        let mut config = AppConfig::init_from_env().unwrap();
+        config.sse_event_buffer_size = 200;
+        config.sse_keep_alive_interval_seconds = 15;
+        config.announcement_utc_offset_hours = 7;
+        assert!(config.validate().is_ok());
+        config.sse_event_buffer_size = 0;
+        assert!(config
+            .validate()
+            .unwrap_err()
+            .contains("SSE_EVENT_BUFFER_SIZE"));
+        config.sse_event_buffer_size = 200;
+        config.sse_keep_alive_interval_seconds = 0;
+        assert!(config
+            .validate()
+            .unwrap_err()
+            .contains("SSE_KEEP_ALIVE_INTERVAL_SECONDS"));
+        config.sse_keep_alive_interval_seconds = 15;
+        config.announcement_utc_offset_hours = 24;
+        assert!(config.validate().is_err());
+        for (input, expected) in [
+            ("", "/tts_cache"),
+            ("/", "/tts_cache"),
+            ("cache/", "/cache"),
+            (" /nested/cache/ ", "/nested/cache"),
+        ] {
+            assert_eq!(normalize_cache_web_path(input), expected);
+        }
+    }
 
     /// Helper function to unset an environment variable for a test.
     fn unset_env(key: &str) {
@@ -513,6 +574,8 @@ mod tests {
             max_skipped_history_size: 5,
             queue_identifier_prefix_required: DEFAULT_QUEUE_IDENTIFIER_PREFIX_REQUIRED,
             serve_dir_path: PathBuf::from("./public"),
+            announcements_enabled: true,
+            announcement_utc_offset_hours: 7,
             announcements_audio_sub_path: PathBuf::from("media"),
             banners_sub_path: PathBuf::from("media"),
             banner_rotation_interval_seconds: 10,
@@ -596,6 +659,8 @@ mod tests {
             max_skipped_history_size: 5,
             queue_identifier_prefix_required: DEFAULT_QUEUE_IDENTIFIER_PREFIX_REQUIRED,
             serve_dir_path: PathBuf::from("./public"),
+            announcements_enabled: true,
+            announcement_utc_offset_hours: 7,
             announcements_audio_sub_path: PathBuf::from("media"),
             banners_sub_path: PathBuf::from("media"),
             banner_rotation_interval_seconds: 10,
@@ -635,6 +700,8 @@ mod tests {
             max_skipped_history_size: 5,
             queue_identifier_prefix_required: DEFAULT_QUEUE_IDENTIFIER_PREFIX_REQUIRED,
             serve_dir_path: PathBuf::from("./public"),
+            announcements_enabled: true,
+            announcement_utc_offset_hours: 7,
             announcements_audio_sub_path: PathBuf::from("media"),
             banners_sub_path: PathBuf::from("media"),
             banner_rotation_interval_seconds: 10,
@@ -670,6 +737,8 @@ mod tests {
             max_skipped_history_size: 5,
             queue_identifier_prefix_required: DEFAULT_QUEUE_IDENTIFIER_PREFIX_REQUIRED,
             serve_dir_path: PathBuf::from("./public"),
+            announcements_enabled: true,
+            announcement_utc_offset_hours: 7,
             announcements_audio_sub_path: PathBuf::from("media"),
             banners_sub_path: PathBuf::from("media"),
             banner_rotation_interval_seconds: 10,

@@ -116,20 +116,12 @@ class QueueApiClient {
     return this.post('/queue/add', callData);
   }
 
-  skipCall() {
-    return this.post('/queue/skip');
-  }
-
   getQueueState() {
     return this.get('/queue/state');
   }
 
   completeCurrentCall() {
     return this.post('/queue/complete');
-  }
-
-  forceSkipNewCall(callData) {
-    return this.post('/queue/force_skip', callData);
   }
 
   nextAnnouncement() {
@@ -139,6 +131,10 @@ class QueueApiClient {
   triggerAnnouncement(slotId) {
     const encoded = encodeURIComponent(slotId);
     return this.post(`/announcements/trigger/${encoded}`);
+  }
+
+  setAnnouncementsEnabled(enabled) {
+    return this.request('/announcements/enabled', { method: 'PUT', body: { enabled } });
   }
 
   getAnnouncementStatus() {

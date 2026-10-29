@@ -8,15 +8,15 @@
 # 2. Ensure the following environment variables are exported for the kiosk user:
 #      - SERVER_IP (required): IP/hostname to ping and verify via HTTP.
 #      - SERVER_HTTP_URL (optional): Full health-check URL; defaults to
-#        http://SERVER_IP.
-#      - KIOSK_URL (optional): Page to open in Chromium; defaults to SERVER_HTTP_URL.
+#        http://SERVER_IP:3000/health.
+#      - KIOSK_URL (optional): Defaults to signage.html on the health-check server.
 #      - XDG_RUNTIME_DIR (recommended): PulseAudio runtime path; defaults to
 #        /run/user/<uid> when unset.
 #    Persist them via /etc/environment or a sourced file (e.g. ~/.profile). Example
 #    /etc/environment snippet (adjust values):
 #      SERVER_IP=192.168.1.50
-#      SERVER_HTTP_URL=http://192.168.1.50/health
-#      KIOSK_URL=http://192.168.1.50/queue
+#      SERVER_HTTP_URL=http://192.168.1.50:3000/health
+#      KIOSK_URL=http://192.168.1.50:3000/signage.html
 #      XDG_RUNTIME_DIR=/run/user/1000
 # 3. Integrate with LXDE autostart by adding this line to
 #    /home/<user>/.config/lxsession/LXDE-pi/autostart:
@@ -57,8 +57,10 @@ configure_volume() {
 # Configuration via environment variables
 #------------------------------------------------------------------------------
 : "${SERVER_IP:?Set SERVER_IP to the host/IP address that should respond to ping}"
-SERVER_HTTP_URL=${SERVER_HTTP_URL:-http://$SERVER_IP}
-KIOSK_URL=${KIOSK_URL:-$SERVER_HTTP_URL}
+SERVER_HTTP_URL=${SERVER_HTTP_URL:-http://${SERVER_IP}:3000/health}
+KIOSK_BASE_URL=${SERVER_HTTP_URL%/}
+KIOSK_BASE_URL=${KIOSK_BASE_URL%/health}
+KIOSK_URL=${KIOSK_URL:-${KIOSK_BASE_URL}/signage.html}
 DISPLAY_NAME=${DISPLAY:-:0}
 XAUTHORITY_FILE=${XAUTHORITY:-/home/${USER:-pi}/.Xauthority}
 TARGET_RESOLUTION=${TARGET_RESOLUTION:-1920x1080}

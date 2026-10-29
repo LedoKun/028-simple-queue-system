@@ -105,11 +105,10 @@ impl TranslatorService {
             let mut last_trigger = self.last_trigger.lock().await;
             if cooldown_seconds > 0 {
                 if let Some(previous_instant) = *last_trigger {
-                    let elapsed = previous_instant.elapsed();
-                    if elapsed < cooldown_duration {
-                        let remaining = cooldown_duration.saturating_sub(elapsed).as_secs();
+                    let remaining = Self::remaining_seconds(previous_instant, cooldown_duration);
+                    if remaining > 0 {
                         return Err(TranslatorCallError::CooldownActive {
-                            remaining_seconds: remaining.max(1),
+                            remaining_seconds: remaining,
                         });
                     }
                 }
@@ -159,17 +158,14 @@ impl TranslatorService {
 
         let cooldown_duration = Duration::from_secs(cooldown_seconds);
         let last_trigger = self.last_trigger.lock().await;
-        match *last_trigger {
-            Some(previous) => {
-                let elapsed = previous.elapsed();
-                if elapsed >= cooldown_duration {
-                    0
-                } else {
-                    cooldown_duration.saturating_sub(elapsed).as_secs().max(1)
-                }
-            }
-            None => 0,
-        }
+        last_trigger.map_or(0, |previous| {
+            Self::remaining_seconds(previous, cooldown_duration)
+        })
+    }
+
+    fn remaining_seconds(previous: Instant, cooldown: Duration) -> u64 {
+        let remaining = cooldown.saturating_sub(previous.elapsed());
+        remaining.as_secs() + u64::from(remaining.subsec_nanos() > 0)
     }
 
     fn sanitize_location(raw: &str) -> Result<String, TranslatorCallError> {
@@ -191,5 +187,31 @@ impl TranslatorService {
             playlist.push(format!("{}/number_{:03}.mp3", BASE_PATH, digit));
         }
         playlist
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use envconfig::Envconfig;
+
+    #[tokio::test]
+    async fn cooldown_rounds_up_and_invalid_calls_do_not_start_it() {
+        let config = AppConfig {
+            announcement_manual_trigger_cooldown_seconds: 5,
+            ..AppConfig::init_from_env().unwrap()
+        };
+        let service =
+            TranslatorService::new(Arc::new(config), tokio::sync::broadcast::channel(8).0);
+        assert!(service.trigger_call("not a counter").await.is_err());
+        assert!(!service.current_status().await.cooldown_active);
+        service.trigger_call("1").await.unwrap();
+        assert_eq!(service.current_status().await.cooldown_remaining_seconds, 5);
+        assert!(matches!(
+            service.trigger_call("1").await,
+            Err(TranslatorCallError::CooldownActive {
+                remaining_seconds: 5
+            })
+        ));
     }
 }

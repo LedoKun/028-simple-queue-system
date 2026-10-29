@@ -3,6 +3,7 @@
 
 <head>
     <meta charset="UTF-8">
+    <meta name="google" content="notranslate">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Number Signage Display</title>
     <link rel="apple-touch-icon" sizes="180x180" href="/media/favicon/apple-touch-icon.png">
@@ -10,8 +11,6 @@
     <link rel="icon" type="image/png" sizes="16x16" href="/media/favicon/favicon-16x16.png">
     <link rel="manifest" href="/site.webmanifest">
     <link href="css/styles.css" rel="stylesheet">
-    <!-- Legacy fallback CSS for older smart TVs (precedes inline modern CSS) -->
-    <link href="css/signage-legacy.css" rel="stylesheet">
     <style>
         :root {
             --page-bg: #eef6ff;
@@ -219,7 +218,7 @@
 
         .side-panel {
             display: grid;
-            grid-template-rows: minmax(7rem, 0.8fr) minmax(0, 1.65fr) auto;
+            grid-template-rows: minmax(7rem, 0.7fr) minmax(0, 2.3fr);
             gap: clamp(0.8rem, 1.6vw, 1.4rem);
             min-width: 0;
             min-height: 0;
@@ -311,47 +310,43 @@
 
         .list-scroll {
             flex: 1;
+            container-type: size;
             overflow: hidden;
             padding: clamp(0.75rem, 1.4vw, 1.2rem);
             min-width: 0;
             min-height: 0;
         }
 
-        #list-history-calls,
-        #list-skipped-calls {
+        #list-history-calls {
+            --history-font-size: 12cqh;
+            display: flex;
+            flex-direction: column;
+            height: 100%;
             list-style: none;
             padding: 0;
             margin: 0;
             min-width: 0;
+            gap: clamp(0.25rem, 0.5vh, 0.5rem);
         }
 
-        #list-history-calls {
-            display: flex;
-            flex-direction: column;
-            gap: clamp(0.45rem, 0.9vw, 0.8rem);
-        }
-
-        #list-skipped-calls {
-            display: flex;
-            flex-direction: row;
-            gap: clamp(0.45rem, 0.9vw, 0.8rem);
-            align-items: center;
-            overflow: hidden;
-            white-space: nowrap;
+        #list-history-calls:has(> li:nth-child(6)) {
+            --history-font-size: 8cqh;
         }
 
         .history-item {
+            flex: 1;
             display: flex;
             align-items: center;
             justify-content: space-between;
             gap: clamp(0.6rem, 1vw, 1rem);
             min-width: 0;
+            min-height: 0;
             border: 1px solid var(--border);
             border-radius: 10px;
             background: #ffffff;
-            padding: clamp(0.65rem, 1.1vw, 1rem) clamp(0.8rem, 1.3vw, 1.15rem);
+            padding: 0.25em 0.45em;
             color: var(--text);
-            font-size: clamp(2rem, 3.7vw, 3.8rem);
+            font-size: clamp(1rem, var(--history-font-size), 3.8rem);
             font-weight: 850;
             line-height: 1.05;
             white-space: nowrap;
@@ -373,7 +368,6 @@
             font-variant-numeric: tabular-nums;
         }
 
-        .history-item .id-part,
         .history-item span:first-child {
             min-width: 0;
             overflow: hidden;
@@ -387,50 +381,6 @@
             font-weight: 800;
             letter-spacing: 0;
             margin-left: 0.25rem;
-        }
-
-        .missed-card {
-            border-color: #f3d69c;
-            background: #fffdf8;
-        }
-
-        .missed-card header {
-            padding-top: clamp(0.7rem, 1.2vw, 1rem);
-            padding-bottom: clamp(0.7rem, 1.2vw, 1rem);
-            background: var(--amber-soft);
-            border-bottom-color: #f3d69c;
-        }
-
-        .missed-card .list-scroll {
-            padding: clamp(0.6rem, 1vw, 0.85rem);
-        }
-
-        .missed-card .list-title-en {
-            color: var(--amber);
-        }
-
-        #list-skipped-calls .history-item {
-            flex: 0 0 auto;
-            max-width: 100%;
-            border-color: #f3d69c;
-            background: #ffffff;
-            color: var(--text);
-            padding: 0.45rem 0.75rem;
-            font-size: clamp(1.25rem, 1.9vw, 1.9rem);
-        }
-
-        #list-skipped-calls .history-item strong {
-            color: var(--amber);
-        }
-
-        #list-skipped-calls .history-item .timestamp {
-            display: none;
-        }
-
-        #list-skipped-calls .history-item.italic {
-            flex: 1 1 100%;
-            justify-content: center;
-            text-align: center;
         }
 
         #sse-status-indicator {
@@ -476,7 +426,7 @@
             }
 
             .side-panel {
-                grid-template-rows: minmax(5rem, 0.7fr) minmax(0, 1fr) auto;
+                grid-template-rows: minmax(5rem, 0.7fr) minmax(0, 2.3fr);
             }
 
             .counter-panel {
@@ -490,7 +440,7 @@
     </style>
 </head>
 
-<body>
+<body translate="no">
     <div class="aspect-ratio-container">
         <div class="signage-shell">
             <section class="now-serving" aria-labelledby="call-id-label">
@@ -536,7 +486,7 @@
                     <header>
                         <h2 class="list-title">
                             <span class="list-title-th">เรียกแล้ว</span>
-                            <span class="list-title-en">SERVED</span>
+                            <span class="list-title-en">CALL HISTORY</span>
                         </h2>
                         <span class="list-title-note">NUMBER</span>
                     </header>
@@ -547,20 +497,6 @@
                     </div>
                 </div>
 
-                <div id="missed-tokens-card" class="glass-card list-card missed-card">
-                    <header>
-                        <h2 class="list-title">
-                            <span class="list-title-th">ติดต่อเจ้าหน้าที่</span>
-                            <span class="list-title-en">CONTACT STAFF</span>
-                        </h2>
-                        <span class="list-title-note">NUMBER</span>
-                    </header>
-                    <div class="list-scroll">
-                        <ul id="list-skipped-calls">
-                            <li class="history-item italic text-gray-400">----</li>
-                        </ul>
-                    </div>
-                </div>
             </aside>
         </div>
     </div>
@@ -569,8 +505,6 @@
     <audio id="announcement-audio-player" preload="auto" style="display:none;"></audio>
     <audio id="tts-audio-player" preload="auto" style="display:none;"></audio>
 
-    <script nomodule src="dist/polyfills.legacy.js"></script>
-    <script nomodule src="dist/signage.legacy.js"></script>
     <script type="module" src="js/pages/signage/index.js"></script>
 </body>
 

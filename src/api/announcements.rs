@@ -3,7 +3,7 @@ use std::sync::Arc;
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::Json;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tracing::{debug, info, warn};
 
 use crate::announcements::{self, ManualTriggerError};
@@ -24,6 +24,19 @@ pub async fn get_announcement_status(
     let status = state.announcements.current_status().await;
     debug!("Returning announcement status: {:?}", status);
     Json(status)
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SetEnabledRequest {
+    enabled: bool,
+}
+
+pub async fn set_announcements_enabled(
+    State(state): State<Arc<AppState>>,
+    Json(request): Json<SetEnabledRequest>,
+) -> Json<announcements::AnnouncementStatus> {
+    Json(state.announcements.set_enabled(request.enabled).await)
 }
 
 pub async fn manual_advance_announcement(
@@ -76,6 +89,13 @@ pub async fn manual_trigger_specific_announcement(
 
 fn manual_trigger_error_to_response(err: &ManualTriggerError) -> (StatusCode, Json<ErrorResponse>) {
     match err {
+        ManualTriggerError::Disabled | ManualTriggerError::SlotUnavailable(_) => (
+            StatusCode::CONFLICT,
+            Json(ErrorResponse {
+                error: err.to_string(),
+                remaining_seconds: None,
+            }),
+        ),
         ManualTriggerError::CooldownActive { remaining_seconds } => (
             StatusCode::TOO_MANY_REQUESTS,
             Json(ErrorResponse {

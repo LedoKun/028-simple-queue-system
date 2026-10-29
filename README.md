@@ -4,8 +4,8 @@ This is a simple, robust queue management system built with Rust and the Axum we
 
 ## Features
 
-- **Operator Interface**: A web-based panel for operators to add new calls to the queue, skip calls, and manually trigger announcements.
-- **Signage Display**: A public display that shows the currently served call number and location, along with histories of recent and skipped calls.
+- **Operator Interface**: A web-based panel for operators to add new calls to the queue and manually trigger announcements.
+- **Signage Display**: A public display that shows the currently served call number and location, along with an expanded calling history.
 - **Text-to-Speech (TTS)**: Automatically generates audio announcements for calls in multiple languages. It includes a caching mechanism to improve performance and reduce external API calls, and signage playback runs at 1.1× speed (while the chime remains at 1×) to keep announcements brisk without losing cues.
 - **Announcement Management**: Supports automated and manual cycling of pre-recorded audio and banner announcements, with configurable cooldowns to prevent spamming.
 - **Real-time Updates**: Uses Server-Sent Events (SSE) to provide instant updates to all connected clients (operators and signage displays) without needing to refresh the page.
@@ -35,10 +35,7 @@ cargo run
 # Build Tailwind CSS once (production output)
 npm run build:css
 
-# Build legacy-compatible JS bundles
-npm run build:legacy
-
-# Or build both in a single step (used by CI)
+# Build frontend assets (also used by CI)
 npm run build:assets
 
 # Watch TailwindCSS during development
@@ -50,29 +47,12 @@ cargo test
 
 The server listens on `SERVER_ADDRESS:SERVER_PORT` (defaults to `0.0.0.0:3000`). Static assets under `public/` are served by Axum, so HTML/JS/CSS edits take effect on reload.
 
-### Legacy Browser Support
+### Browser Support
 
-Some kiosks (older Samsung Tizen and LG webOS TVs) ship browsers without native support for
-modern ECMAScript features such as ES modules, optional chaining, and `fetch`. The frontend now
-ships a polyfilled, ES5-compatible bundle that loads automatically on browsers that do not
-understand `<script type="module">`.
-
-Whenever you touch files under `public/js/`, rebuild the legacy bundles:
-
-```bash
-npm run build:legacy
-```
-
-This generates the following assets which are served via `<script nomodule>`:
-
-- `public/dist/polyfills.legacy.js` – language/runtime shims (`Promise`, `Map`, `fetch`,
-  `EventSource`, DOM helpers, CSS custom property ponyfill, etc.).
-- `public/dist/operator.legacy.js` and `public/dist/signage.legacy.js` – transpiled versions of
-  the main operator/signage modules.
-
-Modern browsers continue to load the original ES modules, while legacy ones fall back to the
-transpiled output without additional configuration. Running `npm run build:assets` rebuilds both the
-CSS and the legacy JS in one command (matching the GitHub workflow).
+The operator and signage pages use native ES modules and current browser APIs.
+Use a current Chromium, Firefox, or Safari browser. Legacy TV bundles, polyfills,
+`tv.html`, and `signage-original.html` have been removed. The QR signage page remains
+available at `/signage_with_028_qr.html`.
 
 ### Deployment
 
@@ -124,10 +104,13 @@ The system can be configured using the following environment variables. You can 
 | `RUST_LOG` | `info` | Logging level for the application. Can be set to debug, warn, etc. |
 | `SERVER_ADDRESS` | `0.0.0.0` | The IP address for the server to bind to. |
 | `SERVER_PORT` | `3000` | The port for the server to listen on. |
-| `MAX_HISTORY_SIZE` | `5` | Maximum number of completed calls to store in the history. |
+| `MAX_HISTORY_SIZE` | `7` | Maximum number of completed calls to store in the history. |
 | `MAX_SKIPPED_HISTORY_SIZE` | `5` | Maximum number of skipped calls to store in the history. |
 | `QUEUE_IDENTIFIER_PREFIX_REQUIRED` | `true` | When `true`, queue identifiers must use the legacy letter+digits format such as `A1`. When `false`, queue identifiers must contain digits only such as `1` or `99`. |
 | `SERVE_DIR_PATH` | `./public` | Path to the directory containing static web files. |
+| `ANNOUNCEMENTS_ENABLED` | `true` | Initial on/off state for prerecorded audio announcements. The operator panel can change this until the server restarts. Queue calls, translator calls, and banners continue independently. |
+| `ANNOUNCEMENT_UTC_OFFSET_HOURS` | `7` | UTC offset used for announcement weekdays; defaults to Bangkok time, including in containers. Valid range: -23 through 23. |
+| `ANNOUNCEMENT_<SLOT_ID>_DAYS` | `all` | Allowed weekdays for a slot; see below. `03-lab-done` defaults to `tue,wed,thu`. |
 | `ANNOUNCEMENTS_AUDIO_SUB_PATH` | `media/announcements` | Sub-path within SERVE_DIR_PATH where announcement audio files are located. |
 | `BANNERS_SUB_PATH` | `media/banners` | Sub-path within SERVE_DIR_PATH where banner media is stored. |
 | `ANNOUNCEMENT_AUTO_CYCLE_INTERVAL_SECONDS` | `1200` | Interval (in seconds) for automatically cycling announcements. Set to 0 to disable. |
@@ -150,6 +133,61 @@ Example:
 -e TTS_ANNOUNCEMENT_TEMPLATE_TH='หมายเลข {Q_NUM}, เชิญช่อง {DEST_NUM}' \
 -e TTS_ANNOUNCEMENT_TEMPLATE_EN='Queue {Q_NUM}, please proceed to counter {DEST_NUM}'
 ```
+
+### Announcement Scheduling
+
+Each directory under `public/media/announcements/` is an announcement slot. Audio
+files (`mp3`, `wav`, `ogg`) play in filename order. Schedules are read at startup;
+restart the server after changing the environment or adding media.
+
+Every announcement defaults to every day without any configuration, except
+`03-lab-done`, which defaults to Tuesday, Wednesday, and Thursday. To override a
+slot, uppercase its directory name and replace punctuation with underscores:
+
+```dotenv
+ANNOUNCEMENTS_ENABLED=true
+ANNOUNCEMENT_UTC_OFFSET_HOURS=7
+ANNOUNCEMENT_03_LAB_DONE_DAYS=tue,wed,thu
+ANNOUNCEMENT_00_LISTEN_TO_NUMBER_DAYS=mon,tue,wed,thu,fri
+ANNOUNCEMENT_01_NUMBER_NOT_QUEUE_DAYS=all
+ANNOUNCEMENT_02_BRING_THAI_ID_DAYS=off
+```
+
+Use comma-separated weekday names (short or full names, case insensitive), `all`
+for every day, or `off` to disable one slot. Invalid or empty schedules log an
+error and exclude that slot. Day changes take effect without a restart. Automatic
+cycling and manual triggers both obey these schedules; unavailable slots are
+hidden from the operator panel.
+
+The operator's **Turn Announcements Off** button stops current and queued
+prerecorded playback on connected signage displays. Turning announcements back on
+waits a full automatic interval or an explicit manual trigger before playing.
+The initial state comes from `ANNOUNCEMENTS_ENABLED` after every server restart.
+Use `ANNOUNCEMENT_AUTO_CYCLE_INTERVAL_SECONDS=0` for manual playback only.
+
+API: `PUT /api/announcements/enabled` with `{"enabled": false}` or
+`{"enabled": true}`. `GET /api/announcements/status` includes `enabled` and today's
+`available_slots`. Disabled or out-of-schedule manual triggers return HTTP 409.
+
+### Validation
+
+```bash
+npm ci
+npm test
+npm run build:assets
+bash tests/kiosk.test.sh
+python3 -m unittest discover -s tests -p 'test_*.py'
+npm audit
+cargo test --locked
+cargo clippy --all-targets --locked -- -D warnings
+cargo audit
+```
+
+The Python checks use the packages in `requirements.txt`.
+
+`cargo audit` requires the separately installed RustSec `cargo-audit` tool. TTS
+requests retain gzip, Brotli, and deflate support; unused Zstandard decoding has
+been removed to reduce native build dependencies.
 
 ### Generating Text-to-Speech Assets
 

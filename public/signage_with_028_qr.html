@@ -3,6 +3,7 @@
 
 <head>
     <meta charset="UTF-8">
+    <meta name="google" content="notranslate">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>แสดงคิว - ที่ทำการชั่วคราว (Queue Display - New Temporary Location)</title>
     <link rel="apple-touch-icon" sizes="180x180" href="/media/favicon/apple-touch-icon.png">
@@ -10,18 +11,6 @@
     <link rel="icon" type="image/png" sizes="16x16" href="/media/favicon/favicon-16x16.png">
     <link rel="manifest" href="/site.webmanifest">
     <link href="css/styles.css" rel="stylesheet">
-    <!-- Legacy fallback CSS for older smart TVs (precedes inline modern CSS) -->
-    <link href="css/signage-legacy.css" rel="stylesheet">
-    <script>
-        // Prefer the modern (module) UI when supported, while keeping a legacy fallback.
-        (function () {
-            try {
-                if ('noModule' in HTMLScriptElement.prototype) {
-                    document.documentElement.className += (document.documentElement.className ? ' ' : '') + 'has-module';
-                }
-            } catch (e) { }
-        })();
-    </script>
     <style>
         html,
         body {
@@ -192,6 +181,7 @@
 
         #announcement-placeholder {
             font-size: clamp(1.2rem, 2.5vw, 2.2rem);
+            line-height: 1.15;
             font-weight: 600;
         }
 
@@ -204,10 +194,10 @@
 
         /* Now Serving - Prominent Display */
         .now-serving-card {
-            flex: 1.5;
+            flex: 1.25;
             display: flex;
             flex-direction: column;
-            padding: clamp(1rem, 2vh, 1.5rem);
+            padding: clamp(0.75rem, 1.5vh, 1rem);
         }
 
         .now-serving-header {
@@ -216,6 +206,7 @@
             align-items: center;
             gap: 0.2rem;
             margin-bottom: 0.5rem;
+            line-height: 1.1;
         }
 
         .now-serving-title-th {
@@ -236,11 +227,11 @@
             flex-direction: column;
             justify-content: center;
             align-items: center;
-            gap: 0.75rem;
+            gap: 0.4rem;
         }
 
         .token-display {
-            font-size: clamp(6rem, 18vh, 12rem);
+            font-size: clamp(5rem, 14vh, 10rem);
             font-weight: 900;
             line-height: 0.95;
             letter-spacing: -0.04em;
@@ -251,9 +242,9 @@
 
         .counter-panel {
             display: flex;
-            flex-direction: column;
+            flex-direction: row;
             align-items: center;
-            gap: 0.1rem;
+            gap: 0.75rem;
         }
 
         .counter-label {
@@ -268,32 +259,20 @@
         }
 
         .counter-display {
-            font-size: clamp(4rem, 12vh, 8rem);
+            font-size: clamp(3rem, 8vh, 6rem);
             font-weight: 800;
             line-height: 1;
             color: #e2e8f0;
             text-shadow: 0 6px 20px rgba(15, 23, 42, 0.55);
         }
 
-        /* Token Lists - Smaller Cards Row */
-        .cards-row {
-            display: flex;
-            gap: clamp(0.25rem, 0.5vh, 0.4rem);
-            flex: 0.5;
-            min-height: 0;
-            min-width: 0;
-        }
-
-        .cards-row>.list-card {
-            min-width: 0;
-        }
-
         .list-card {
-            flex: 1;
+            flex: 1.25;
             display: flex;
             flex-direction: column;
             overflow: hidden;
             min-width: 0;
+            min-height: 0;
         }
 
         .list-card header {
@@ -304,171 +283,75 @@
         .list-title {
             font-size: clamp(0.85rem, 1.3vw, 1.1rem);
             font-weight: 600;
+            line-height: 1.15;
             letter-spacing: 0.015em;
             display: flex;
             align-items: baseline;
             justify-content: space-between;
         }
 
-        .list-title span {
-            font-size: 0.7rem;
-            color: rgba(156, 163, 175, 0.8);
-            font-weight: 500;
-        }
-
         .list-scroll {
             flex: 1;
+            container-type: size;
             overflow-y: hidden;
             padding: 0.75rem 1rem 1rem;
             min-width: 0;
+            min-height: 0;
         }
 
-        #list-combined-calls {
+        #list-history-calls {
+            --history-font-size: 10cqh;
             list-style: none;
             padding: 0;
             margin: 0;
             display: flex;
             flex-direction: column;
-            gap: 0.5rem;
+            height: 100%;
+            gap: clamp(0.2rem, 0.5vh, 0.4rem);
         }
 
-        #legacy-call-lists {
-            display: flex;
-            flex-direction: column;
-            gap: 0.75rem;
-        }
-
-        #list-history-calls,
-        #list-skipped-calls {
-            list-style: none;
-            padding: 0;
-            margin: 0;
-            display: flex;
-            flex-direction: column;
-            gap: 0.5rem;
-        }
-
-        html.has-module #legacy-call-lists {
-            display: none;
-        }
-
-        html:not(.has-module) #list-combined-calls {
-            display: none;
-        }
-
-        /* Combined list item styles */
-        .combined-item {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            font-size: clamp(1.2rem, 2.5vw, 2.2rem);
-            padding: 0.35rem 0.6rem;
-            border-radius: 10px;
-            white-space: nowrap;
-            gap: 0.4rem;
-            border-left: 4px solid transparent;
-        }
-
-        .combined-item.italic {
-            display: block;
-            text-align: center;
-            border-left: none;
-        }
-
-        .combined-item .id-part {
-            overflow: hidden;
-            text-overflow: ellipsis;
-            min-width: 0;
-        }
-
-        .combined-item .id-part strong {
-            letter-spacing: -0.05em;
-            word-spacing: -0.15em;
-        }
-
-        .combined-item .timestamp {
-            color: rgba(148, 163, 184, 0.75);
-            font-size: 0.8em;
-            letter-spacing: normal;
-            flex: 0 0 auto;
-            margin-left: 0.3rem;
-        }
-
-        /* Served items - Green accent */
-        .served-item {
-            background: rgba(34, 197, 94, 0.15);
-            border-left-color: #22c55e;
-            color: #bbf7d0;
-        }
-
-        .served-item .id-part strong {
-            color: #86efac;
-        }
-
-        /* Skipped/Missed items - Amber accent */
-        .skipped-item {
-            background: rgba(251, 191, 36, 0.15);
-            border-left-color: #fbbf24;
-            color: #fef08a;
-        }
-
-        .skipped-item .id-part strong {
-            color: #fcd34d;
-        }
-
-        /* Legend styles */
-        .legend {
-            display: flex;
-            gap: 0.75rem;
-            font-size: 0.65rem;
-            font-weight: 500;
-            margin-left: auto;
-        }
-
-        .legend-served {
-            color: #86efac;
-        }
-
-        .legend-skipped {
-            color: #fcd34d;
+        #list-history-calls:has(> li:nth-child(6)) {
+            --history-font-size: 7cqh;
         }
 
         .history-item {
+            flex: 1;
+            min-height: 0;
             display: flex;
             justify-content: space-between;
             align-items: center;
-            font-size: clamp(1rem, 1.6vw, 1.4rem);
-            padding: 0.2rem 0.5rem;
-            border-radius: 8px;
-            background: rgba(30, 41, 59, 0.55);
-            border: 1px solid rgba(148, 163, 184, 0.08);
+            font-size: clamp(0.9rem, var(--history-font-size), 2.2rem);
+            line-height: 1.15;
+            padding: 0.25em 0.45em;
+            border-radius: 10px;
             white-space: nowrap;
             gap: 0.4rem;
+            background: rgba(34, 197, 94, 0.15);
+            border-left: 4px solid #22c55e;
+            color: #bbf7d0;
         }
 
         .history-item.italic {
             display: block;
             text-align: center;
+            border-left: none;
         }
 
-        .history-item strong {
-            letter-spacing: -0.07em;
-            word-spacing: -0.2em;
-        }
-
-        .history-item .id-part,
-        .history-item strong {
+        .history-item > span:first-child {
+            overflow: hidden;
+            text-overflow: ellipsis;
             min-width: 0;
         }
 
-        .history-item .id-part {
-            overflow: hidden;
-            text-overflow: ellipsis;
+        .history-item strong {
+            color: #86efac;
+            letter-spacing: -0.05em;
+            word-spacing: -0.15em;
         }
 
         .history-item .timestamp {
             color: rgba(148, 163, 184, 0.75);
-            font-size: 0.85em;
+            font-size: 0.8em;
             letter-spacing: normal;
             flex: 0 0 auto;
             margin-left: 0.3rem;
@@ -525,7 +408,7 @@
     </style>
 </head>
 
-<body>
+<body translate="no">
     <div class="aspect-ratio-container">
         <div class="signage-shell">
             <!-- Main QR Code Section -->
@@ -585,29 +468,13 @@
                     </div>
                 </div>
 
-                <!-- Combined Call History -->
-                <div class="glass-card list-card" style="flex: 0.6;">
-                    <header class="list-title">
-                        <span>Call History</span>
-                        <span class="legend">
-                            <span class="legend-served">● เรียกแล้ว <small
-                                    style="font-size: 0.7em; opacity: 0.8;">Served</small></span>
-                            <span class="legend-skipped">● ข้าม <small
-                                    style="font-size: 0.7em; opacity: 0.8;">Missed</small></span>
-                        </span>
-                    </header>
+                <!-- Call History -->
+                <div class="glass-card list-card">
+                    <header class="list-title">เรียกแล้ว / Call History</header>
                     <div class="list-scroll">
-                        <ul id="list-combined-calls">
-                            <li class="combined-item italic text-gray-400">---</li>
+                        <ul id="list-history-calls">
+                            <li class="history-item italic text-gray-400">---</li>
                         </ul>
-                        <div id="legacy-call-lists">
-                            <ul id="list-history-calls">
-                                <li class="history-item italic text-gray-400">---</li>
-                            </ul>
-                            <ul id="list-skipped-calls">
-                                <li class="history-item italic text-gray-400">---</li>
-                            </ul>
-                        </div>
                     </div>
                 </div>
             </aside>
@@ -618,8 +485,6 @@
     <audio id="announcement-audio-player" preload="auto" style="display:none;"></audio>
     <audio id="tts-audio-player" preload="auto" style="display:none;"></audio>
 
-    <script nomodule src="dist/polyfills.legacy.js"></script>
-    <script nomodule src="dist/signage.legacy.js"></script>
     <script type="module" src="js/pages/signage/signage_with_qr.js"></script>
 </body>
 

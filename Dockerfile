@@ -29,6 +29,9 @@ LABEL org.opencontainers.image.source="https://github.com/${GH_REPO}"
 
 WORKDIR /
 
+ENV ANNOUNCEMENTS_ENABLED=true \
+    ANNOUNCEMENT_03_LAB_DONE_DAYS=tue,wed,thu
+
 # Copy tini from the helper stage and set execute permissions
 COPY --from=build-env --chmod=755 /tini-static /tini-static
 

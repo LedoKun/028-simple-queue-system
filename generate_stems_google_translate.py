@@ -12,6 +12,7 @@ import argparse
 import asyncio
 import logging
 import re
+from tempfile import TemporaryDirectory
 from dataclasses import dataclass
 from itertools import product
 from pathlib import Path
@@ -139,7 +140,10 @@ def compress_mp3_file(path: Path, config: TTSConfig) -> None:
 
     try:
         audio = AudioSegment.from_file(path, format="mp3")
-        audio.export(path, format="mp3", bitrate=config.compression_bitrate)
+        with TemporaryDirectory(dir=path.parent) as temp_dir:
+            compressed = Path(temp_dir) / path.name
+            audio.export(compressed, format="mp3", bitrate=config.compression_bitrate)
+            compressed.replace(path)
         LOGGER.debug("Compressed %s to %s", path.name, config.compression_bitrate)
     except Exception as exc:  # noqa: BLE001
         LOGGER.warning("Could not compress %s: %s", path.name, exc)
@@ -168,12 +172,11 @@ async def fetch_tts(
             ) as response:
                 if response.status != 200:
                     LOGGER.debug("HTTP %s for '%s'", response.status, text)
-                    continue
-
-                content = await response.read()
-                if len(content) > 100:
-                    return content
-                LOGGER.debug("Empty payload for '%s'", text)
+                else:
+                    content = await response.read()
+                    if len(content) > 100:
+                        return content
+                    LOGGER.debug("Empty payload for '%s'", text)
         except Exception as exc:  # noqa: BLE001
             LOGGER.debug("Attempt %s failed for '%s': %s", attempt, text, exc)
 

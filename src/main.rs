@@ -125,19 +125,7 @@ async fn main() -> AppResult<()> {
 
     // Path for serving cached TTS audio files.
     let tts_cache_base_path_for_fileserver = config.gtts_cache_base_path.clone();
-    // Web mount point for TTS cache. Ensure it starts with a '/' for correct URL handling.
-    let mut tts_cache_web_mount_point = config.tts_cache_web_path.clone();
-    if !tts_cache_web_mount_point.is_empty() && !tts_cache_web_mount_point.starts_with('/') {
-        tts_cache_web_mount_point.insert(0, '/');
-        tracing::debug!(
-            "Adjusted TTS cache web mount point to: {}",
-            tts_cache_web_mount_point
-        );
-    }
-    if tts_cache_web_mount_point.is_empty() {
-        tracing::warn!("TTS cache web mount point was empty; defaulting to '/tts_cache'.");
-        tts_cache_web_mount_point = "/tts_cache".to_string();
-    }
+    let tts_cache_web_mount_point = &config.tts_cache_web_path;
 
     let tts_cache_service = ServeDir::new(tts_cache_base_path_for_fileserver.clone());
     tracing::info!(

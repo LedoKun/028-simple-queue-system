@@ -14,17 +14,19 @@
 //! - Fallback to offline stem audio files when online TTS fails or times out.
 
 use fake_user_agent::get_rua;
-use regex::Regex;
 use reqwest::header::USER_AGENT;
 use reqwest::Client as ReqwestClient;
 use std::{
     collections::{HashMap, HashSet},
     path::{Path, PathBuf},
-    sync::Arc,
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        Arc,
+    },
     time::{Duration, SystemTime}, // Import Duration for retry delays
 };
 use tokio::sync::{broadcast, Mutex};
-use tokio::{fs as tokio_fs, io::AsyncWriteExt, task, time::sleep}; // Import sleep for retry delays
+use tokio::{fs as tokio_fs, task, time::sleep}; // Import sleep for retry delays
 use tracing::{debug, error, info, trace, warn}; // Import tracing macros
 use urlencoding::encode as url_encode;
 
@@ -78,7 +80,7 @@ impl TTSManager {
     /// Creates a new `TTSManager` instance.
     ///
     /// This function initializes the HTTP client, parses supported languages from the
-    /// configuration, compiles the text tokenizer regex, and ensures the TTS cache
+    /// configuration, and ensures the TTS cache
     /// directory exists asynchronously.
     ///
     /// # Arguments
@@ -100,7 +102,6 @@ impl TTSManager {
             .tls_built_in_webpki_certs(true)
             .gzip(true)
             .brotli(true)
-            .zstd(true)
             .deflate(true)
             .build()
             .expect("Failed to create HTTP client for TTSManager");
@@ -215,7 +216,18 @@ impl TTSManager {
             lang
         );
 
-        // Validate if the requested language is supported.
+        let valid_id = if self.config.queue_identifier_prefix_required {
+            Self::parse_call_id(&id).is_some_and(|(_, digits)| !digits.is_empty())
+        } else {
+            !id.is_empty() && id.chars().all(|c| c.is_ascii_digit())
+        };
+        if !valid_id {
+            return Err(self.config.queue_identifier_format_message().to_string());
+        }
+        if location.is_empty() || !location.chars().all(|c| c.is_ascii_digit()) {
+            return Err("Location must contain digits only".into());
+        }
+        let lang = normalize_language_code(&lang);
         if !self.supported_languages_map.contains_key(&lang) {
             let error_msg = format!("Unsupported language for TTS: {}", lang);
             warn!("{}", error_msg);
@@ -446,7 +458,7 @@ impl TTSManager {
                 id, pregen_file_path
             );
 
-            if tokio_fs::metadata(&pregen_file_path).await.is_ok() {
+            if Self::audio_file_exists(&pregen_file_path).await {
                 info!("Found pre-generated TTS audio: {:?}", pregen_file_path);
                 // The URL is relative to the root of the serving directory. We use serve_dir_path as the
                 // filesystem base and an empty string for the web path segment to achieve this.
@@ -509,7 +521,7 @@ impl TTSManager {
         );
 
         // Check if the concatenated audio file already exists in the dynamic cache.
-        if tokio_fs::metadata(&cache_file_path).await.is_ok() {
+        if Self::audio_file_exists(&cache_file_path).await {
             info!(
                 "Multi-language TTS audio found in dynamic cache: {:?}",
                 cache_file_path
@@ -556,8 +568,7 @@ impl TTSManager {
                 id.clone(),
                 location.clone(),
                 ordered_lang_codes,
-                lang_suffix,
-                template_cache_key,
+                cache_file_path,
             ),
         )
         .await;
@@ -601,17 +612,8 @@ impl TTSManager {
         id: String,
         location: String,
         ordered_lang_codes: Vec<String>,
-        lang_suffix: String,
-        template_cache_key: Option<String>,
+        cache_file_path: PathBuf,
     ) -> Result<String, String> {
-        let cache_file_path = Self::get_multi_language_cache_file_path(
-            &config.gtts_cache_base_path,
-            &id,
-            &location,
-            &lang_suffix,
-            template_cache_key.as_deref(),
-        );
-
         let mut all_audio_bytes: Vec<u8> = Vec::new();
         let mut uas_this_task: HashSet<String> = HashSet::new();
 
@@ -842,56 +844,33 @@ impl TTSManager {
 
     /// Static version of split_long_text for use in async contexts.
     fn split_long_text_static(text: &str, max_length: usize) -> Result<Vec<String>, String> {
-        // This regex combines whitespace and default punctuation from the TS source.
-        let space_and_punct_regex =
-            Regex::new("[\u{FEFF}\u{A0}\\s!\"#$%&'()*+,-./:;<=>?@\\\\^_`{|}~]+")
-                .expect("Failed to compile punctuation regex");
-
-        let is_space_or_punct =
-            |c: char| -> bool { space_and_punct_regex.is_match(&c.to_string()) };
-
-        let last_index_of_space_or_punct = |s: &str, left: usize, right: usize| -> Option<usize> {
-            s[left..=right].rfind(is_space_or_punct)
-        };
-
-        let mut result: Vec<String> = Vec::new();
-        let mut start = 0;
-
-        while start < text.len() {
-            if text.len() - start <= max_length {
-                result.push(text[start..].to_string());
-                break;
-            }
-
-            let mut end = start + max_length - 1;
-
-            if let (Some(char_at_end), Some(char_after_end)) =
-                (text.chars().nth(end), text.chars().nth(end + 1))
-            {
-                if is_space_or_punct(char_at_end) || is_space_or_punct(char_after_end) {
-                    result.push(text[start..=end].to_string());
-                    start = end + 1;
-                    continue;
-                }
-            }
-
-            if let Some(split_pos) = last_index_of_space_or_punct(text, start, end) {
-                end = start + split_pos;
-                result.push(text[start..=end].to_string());
-                start = end + 1;
-            } else {
-                return Err(format!(
-                    "The word is too long to split into a short text: '{}...'",
-                    &text[start..start + max_length]
-                ));
-            }
+        if max_length == 0 {
+            return Err("TTS chunk length must be positive".to_string());
         }
-
-        Ok(result)
+        let separator = |c: char| c.is_whitespace() || c.is_ascii_punctuation() || c == '\u{FEFF}';
+        let mut remaining = text;
+        let mut chunks = Vec::new();
+        while !remaining.is_empty() {
+            let mut end = remaining
+                .char_indices()
+                .nth(max_length)
+                .map_or(remaining.len(), |(index, _)| index);
+            if end < remaining.len()
+                && !remaining[..end].ends_with(separator)
+                && !remaining[end..].starts_with(separator)
+            {
+                let (index, c) = remaining[..end]
+                    .char_indices()
+                    .rfind(|(_, c)| separator(*c))
+                    .ok_or_else(|| "A TTS word exceeds the character limit".to_string())?;
+                end = index + c.len_utf8();
+            }
+            chunks.push(remaining[..end].to_string());
+            remaining = &remaining[end..];
+        }
+        Ok(chunks)
     }
 
-    /// Falls back to stem audio files when online TTS fails or times out.
-    /// Constructs URLs for the required stem audio files and broadcasts a TTSComplete event.
     async fn fallback_to_stem_audio(
         config: &Arc<AppConfig>,
         sender: &broadcast::Sender<AppEvent>,
@@ -1127,7 +1106,7 @@ impl TTSManager {
             lang,
             total_parts,
             idx,
-            text_part.len(),
+            text_part.chars().count(),
             ttsspeed
         )
     }
@@ -1235,27 +1214,40 @@ impl TTSManager {
     /// # Returns
     /// A `std::io::Result<()>` indicating success or failure of the write operation.
     async fn write_cache_file(file_path: &Path, bytes: &[u8]) -> std::io::Result<()> {
-        debug!(
-            "Write Cache File: Writing {} bytes to {:?}",
-            bytes.len(),
-            file_path
-        );
-        let mut file = tokio_fs::File::create(file_path).await?;
-        file.write_all(bytes).await?;
-        trace!("Write Cache File: Successfully wrote file: {:?}", file_path);
-        Ok(())
+        static NEXT_WRITE: AtomicU64 = AtomicU64::new(0);
+        let file_path = file_path.to_path_buf();
+        let bytes = bytes.to_vec();
+        task::spawn_blocking(move || {
+            use std::io::Write;
+            let temporary = file_path.with_extension(format!(
+                "{}.{}.tmp",
+                std::process::id(),
+                NEXT_WRITE.fetch_add(1, Ordering::Relaxed)
+            ));
+            let result = (|| {
+                let mut file = std::fs::OpenOptions::new()
+                    .write(true)
+                    .create_new(true)
+                    .open(&temporary)?;
+                file.write_all(&bytes)?;
+                file.sync_all()?;
+                std::fs::rename(&temporary, &file_path)
+            })();
+            if result.is_err() {
+                let _ = std::fs::remove_file(&temporary);
+            }
+            result
+        })
+        .await
+        .map_err(std::io::Error::other)?
     }
 
-    /// Asynchronously prunes the TTS audio cache, deleting the oldest files
-    /// if the total number of files exceeds `max_files`.
-    ///
-    /// This function iterates through all subdirectories (languages) within the cache
-    /// base path, collects file metadata, sorts by modification/creation time,
-    /// and removes files exceeding the specified limit.
-    ///
-    /// # Arguments
-    /// - `cache_base_path`: The root directory of the TTS cache.
-    /// - `max_files`: The maximum number of files to keep in the cache. If 0, no pruning occurs.
+    async fn audio_file_exists(path: &Path) -> bool {
+        tokio_fs::metadata(path)
+            .await
+            .is_ok_and(|metadata| metadata.is_file() && metadata.len() > 0)
+    }
+
     async fn prune_cache(cache_base_path: &Path, max_files: usize) {
         debug!(
             "Prune Cache: Starting. Max files: {}, Base path: {:?}",
@@ -1310,7 +1302,11 @@ impl TTSManager {
                     {
                         if let Ok(file_entry) = file_entry_res {
                             let file_path = file_entry.path();
-                            if file_path.is_file() {
+                            if file_path.is_file()
+                                && file_path
+                                    .extension()
+                                    .is_some_and(|extension| extension == "mp3")
+                            {
                                 trace!("Prune Cache: Found file: {:?}", file_path);
                                 if let Ok(metadata) = tokio_fs::metadata(&file_path).await {
                                     // Prefer modified time, fall back to created time.
@@ -1377,18 +1373,12 @@ impl TTSManager {
         );
 
         // Remove the oldest files.
-        for i in 0..num_to_remove {
-            debug!(
-                "Prune Cache: Attempting to remove file: {:?}",
-                files_with_time[i].1
-            );
-            if let Err(e) = tokio_fs::remove_file(&files_with_time[i].1).await {
-                error!(
-                    "Failed to remove old cache file {:?}: {}",
-                    files_with_time[i].1, e
-                );
+        for (_, path) in files_with_time.iter().take(num_to_remove) {
+            debug!("Prune Cache: Attempting to remove file: {:?}", path);
+            if let Err(e) = tokio_fs::remove_file(path).await {
+                error!("Failed to remove old cache file {:?}: {}", path, e);
             } else {
-                debug!("Removed old cache file: {:?}", files_with_time[i].1);
+                debug!("Removed old cache file: {:?}", path);
             }
         }
         debug!("Prune Cache: Pruning complete.");
@@ -1424,8 +1414,10 @@ impl TTSManager {
         let base_web_path = cache_web_path_segment.trim_matches('/');
         // Convert the relative file path to a string, replacing backslashes with forward slashes for URLs.
         let relative_file_part = relative_path_from_fs_base
-            .to_string_lossy()
-            .replace('\\', "/");
+            .components()
+            .map(|part| url_encode(&part.as_os_str().to_string_lossy()).into_owned())
+            .collect::<Vec<_>>()
+            .join("/");
 
         // Construct the full web path.
         let full_web_path = if base_web_path.is_empty() {
@@ -1478,6 +1470,8 @@ mod tests {
             max_skipped_history_size: 5,
             queue_identifier_prefix_required: true,
             serve_dir_path: PathBuf::from("./public"),
+            announcements_enabled: true,
+            announcement_utc_offset_hours: 7,
             announcements_audio_sub_path: PathBuf::from("media/announcements"),
             banners_sub_path: PathBuf::from("media/banners"),
             announcement_auto_cycle_interval_seconds: 1200,
@@ -1493,6 +1487,76 @@ mod tests {
             sse_event_buffer_size: 200,
             tts_cache_web_path: "/tts_cache".to_string(),
         }
+    }
+
+    #[test]
+    fn split_tts_text_uses_character_limits_and_preserves_unicode() {
+        let short = "ก".repeat(80);
+        assert_eq!(
+            TTSManager::split_long_text_static(&short, 200).unwrap(),
+            vec![short]
+        );
+        let long = "ภาษาไทย ทดสอบ ข้อความ ".repeat(40);
+        let chunks = TTSManager::split_long_text_static(&long, 200).unwrap();
+        assert_eq!(chunks.concat(), long);
+        assert!(chunks
+            .iter()
+            .all(|chunk| !chunk.is_empty() && chunk.chars().count() <= 200));
+        assert!(TTSManager::split_long_text_static("hello", 0).is_err());
+        assert!(TTSManager::split_long_text_static(&"x".repeat(201), 200).is_err());
+    }
+
+    #[tokio::test]
+    async fn cache_writes_publish_complete_files_and_reject_empty_or_directory_hits() {
+        let root = std::env::temp_dir().join(format!(
+            "queue-cache-test-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(SystemTime::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        tokio_fs::create_dir_all(&root).await.unwrap();
+        let path = root.join("audio.mp3");
+        tokio_fs::write(&path, []).await.unwrap();
+        assert!(!TTSManager::audio_file_exists(&path).await);
+        assert!(!TTSManager::audio_file_exists(&root).await);
+        let first = vec![1; 131_072];
+        let second = vec![2; 131_072];
+        let (a, b) = tokio::join!(
+            TTSManager::write_cache_file(&path, &first),
+            TTSManager::write_cache_file(&path, &second)
+        );
+        a.unwrap();
+        b.unwrap();
+        let audio = tokio_fs::read(&path).await.unwrap();
+        assert!(audio == first || audio == second);
+        assert!(TTSManager::audio_file_exists(&path).await);
+        let mut entries = tokio_fs::read_dir(&root).await.unwrap();
+        assert!(entries.next_entry().await.unwrap().is_some());
+        assert!(entries.next_entry().await.unwrap().is_none());
+        assert!(
+            TTSManager::write_cache_file(&root, b"cannot replace a directory")
+                .await
+                .is_err()
+        );
+        tokio_fs::remove_dir_all(root).await.unwrap();
+    }
+
+    #[test]
+    fn audio_urls_escape_filenames_and_count_unicode_characters() {
+        assert_eq!(
+            TTSManager::get_web_accessible_audio_url(
+                Path::new("/cache/multi/audio #1.mp3"),
+                Path::new("/cache"),
+                "/tts_cache"
+            ),
+            Some("/tts_cache/multi/audio%20%231.mp3".into())
+        );
+        assert!(
+            TTSManager::static_build_google_tts_url(&"ก".repeat(80), "th", 0, 1)
+                .contains("&textlen=80&")
+        );
     }
 
     #[test]

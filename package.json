@@ -1,24 +1,12 @@
 {
+  "type": "module",
   "scripts": {
     "build:css": "tailwindcss -i ./tailwind.css -o ./public/css/styles.css -m",
-    "build:legacy": "rollup -c",
-    "build:assets": "npm run build:css && npm run build:legacy"
-  },
-  "dependencies": {
-    "@tailwindcss/cli": "^4.1",
-    "css-vars-ponyfill": "^2.4.9",
-    "tailwindcss": "^4.1"
+    "build:assets": "npm run build:css",
+    "test": "node --test tests/*.test.mjs"
   },
   "devDependencies": {
-    "@babel/core": "^7.29.6",
-    "@babel/preset-env": "^7.24.0",
-    "@rollup/plugin-babel": "^6.0.4",
-    "@rollup/plugin-commonjs": "^25.0.7",
-    "@rollup/plugin-node-resolve": "^15.2.3",
-    "core-js": "^3.37.1",
-    "eventsource-polyfill": "^0.9.6",
-    "regenerator-runtime": "^0.14.1",
-    "rollup": "^4.60.1",
-    "whatwg-fetch": "^3.6.20"
+    "@tailwindcss/cli": "^4.1",
+    "tailwindcss": "^4.1"
   }
 }

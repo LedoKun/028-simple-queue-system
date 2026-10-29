@@ -29,6 +29,12 @@ impl AnnouncementService {
         manager.get_current_status().await
     }
 
+    pub async fn set_enabled(&self, enabled: bool) -> AnnouncementStatus {
+        let mut manager = self.manager.lock().await;
+        manager.set_enabled(enabled).await;
+        manager.get_current_status().await
+    }
+
     /// Manually advance to the next announcement slot.
     pub async fn manual_advance(&self) -> Result<(), ManualTriggerError> {
         let mut manager = self.manager.lock().await;

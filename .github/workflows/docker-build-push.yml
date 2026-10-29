@@ -28,6 +28,18 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Test frontend
+        run: npm test
+
+      - name: Test kiosk launcher
+        run: bash tests/kiosk.test.sh
+
+      - name: Test audio helper
+        run: |
+          python3 -m venv /tmp/queue-test-env
+          /tmp/queue-test-env/bin/pip install -r requirements.txt
+          /tmp/queue-test-env/bin/python -m unittest discover -s tests -p 'test_*.py'
+
       - name: Build frontend assets
         run: npm run build:assets
 
@@ -35,9 +47,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: frontend-assets
-          path: |
-            public/css/styles.css
-            public/dist
+          path: public/css/styles.css
 
   build-rust-binaries:
     name: Build Rust Binary (${{ matrix.target_info.name }})
@@ -73,12 +83,7 @@ jobs:
 
       - name: Restore frontend assets
         run: |
-          if [ -d ./frontend-assets/public ]; then
-            cp -a ./frontend-assets/public/. ./public/
-          else
-            # Some artifact layouts flatten paths; handle that gracefully
-            cp -a ./frontend-assets/. ./public/
-          fi
+          cp ./frontend-assets/styles.css ./public/css/styles.css
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -97,6 +102,10 @@ jobs:
         with:
           key: ${{ matrix.target_info.rust_target }}
 
+      - name: Test Rust
+        if: matrix.target_info.name == 'amd64'
+        run: cargo test --locked
+
       - name: Build binary
         run: |
           if [ -n "${{ matrix.target_info.linker_command }}" ]; then
@@ -106,7 +115,7 @@ jobs:
               export CARGO_TARGET_ARMV7_UNKNOWN_LINUX_GNUEABIHF_LINKER=${{ matrix.target_info.linker_command }}
             fi
           fi
-          cargo build --verbose --release --target ${{ matrix.target_info.rust_target }}
+          cargo build --locked --verbose --release --target ${{ matrix.target_info.rust_target }}
 
       - name: Upload compiled binary artifact
         uses: actions/upload-artifact@v4
@@ -137,12 +146,7 @@ jobs:
 
       - name: Restore frontend assets
         run: |
-          if [ -d ./frontend-assets/public ]; then
-            cp -a ./frontend-assets/public/. ./public/
-          else
-            # Some artifact layouts flatten paths; handle that gracefully
-            cp -a ./frontend-assets/. ./public/
-          fi
+          cp ./frontend-assets/styles.css ./public/css/styles.css
 
       - name: Download all compiled binary artifacts
         uses: actions/download-artifact@v4

@@ -15,8 +15,8 @@ function renderCallList(container, items, options = {}) {
   } = options;
 
   container.innerHTML = '';
-  const data = Array.isArray(items) ? items.slice(0, maxItems) : [];
-  if (reverse) data.reverse();
+  const ordered = Array.isArray(items) ? (reverse ? [...items].reverse() : items) : [];
+  const data = ordered.slice(0, maxItems);
 
   if (data.length === 0) {
     const placeholder = document.createElement('li');
@@ -77,15 +77,7 @@ function createSseIndicatorUpdater(element, options = {}) {
     element.textContent = text;
 
     if (setDataset) {
-      // Keep attribute updated for older browsers that lack proper dataset setters
-      try {
-        if (element && typeof element.setAttribute === 'function') {
-          element.setAttribute('data-status', normalizedStatus);
-        }
-      } catch (e) {}
-      if (element.dataset) {
-        element.dataset.status = normalizedStatus;
-      }
+      element.dataset.status = normalizedStatus;
     }
 
     if (!keepClasses) {

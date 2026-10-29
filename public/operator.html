@@ -3,6 +3,7 @@
 
 <head>
     <meta charset="UTF-8">
+    <meta name="google" content="notranslate">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Operator Control Panel - Queue System</title>
     <link rel="apple-touch-icon" sizes="180x180" href="/media/favicon/apple-touch-icon.png">
@@ -17,11 +18,10 @@
             -moz-osx-font-smoothing: grayscale;
         }
 
-        /* .history-list-item class will be defined in tailwind.css via @apply */
     </style>
 </head>
 
-<body class="bg-gray-800 text-gray-200 font-sans flex flex-col">
+<body translate="no" class="bg-gray-800 text-gray-200 font-sans flex flex-col">
 
     <header class="bg-gray-900 shadow-md p-4">
         <div class="container mx-auto flex justify-between items-center">
@@ -61,10 +61,6 @@
                         Call Number
                     </button>
                 </form>
-                <button id="btn-skip"
-                    class="mt-4 w-full bg-yellow-500 hover:bg-yellow-600 text-black font-semibold py-2 px-4 rounded-md shadow focus:outline-none focus:ring-2 focus:ring-yellow-400 focus:ring-opacity-50 transition duration-150">
-                    Skip Queue
-                </button>
                 <div class="mt-6 border-t border-gray-600 pt-4">
                     <p class="text-sm text-gray-300">Translator Cooldown:
                         <span id="status-translator-cooldown" class="font-semibold text-orange-400">Ready</span>
@@ -75,10 +71,6 @@
                         Call Translator
                     </button>
                 </div>
-                <!-- <button id="btn-skip-current"
-                    class="mt-4 w-full bg-yellow-500 hover:bg-yellow-600 text-black font-semibold py-2 px-4 rounded-md shadow focus:outline-none focus:ring-2 focus:ring-yellow-400 focus:ring-opacity-50 transition duration-150">
-                    Skip Current Call
-                </button> -->
             </section>
 
             <section id="queue-status" class="bg-gray-700 p-6 rounded-lg shadow-lg">
@@ -93,20 +85,10 @@
                         Counter: <span id="status-current-call-location">----</span>
                     </p>
                 </div>
-                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div>
-                        <h3 class="text-md font-medium text-gray-100 mb-2">Recently Called:</h3>
-                        <ul id="list-history-calls" class="bg-gray-600 rounded p-2 max-h-48 overflow-y-auto">
-                            <li class="history-list-item italic">No history yet...</li>
-                        </ul>
-                    </div>
-                    <div>
-                        <h3 class="text-md font-medium text-gray-100 mb-2">Recently Skipped:</h3>
-                        <ul id="list-skipped-calls" class="bg-gray-600 rounded p-2 max-h-48 overflow-y-auto">
-                            <li class="history-list-item italic">No skipped calls yet...</li>
-                        </ul>
-                    </div>
-                </div>
+                <h3 class="text-md font-medium text-gray-100 mb-2">Calling History:</h3>
+                <ul id="list-history-calls" class="bg-gray-600 rounded p-3 max-h-96 overflow-y-auto">
+                    <li class="italic">No history yet...</li>
+                </ul>
             </section>
 
             <section id="announcement-control" class="bg-gray-700 p-6 rounded-lg shadow-lg">
@@ -120,6 +102,10 @@
                         <span id="status-announcement-cooldown-timer" class="text-xs"></span>
                     </p>
                 </div>
+                <button id="btn-toggle-announcements" type="button" aria-pressed="false" disabled
+                    class="w-full bg-purple-600 hover:bg-purple-700 text-white font-semibold py-2 px-4 rounded-md mb-2 disabled:opacity-50">
+                    Loading announcements…
+                </button>
                 <button id="btn-next-announcement"
                     class="w-full bg-purple-600 hover:bg-purple-700 text-white font-semibold py-2 px-4 rounded-md shadow focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-opacity-50 transition duration-150">
                     Trigger Next Announcement
@@ -138,8 +124,6 @@
             reserved.</p>
     </footer>
 
-    <script nomodule src="dist/polyfills.legacy.js"></script>
-    <script nomodule src="dist/operator.legacy.js"></script>
     <script type="module" src="js/pages/operator/index.js"></script>
     <script>
         document.getElementById('current-year').textContent = new Date().getFullYear();
